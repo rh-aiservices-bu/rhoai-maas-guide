@@ -87,6 +87,8 @@ oc patch deployment data-science-gateway-data-science-gateway-class -n openshift
 
 IMPORTANT: The Istio gateway controller will revert this patch within seconds during reconciliation. However, pods that were already created with the 2Gi limit will continue running. If the pods restart for any reason, you will need to re-apply the patch.
 
+This is a known issue tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589].
+
 See also: xref:02-platform-config.adoc#_gateway_pod_oomkilled_crashloopbackoff[Phase 2: Gateway OOMKill troubleshooting].
 ====
 

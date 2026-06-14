@@ -280,6 +280,8 @@ IMPORTANT: The Istio gateway controller will revert this patch within seconds du
 oc patch deployment data-science-gateway-data-science-gateway-class -n openshift-ingress \
   --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
 ----
+
+This is a known issue tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589].
 ====
 
 *Step 5d:* Create Passthrough Route (Non-Cloud Platforms Only)
