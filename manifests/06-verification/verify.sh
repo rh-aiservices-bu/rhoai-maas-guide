@@ -138,7 +138,7 @@ fi
 # =============================================================================
 check_and_fix_gateway_oom() {
     local deploy_name="$1"
-    local restarts crash_reason mem_limit
+    local restarts crash_reason mem_limit params_ref
 
     restarts=$(oc get pods -n openshift-ingress -l "gateway.networking.k8s.io/gateway-name=maas-default-gateway" \
         -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || echo "0")
@@ -150,9 +150,37 @@ check_and_fix_gateway_oom() {
             -o jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}' 2>/dev/null || echo "")
 
         if [ "$mem_limit" = "1Gi" ]; then
-            log_warn "Gateway pod has OOMKilled ($restarts restarts). Patching memory limit from 1Gi to 2Gi..."
-            oc patch deployment "$deploy_name" -n openshift-ingress \
-                --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]' 2>/dev/null || true
+            log_warn "Gateway pod has OOMKilled ($restarts restarts). Applying persistent 2Gi memory limit via ConfigMap..."
+            # Create the ConfigMap with 2Gi limit (idempotent)
+            cat <<'GWEOF' | oc apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: maas-gateway-options
+  namespace: openshift-ingress
+data:
+  deployment: |
+    spec:
+      template:
+        spec:
+          containers:
+          - name: istio-proxy
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: "2"
+                memory: 2Gi
+GWEOF
+            # Hook ConfigMap into Gateway via parametersRef (survives Istio reconciliation)
+            params_ref=$(oc get gateway maas-default-gateway -n openshift-ingress \
+                -o jsonpath='{.spec.infrastructure.parametersRef.name}' 2>/dev/null || echo "")
+            if [ "$params_ref" != "maas-gateway-options" ]; then
+                oc patch gateway maas-default-gateway -n openshift-ingress --type=merge -p '{
+                  "spec": {"infrastructure": {"parametersRef": {"group": "", "kind": "ConfigMap", "name": "maas-gateway-options"}}}
+                }' 2>/dev/null || true
+            fi
 
             log_info "Waiting for gateway pod to stabilize..."
             sleep 10

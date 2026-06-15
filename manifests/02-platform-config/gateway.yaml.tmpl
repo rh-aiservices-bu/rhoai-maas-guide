@@ -8,6 +8,11 @@ metadata:
     security.opendatahub.io/authorino-tls-bootstrap: "true"
 spec:
   gatewayClassName: openshift-default
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: maas-gateway-options
   listeners:
    - name: http
      hostname: maas.${CLUSTER_DOMAIN}
