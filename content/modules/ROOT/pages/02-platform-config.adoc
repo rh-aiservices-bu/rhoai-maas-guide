@@ -215,6 +215,15 @@ If MetalLB is installed: Continue to the next step.
 
 *Step 5b:* Create the MaaS Gateway
 
+First, apply the Gateway resource overrides ConfigMap. This sets the gateway proxy memory limit to `2Gi` (the Istio default of `1Gi` is insufficient when Kuadrant Wasm extensions are loaded):
+
+[source,bash]
+----
+oc apply -f manifests/02-platform-config/gateway-resources.yaml
+----
+
+Now create the Gateway. The Gateway template includes `spec.infrastructure.parametersRef` pointing to the ConfigMap above, so Istio applies the `2Gi` limit to the generated Deployment and preserves it across reconciliations.
+
 [source,bash]
 ----
 export CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster \
@@ -252,36 +261,32 @@ oc wait --for=condition=Programmed gateway/maas-default-gateway \
   -n openshift-ingress --timeout=120s
 ----
 
-[WARNING]
+[NOTE]
 ====
-*Gateway Pod OOMKilled (CrashLoopBackOff)*
+*Gateway Pod OOMKill Prevention*
 
-On some clusters, the MaaS gateway pod may enter `CrashLoopBackOff` with `OOMKilled` (exit code 137) shortly after creation. This happens because the Istio Gateway API controller creates the gateway deployment with a default memory limit of `1Gi`, which can be insufficient when Kuadrant Wasm extensions (Authorino auth, Limitador rate limiting) are loaded and compiled at startup.
+The ConfigMap applied in Step 5b overrides the Istio default `1Gi` memory limit to `2Gi` via `spec.infrastructure.parametersRef`. This prevents the gateway pod from being OOMKilled when Kuadrant Wasm extensions (Authorino auth, Limitador rate limiting) are compiled at startup. Unlike `oc patch deployment`, this approach survives Istio reconciliation.
 
-Check the gateway pod status:
-
-[source,bash]
-----
-oc get pods -n openshift-ingress | grep maas-default-gateway
-----
-
-If the pod shows `CrashLoopBackOff` or multiple restarts with `OOMKilled`, increase the memory limit:
+If you deployed the Gateway *without* the ConfigMap (e.g. from an older version of this guide), apply the fix retroactively:
 
 [source,bash]
 ----
-oc patch deployment maas-default-gateway-openshift-default -n openshift-ingress \
-  --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
+oc apply -f manifests/02-platform-config/gateway-resources.yaml
+
+oc patch gateway maas-default-gateway -n openshift-ingress --type=merge -p '{
+  "spec": {
+    "infrastructure": {
+      "parametersRef": {
+        "group": "",
+        "kind": "ConfigMap",
+        "name": "maas-gateway-options"
+      }
+    }
+  }
+}'
 ----
 
-IMPORTANT: The Istio gateway controller will revert this patch within seconds during reconciliation. However, pods that were already created with the 2Gi limit will continue running. If the pods restart for any reason (node drain, scaling, etc.), they will revert to 1Gi and OOMKill again — re-apply the patch in that case. The `data-science-gateway` pod in the same namespace may also need the same fix:
-
-[source,bash]
-----
-oc patch deployment data-science-gateway-data-science-gateway-class -n openshift-ingress \
-  --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
-----
-
-This is a known issue tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589].
+This is tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589].
 ====
 
 *Step 5d:* Create Passthrough Route (Non-Cloud Platforms Only)
@@ -404,7 +409,8 @@ curl -vsk https://maas.${CLUSTER_DOMAIN} 2>&1 | grep -E "SSL connection|Connecte
 [source]
 ----
 manifests/02-platform-config/
-  gateway.yaml.tmpl              # Gateway template (envsubst)
+  gateway-resources.yaml         # ConfigMap: gateway proxy resource overrides (2Gi memory)
+  gateway.yaml.tmpl              # Gateway template (envsubst, references ConfigMap via parametersRef)
   gatewayclass.yaml              # GatewayClass resource
   kustomization.yaml             # Aggregates all subdirectories
   kuadrant/

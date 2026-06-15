@@ -66,24 +66,13 @@ Higher-priority subscriptions take precedence. You can adjust limits, windows, a
 
 == Deploying a Model
 
-[WARNING]
+[NOTE]
 ====
-*Gateway Pod OOMKilled After Model Deployment*
+*Gateway Pod OOMKill*
 
-Deploying a model creates HTTPRoute and Kuadrant policy resources that trigger the Istio gateway to load Wasm extensions (Authorino auth, Limitador rate limiting). This Wasm compilation can push the gateway pod past its default `1Gi` memory limit, causing `OOMKilled` (exit code 137) and `CrashLoopBackOff`.
+Deploying a model triggers the Istio gateway to load Kuadrant Wasm extensions, which can push the pod past the default `1Gi` memory limit. If you applied the `gateway-resources.yaml` ConfigMap in xref:02-platform-config.adoc#_gateway_pod_oomkill_prevention[Phase 2 Step 5b], this is already handled (the limit is set to `2Gi` via `parametersRef`).
 
-The gateway may have been healthy throughout Phases 1-4, and only start OOMKilling after the model is deployed in this phase.
-
-If the gateway pod starts crashing after deploying a model, increase the memory limit:
-
-[source,bash]
-----
-oc apply -k manifests/oom-patch/
-----
-
-This is a known issue tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589].
-
-See also: xref:02-platform-config.adoc#_gateway_pod_oomkilled_crashloopbackoff[Phase 2: Gateway OOMKill troubleshooting].
+If the gateway pod starts OOMKilling after deploying a model, see xref:02-platform-config.adoc#_gateway_pod_oomkill_prevention[Phase 2: Gateway OOMKill Prevention] for the fix.
 ====
 
 Create the `llm` namespace if it doesn't exist and label it for RHOAI:
@@ -159,7 +148,7 @@ curl -sk "https://${MAAS_URL}/v1/models" \
 
 # Get the model endpoint URL from the listing
 MODEL_URL=$(curl -sk "https://${MAAS_URL}/v1/models" \
-  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].url') | jq
+  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].url')
 
 echo "MODEL_URL: ${MODEL_URL}"
 

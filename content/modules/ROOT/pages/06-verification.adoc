@@ -151,17 +151,26 @@ If the verification script fails at Phase 1 (health endpoint unreachable) or Pha
 oc get pods -n openshift-ingress | grep maas-default-gateway
 ----
 
-If the pod shows `CrashLoopBackOff` with multiple restarts, the Kuadrant Wasm extensions may exceed the default `1Gi` memory limit. Patch the deployment:
+If the pod shows `CrashLoopBackOff` with multiple restarts, the Kuadrant Wasm extensions may exceed the default `1Gi` memory limit. Apply the ConfigMap fix from xref:02-platform-config.adoc#_gateway_pod_oomkill_prevention[Phase 2 Step 5b]:
 
 [source,bash]
 ----
-oc patch deployment maas-default-gateway-openshift-default -n openshift-ingress \
-  --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
+oc apply -f manifests/02-platform-config/gateway-resources.yaml
+
+oc patch gateway maas-default-gateway -n openshift-ingress --type=merge -p '{
+  "spec": {
+    "infrastructure": {
+      "parametersRef": {
+        "group": "",
+        "kind": "ConfigMap",
+        "name": "maas-gateway-options"
+      }
+    }
+  }
+}'
 ----
 
 Wait for the pod to stabilize, then re-run the script.
-
-NOTE: The verification script (v2+) automatically detects and patches this issue. If running an older version, apply the patch manually.
 
 === Wrong subscription name in API key creation
 
