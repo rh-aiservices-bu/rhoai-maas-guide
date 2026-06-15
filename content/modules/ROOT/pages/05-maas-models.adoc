@@ -78,14 +78,8 @@ If the gateway pod starts crashing after deploying a model, increase the memory 
 
 [source,bash]
 ----
-oc patch deployment maas-default-gateway-openshift-default -n openshift-ingress \
-  --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
-
-oc patch deployment data-science-gateway-data-science-gateway-class -n openshift-ingress \
-  --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"2Gi"}]'
+oc apply -k manifests/oom-patch/
 ----
-
-IMPORTANT: The Istio gateway controller will revert this patch within seconds during reconciliation. However, pods that were already created with the 2Gi limit will continue running. If the pods restart for any reason, you will need to re-apply the patch.
 
 This is a known issue tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589].
 
@@ -157,13 +151,17 @@ API_KEY=$(curl -sk -X POST "https://${MAAS_URL}/maas-api/v1/api-keys" \
   -d '{"name": "test-key", "subscription": "simulator-free", "expiresIn": "1h"}' \
   | jq -r '.key')
 
+echo "API_KEY: ${API_KEY}"
+
 # List available models
 curl -sk "https://${MAAS_URL}/v1/models" \
   -H "Authorization: Bearer ${API_KEY}"
 
 # Get the model endpoint URL from the listing
 MODEL_URL=$(curl -sk "https://${MAAS_URL}/v1/models" \
-  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].url')
+  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].url') | jq
+
+echo "MODEL_URL: ${MODEL_URL}"
 
 # Send a chat completion request (uses the model-specific URL path)
 curl -sk "${MODEL_URL}/v1/chat/completions" \
@@ -172,7 +170,7 @@ curl -sk "${MODEL_URL}/v1/chat/completions" \
   -d '{
     "model": "facebook/opt-125m",
     "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+  }' | jq
 ----
 
 For GPU models, replace the model name with `granite-4-tiny` or `gpt-oss-20b` as appropriate.
