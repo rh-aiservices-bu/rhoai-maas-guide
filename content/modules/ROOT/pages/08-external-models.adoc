@@ -6,7 +6,7 @@ The `ExternalModel` CRD lets you expose third-party LLM APIs (OpenAI, AWS Bedroc
 
 TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
 
-IMPORTANT: This guide is not a replacement for the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/html-single/govern_llm_access_with_models-as-a-service/index[official {rhoai} {maas} documentation]. It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
+IMPORTANT: This guide is not a replacement for the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[official {rhoai} {maas} documentation]. It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
 
 == How It Works
 
@@ -350,7 +350,7 @@ The `provider` field in the ExternalModel spec maps to a BBR payload translator.
 
 == References
 
-* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html-single/govern_llm_access_with_models-as-a-service/index#maas-external-model_maas-deploy[RHOAI ExternalModel documentation]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index#maas-external-model_maas-deploy[RHOAI ExternalModel documentation]
 * link:https://github.com/opendatahub-io/ai-gateway-payload-processing[BBR (ai-gateway-payload-processing) repository]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-68594[RHOAIENG-68594 - ext-proc EnvoyFilter match mismatch (all providers)]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592 - Gemini BBR path incompatibility]

@@ -4,7 +4,7 @@ This page explains how {rhoai} {maas} works under the hood — what each compone
 
 TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
 
-IMPORTANT: This guide is not a replacement for the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/html-single/govern_llm_access_with_models-as-a-service/index[official {rhoai} {maas} documentation]. It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
+IMPORTANT: This guide is not a replacement for the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[official {rhoai} {maas} documentation]. It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
 
 == Component Overview
 
@@ -133,4 +133,4 @@ Built by link:https://github.com/noyitz[Noy Itzikowitz^]
 
 * link:https://opendatahub-io.github.io/models-as-a-service/latest/concepts/architecture/[Upstream MaaS Architecture]
 * link:https://noyitz.github.io/ai-gateway-docs/ai-gateway-flow.html[AI Gateway Flow Visualizer]
-* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html-single/govern_llm_access_with_models-as-a-service/index[RHOAI 3.4 MaaS Official Docs]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[RHOAI 3.4 MaaS Official Docs]

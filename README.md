@@ -8,7 +8,7 @@ Guide to deploy RHOAI 3.4 Models-as-a-Service on OpenShift.
 
 Requires OpenShift 4.19+ with cluster-admin access.
 
-> **Note:** This guide is not a replacement for the [official RHOAI 3.4 Models-as-a-Service documentation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html-single/govern_llm_access_with_models-as-a-service/index). It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
+> **Note:** This guide is not a replacement for the [official RHOAI 3.4 Models-as-a-Service documentation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index). It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
 
 **Full documentation:** https://rh-aiservices-bu.github.io/rhoai-maas-guide/
 **GitHub Repository** https://github.com/rh-aiservices-bu/rhoai-maas-guide
@@ -69,7 +69,7 @@ With observability (Cluster Observability Operator + Gateway telemetry):
 
 ## Documentation
 
-- [RHOAI 3.4 MaaS Official Docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service_maas)
+- [RHOAI 3.4 MaaS Official Docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index)
 - [Upstream MaaS Documentation](https://opendatahub-io.github.io/models-as-a-service/latest/)
 - [Upstream MaaS Architecture](https://opendatahub-io.github.io/models-as-a-service/latest/concepts/architecture/)
 
