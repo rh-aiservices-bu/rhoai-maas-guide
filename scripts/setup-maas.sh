@@ -253,28 +253,10 @@ if should_run 1; then
         run_cmd oc apply -k "$MANIFESTS_DIR/01-prerequisites/operators/"
         log_info "Operator subscriptions applied"
 
-        log_info "Approving RHCL install plan (pinned to v1.3.4, Manual approval)..."
-        if [ "$DRY_RUN" = false ]; then
-            for attempt in $(seq 1 30); do
-                PENDING=$(oc get installplan -n openshift-operators --no-headers 2>/dev/null \
-                    | grep "rhcl-operator" | grep -v "true" | awk '{print $1}' || true)
-                if [ -n "$PENDING" ]; then
-                    echo "$PENDING" | xargs -I{} oc patch installplan {} -n openshift-operators \
-                        --type=merge -p '{"spec":{"approved":true}}' 2>/dev/null || true
-                    log_info "  Install plan(s) approved"
-                    break
-                fi
-                sleep 2
-            done
-        else
-            log_info "[DRY RUN] Would approve RHCL install plan"
-        fi
-
-        log_info "Waiting for operator CSVs (this may take 2-5 minutes)..."
+        log_info "Waiting for operator CSVs (this may take 5-10 minutes)..."
         if [ "$DRY_RUN" = false ]; then
             for ns_label in \
                 "redhat-ods-operator operators.coreos.com/rhods-operator.redhat-ods-operator" \
-                "openshift-operators operators.coreos.com/rhcl-operator.openshift-operators" \
                 "cert-manager-operator operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator" \
                 "openshift-lws-operator operators.coreos.com/leader-worker-set.openshift-lws-operator"
             do
@@ -285,6 +267,42 @@ if should_run 1; then
                     --for=jsonpath='{.status.phase}'=Succeeded --timeout=900s 2>/dev/null || \
                     { log_error "  CSV in $ns did not reach Succeeded within 900s — aborting (re-run with --from-phase 1 after manual check)"; exit 1; }
             done
+
+            log_info "  Waiting for RHCL CSV in openshift-operators (Manual approval)..."
+            RHCL_APPROVED=false
+            RHCL_TIMEOUT=900
+            RHCL_ELAPSED=0
+            while [ $RHCL_ELAPSED -lt $RHCL_TIMEOUT ]; do
+                if [ "$RHCL_APPROVED" = false ]; then
+                    PLAN_NAME=$(oc get subscription rhcl-operator -n openshift-operators \
+                        -o jsonpath='{.status.installPlanRef.name}' 2>/dev/null || true)
+                    if [ -n "$PLAN_NAME" ]; then
+                        APPROVED=$(oc get installplan "$PLAN_NAME" -n openshift-operators \
+                            -o jsonpath='{.spec.approved}' 2>/dev/null || echo "true")
+                        if [ "$APPROVED" != "true" ]; then
+                            oc patch installplan "$PLAN_NAME" -n openshift-operators \
+                                --type=merge -p '{"spec":{"approved":true}}' 2>/dev/null || true
+                            log_info "  Install plan $PLAN_NAME approved"
+                        fi
+                        RHCL_APPROVED=true
+                    fi
+                fi
+                RHCL_PHASE=$(oc get csv -n openshift-operators -l 'operators.coreos.com/rhcl-operator.openshift-operators=' \
+                    --no-headers -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+                if [ "$RHCL_PHASE" = "Succeeded" ]; then
+                    log_info "  RHCL CSV: Succeeded"
+                    break
+                fi
+                sleep 5
+                RHCL_ELAPSED=$((RHCL_ELAPSED + 5))
+                [ $((RHCL_ELAPSED % 60)) -eq 0 ] && log_info "    Still waiting for RHCL... (${RHCL_ELAPSED}s)"
+            done
+            if [ "$RHCL_PHASE" != "Succeeded" ]; then
+                log_error "  CSV in openshift-operators did not reach Succeeded within ${RHCL_TIMEOUT}s — aborting (re-run with --from-phase 1 after manual check)"
+                exit 1
+            fi
+        else
+            log_info "[DRY RUN] Would approve RHCL install plan"
         fi
         log_info "All operator CSVs ready"
     fi
@@ -721,14 +739,14 @@ if should_run 5 && [ "$SKIP_MODELS" = false ]; then
                 POD_COUNT=$(oc get pods -n llm --no-headers 2>/dev/null | wc -l | tr -d ' ')
                 if [ "$POD_COUNT" -gt 0 ]; then
                     NOT_READY=$(oc get pods -n llm --no-headers 2>/dev/null \
-                        | grep -v "Running\|Completed" | wc -l | tr -d ' ')
+                        | { grep -v "Running\|Completed" || true; } | wc -l | tr -d ' ')
                     if [ "$NOT_READY" -eq 0 ]; then
                         log_info "All model pods Running"
                         break
                     fi
                     # HuggingFace Xet workaround: if pods stuck in Init for >120s, disable Xet
                     if [ "$XET_PATCHED" = false ] && [ $ELAPSED -ge 120 ]; then
-                        INIT_STUCK=$(oc get pods -n llm --no-headers 2>/dev/null | grep "Init:" | wc -l | tr -d ' ')
+                        INIT_STUCK=$(oc get pods -n llm --no-headers 2>/dev/null | { grep "Init:" || true; } | wc -l | tr -d ' ')
                         if [ "$INIT_STUCK" -gt 0 ]; then
                             log_warn "Pod stuck in Init - applying HF_HUB_DISABLE_XET=1 workaround"
                             for deploy in $(oc get deployment -n llm --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null); do
@@ -835,12 +853,20 @@ if should_run 7 && [ "$WITH_OBSERVABILITY" = true ]; then
 
     log_info "Approving COO install plan (pinned to v1.4.0, Manual approval)..."
     if [ "$DRY_RUN" = false ]; then
-        for attempt in $(seq 1 30); do
-            PENDING=$(oc get installplan -n openshift-cluster-observability-operator --no-headers 2>/dev/null | grep -v "true" | awk '{print $1}')
-            if [ -n "$PENDING" ]; then
-                echo "$PENDING" | xargs -I{} oc patch installplan {} -n openshift-cluster-observability-operator \
-                    --type=merge -p '{"spec":{"approved":true}}' 2>/dev/null || true
-                log_info "  COO install plan(s) approved"
+        for attempt in $(seq 1 60); do
+            PLAN_NAME=$(oc get subscription cluster-observability-operator \
+                -n openshift-cluster-observability-operator \
+                -o jsonpath='{.status.installPlanRef.name}' 2>/dev/null || true)
+            if [ -n "$PLAN_NAME" ]; then
+                APPROVED=$(oc get installplan "$PLAN_NAME" \
+                    -n openshift-cluster-observability-operator \
+                    -o jsonpath='{.spec.approved}' 2>/dev/null || echo "true")
+                if [ "$APPROVED" != "true" ]; then
+                    oc patch installplan "$PLAN_NAME" \
+                        -n openshift-cluster-observability-operator \
+                        --type=merge -p '{"spec":{"approved":true}}' 2>/dev/null || true
+                    log_info "  COO install plan $PLAN_NAME approved"
+                fi
                 break
             fi
             sleep 2
