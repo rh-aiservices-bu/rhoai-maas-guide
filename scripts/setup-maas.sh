@@ -285,6 +285,54 @@ if should_run 1; then
             log_info "[DRY RUN] Would wait for operator CSVs"
         fi
         log_info "All operator CSVs ready"
+
+        if [ "$DISCONNECTED" = true ] && [ "$DRY_RUN" = false ]; then
+            log_step "Patching RHCL subscription with RELATED_IMAGE_WASMSHIM for disconnected..."
+            WASM_IMAGE=$(oc get csv -n openshift-operators \
+                -l operators.coreos.com/rhcl-operator.openshift-operators \
+                -o jsonpath='{range .items[0].spec.install.spec.deployments[0].spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}' 2>/dev/null \
+                | grep RELATED_IMAGE_WASMSHIM | cut -d= -f2)
+            if [ -n "$WASM_IMAGE" ]; then
+                WASM_DIGEST=$(echo "$WASM_IMAGE" | grep -o 'sha256:.*')
+                RHCL_MIRROR=$(oc get imageDigestMirrorSet -o json 2>/dev/null | \
+                    python3 -c "
+import json,sys
+data=json.load(sys.stdin)
+for item in data.get('items',[]):
+    for m in item.get('spec',{}).get('imageDigestMirrors',[]):
+        if 'rhcl-1' in m.get('source',''):
+            print(m['mirrors'][0]); sys.exit(0)
+" 2>/dev/null)
+                if [ -n "$RHCL_MIRROR" ] && [ -n "$WASM_DIGEST" ]; then
+                    WASM_MIRROR="${RHCL_MIRROR}/wasm-shim-rhel9@${WASM_DIGEST}"
+                    CURRENT_WASM=$(oc get subscription rhcl-operator -n openshift-operators \
+                        -o jsonpath='{.spec.config.env[?(@.name=="RELATED_IMAGE_WASMSHIM")].value}' 2>/dev/null)
+                    if [ "$CURRENT_WASM" != "$WASM_MIRROR" ]; then
+                        oc patch subscription rhcl-operator -n openshift-operators --type=merge -p "{
+                          \"spec\": {
+                            \"config\": {
+                              \"env\": [{
+                                \"name\": \"RELATED_IMAGE_WASMSHIM\",
+                                \"value\": \"${WASM_MIRROR}\"
+                              }]
+                            }
+                          }
+                        }"
+                        log_info "  WASM shim redirected to: $WASM_MIRROR"
+                        log_info "  Waiting for RHCL operator pod to restart..."
+                        sleep 5
+                        oc wait pod -n openshift-operators -l app.kubernetes.io/name=kuadrant-operator \
+                            --for=condition=Ready --timeout=120s 2>/dev/null || true
+                    else
+                        log_info "  WASM shim already patched, skipping"
+                    fi
+                else
+                    log_warn "  Could not discover mirror registry from IDMS - patch RELATED_IMAGE_WASMSHIM manually (see Phase 0 docs)"
+                fi
+            else
+                log_warn "  Could not find RELATED_IMAGE_WASMSHIM in RHCL CSV - WASM shim may fail on disconnected"
+            fi
+        fi
     fi
 fi
 

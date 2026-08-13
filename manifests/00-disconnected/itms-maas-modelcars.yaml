@@ -25,6 +25,10 @@ spec:
     - mirrors:
         - MIRROR_REGISTRY:PORT/NAMESPACE/rhelai1
       source: registry.redhat.io/rhelai1
+    # RHCL WASM shim (registry.access.redhat.com, not registry.redhat.io)
+    - mirrors:
+        - MIRROR_REGISTRY:PORT/NAMESPACE/rhcl-1
+      source: registry.access.redhat.com/rhcl-1
     # Simulator runtime from GitHub Container Registry
     - mirrors:
         - MIRROR_REGISTRY:PORT/NAMESPACE/llm-d

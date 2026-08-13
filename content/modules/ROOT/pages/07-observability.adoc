@@ -50,23 +50,9 @@ oc wait csv -n openshift-opentelemetry-operator \
 
 == Step 3: Install the Cluster Observability Operator
 
-NOTE: COO is pinned to **v1.4.0** with Manual install plan approval. This avoids potential regressions in newer versions. The pin will be removed once upstream validation completes.
-
 [source,bash]
 ----
 oc apply -k manifests/07-observability/coo/
-----
-
-Approve the install plan (required because of Manual approval):
-
-[source,bash]
-----
-sleep 10
-oc get installplan -n openshift-cluster-observability-operator --no-headers \
-  -o custom-columns='NAME:.metadata.name,APPROVED:.spec.approved' | \
-  grep false | awk '{print $1}' | \
-  xargs -I{} oc patch installplan {} -n openshift-cluster-observability-operator \
-    --type=merge -p '{"spec":{"approved":true}}'
 ----
 
 Wait for the operator CSV to reach `Succeeded`:

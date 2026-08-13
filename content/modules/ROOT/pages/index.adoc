@@ -29,6 +29,17 @@ You also need:
 
 Each phase has step-by-step instructions, status gates, and troubleshooting.
 
+=== Disconnected Setup
+
+[cols="1,3,1", options="header"]
+|===
+| Phase | Description | Time
+
+| xref:00-disconnected.adoc[0. Disconnected Setup] _(air-gapped only)_
+| Mirror MaaS operators and images, ITMS for modelcars, WASM shim patch, GPU driver setup
+| 30-60 min
+|===
+
 === Installation Guide
 
 [cols="1,3,1", options="header"]

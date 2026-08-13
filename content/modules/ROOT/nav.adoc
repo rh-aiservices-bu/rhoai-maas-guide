@@ -1,6 +1,9 @@
 * xref:index.adoc[Overview]
 * xref:quick-start.adoc[Automated Setup]
 
+.Disconnected Setup
+* xref:00-disconnected.adoc[Phase 0: Disconnected Setup]
+
 .Installation Guide
 * xref:01-prerequisites.adoc[Phase 1: Prerequisites]
 * xref:02-platform-config.adoc[Phase 2: Platform Configuration]
@@ -16,9 +19,6 @@
 
 .External Models
 * xref:08-external-models.adoc[Phase 8: External Models]
-
-.Disconnected Setup
-* xref:00-disconnected.adoc[Disconnected Setup (Air-Gapped)]
 
 .Reference
 * xref:08-architecture.adoc[Architecture & Request Flow]
