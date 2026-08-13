@@ -233,27 +233,90 @@ The default instance type is `g5.2xlarge` (1x A10G, 24 GB VRAM) - enough for Gem
 
 == GPU driver compilation on disconnected
 
-The NVIDIA GPU operator compiles the kernel module at runtime. In a disconnected environment, the driver container cannot reach external repos for the required kernel packages (`kernel-headers`, `kernel-devel`, and `kernel` with vmlinuz). The standard UBI repos do not ship kernel packages.
+The NVIDIA GPU operator compiles the NVIDIA kernel module at runtime, against the exact kernel running on the GPU node. On {ocp-short} it does this one of two ways, and which one you get decides whether a disconnected cluster needs anything extra:
 
-The solution is to extract the kernel files from the Driver Toolkit (DTK) image - which is part of the OCP release and already mirrored - build local RPMs, and serve them via a local HTTP repo.
+* *With the Driver Toolkit (DTK)* - the driver pod gets a second container built from the Driver Toolkit image, which ships in the {ocp-short} release payload and is therefore already mirrored. That image contains the matching kernel sources at `/usr/src/kernels/<kernel-version>`, so the build downloads nothing. The operator symlinks `dnf` to `/usr/bin/true` inside the pod, which makes the `dnf install kernel-*` calls in the build script inert.
+* *Without DTK* - the driver container builds alone and its `dnf` is real. It is UBI-based, and the standard UBI repos do not ship kernel packages, so the build script enables `rhocp-<ocp-version>-for-rhel-9-x86_64-rpms` and `rhel-9-for-x86_64-baseos-eus-rpms` and installs `kernel-headers`, `kernel-devel` and `kernel` (with vmlinuz) from them. Both are entitled Red Hat CDN repos and are unreachable from a disconnected cluster. *This is the only case that needs a local repo.*
 
-=== Step 1: Find the DTK image
+Both paths run the same build script and ask for the same packages. The only thing that decides between them is whether the operator can pair the driver with a DTK image whose kernel *matches the node*. Check that first - on a healthy disconnected cluster it matches and there is nothing to do.
+
+=== Step 1: Confirm the node and DTK kernels match
 
 [source,bash]
 ----
+# The kernel actually running on the GPU node.
+# Do NOT use `uname -r` - that reports the kernel of whatever host you are
+# typing on (usually a RHEL bastion), not the RHCOS node.
+oc get nodes -l nvidia.com/gpu.present=true \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.nodeInfo.kernelVersion}{"\n"}{end}'
+
+# The kernel baked into the Driver Toolkit for the cluster's release payload
 DTK_IMAGE=$(oc adm release info --image-for=driver-toolkit)
-echo "DTK: $DTK_IMAGE"
+podman run --rm --entrypoint cat "$DTK_IMAGE" /etc/driver-toolkit-release.json
 ----
 
-=== Step 2: Extract kernel packages from DTK
+The two kernel versions must be identical. If no GPU node exists yet, read the kernel from any worker instead - a GPU MachineSet cloned from the worker set boots the same RHCOS.
+
+IMPORTANT: Nodes lag the release payload while a MachineConfig rollout is in progress, which breaks the match. Confirm `oc get mcp` shows every pool `UPDATED=True`, not paused and not degraded, before trusting the comparison - and extract *after* any IDMS/ITMS reboot cycle, not before.
+
+TIP: Create the GPU MachineSet by cloning the worker MachineSet and changing only the name, the `machineset` labels, `replicas` and `instanceType`. Leaving `providerSpec.value.ami.id` untouched makes the kernel match structural instead of coincidental. The template at `manifests/00-disconnected/gpu-machineset.yaml` is a starting point, but a clone of your own worker set is safer.
+
+Also confirm the DTK image is actually in the mirror. `oc image info` does not apply the cluster's IDMS, so check the mirror path directly - IDMS maps `quay.io/openshift-release-dev/ocp-v4.0-art-dev` to `<mirror-registry>/openshift/release`:
+
+[source,bash]
+----
+oc get imagedigestmirrorset -o jsonpath='{range .items[*]}{range .spec.imageDigestMirrors[*]}{.source}{" -> "}{.mirrors[0]}{"\n"}{end}{end}' \
+  | grep art-dev
+
+podman manifest inspect <mirror-registry>/openshift/release@${DTK_IMAGE#*@} >/dev/null \
+  && echo PRESENT || echo MISSING
+----
+
+If the kernels match and the DTK image is present, skip to Step 2 - no local repo is required. If they do not match, fix the drift (converge the MachineConfigPool, or rebuild the GPU MachineSet from the current worker AMI). Do *not* jump to the fallback: it extracts from the DTK image, so a mismatched DTK yields the wrong `kernel-devel` and the module still will not load.
+
+=== Step 2: Confirm the driver built
+
+[source,bash]
+----
+# Two containers means the DTK route engaged. One means it did not.
+oc get pods -n nvidia-gpu-operator -l app=nvidia-driver-daemonset \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.name}{" "}{end}{"\n"}{end}'
+
+# The module is loaded and the GPU is visible
+POD=$(oc get pods -n nvidia-gpu-operator -l app=nvidia-driver-daemonset -o name | head -1)
+oc exec -n nvidia-gpu-operator "$POD" -c nvidia-driver-ctr -- nvidia-smi
+
+# Capacity exposed to the scheduler
+oc get nodes -l nvidia.com/gpu.present=true \
+  -o jsonpath='{.items[*].status.capacity.nvidia\.com/gpu}'
+----
+
+A healthy DTK build shows `nvidia-driver-ctr` and `openshift-driver-toolkit-ctr`, and the DaemonSet is named for the RHCOS version (for example `nvidia-driver-daemonset-9.6.20260715-0`). At this point `driver.repoConfig.configMapName` in the ClusterPolicy should still be empty - that is expected and correct.
+
+NOTE: If the driver pod never appears at all, the GPU operator has no labels to match on. Check that NFD is healthy (`oc get pods -n openshift-nfd`) and that the node carries `feature.node.kubernetes.io/pci-10de.present=true`. A broken NFD looks exactly like a driver problem but is not one.
+
+=== Fallback: serve kernel RPMs over HTTP
+
+Only needed when Step 2 shows a single-container driver pod - the operator did not pair with DTK despite a matching image being available. This happens on older GPU operator versions where `use_ocp_driver_toolkit` was unset or `false` (the field no longer exists in v26.x, where DTK handling is internal), or when the operator cannot resolve a DTK image for that RHCOS version.
+
+The approach is to take the kernel content out of the DTK image, repackage it as RPMs, and serve them to the driver container over HTTP.
+
+==== Step F1: Extract kernel files from DTK
+
+The obvious shortcut - run `dnf download kernel-devel-${KERNEL_VERSION}` inside the DTK container and get genuine RPMs - does not work. The DTK image has only the UBI repos configured (`ubi-9-baseos`, `ubi-9-appstream`, `ubi-9-codeready-builder`) and carries no entitlement certificates, and UBI does not ship kernel packages. Downloading on the bastion instead needs a host entitled for the `rhocp-*` and `*-eus-rpms` repos, which a disconnected lab bastion generally is not. That leaves the files already installed inside the DTK image as the only source of kernel content at the node's exact version - hence extraction.
+
+TIP: If you *do* have an entitled RHEL host that can reach the CDN, download the real `kernel-devel`, `kernel-headers` and `kernel` RPMs at the node's exact NVR and skip to Step F2's `createrepo_c`. Genuine RPMs are more reliable than hand-rolled ones because the NVRs and file layout are correct by construction.
 
 On a host that can pull from the mirror registry:
 
 [source,bash]
 ----
-KERNEL_VERSION=$(uname -r)  # or get from: oc debug node/<gpu-node> -- chroot /host uname -r
+DTK_IMAGE=$(oc adm release info --image-for=driver-toolkit)
 
-# Create a container from the DTK and copy kernel files
+# Take the version from the NODE, not from the extraction host
+KERNEL_VERSION=$(oc get nodes -l nvidia.com/gpu.present=true \
+  -o jsonpath='{.items[0].status.nodeInfo.kernelVersion}')
+
 podman create --name dtk-extract $DTK_IMAGE
 podman cp dtk-extract:/usr/src/kernels/${KERNEL_VERSION} /tmp/kernel-src/
 podman cp dtk-extract:/usr/include /tmp/kernel-headers/
@@ -261,24 +324,26 @@ podman cp dtk-extract:/lib/modules/${KERNEL_VERSION} /tmp/kernel-modules/
 podman rm dtk-extract
 ----
 
-=== Step 3: Build RPMs and create a local repo
+==== Step F2: Build RPMs and create a local repo
 
 [source,bash]
 ----
-# Install rpmbuild and createrepo_c
 yum install -y rpm-build createrepo_c
 
-# Build kernel-devel, kernel-headers and kernel RPMs from the extracted files
-# (use rpmbuild with custom spec files that package the DTK files)
-# See the rhoai-maas-guide repo for example spec files
+# No spec files ship with this guide. Write a minimal spec per package that
+# installs the extracted trees to their normal locations:
+#   kernel-devel   -> /usr/src/kernels/${KERNEL_VERSION}
+#   kernel-headers -> /usr/include
+#   kernel         -> /lib/modules/${KERNEL_VERSION}, including vmlinuz
+# The package NVRs must match ${KERNEL_VERSION} exactly, because the driver
+# build script installs them by fully-qualified version.
 
-# Create a yum repo from the RPMs
 mkdir -p /tmp/kernel-repo/rpms
 cp ~/rpmbuild/RPMS/x86_64/kernel*.rpm /tmp/kernel-repo/rpms/
 createrepo_c /tmp/kernel-repo/rpms/
 ----
 
-=== Step 4: Serve the repo and configure the GPU operator
+==== Step F3: Serve the repo and configure the GPU operator
 
 [source,bash]
 ----
@@ -301,9 +366,11 @@ oc patch clusterpolicy gpu-cluster-policy --type=merge \
 
 Replace `<bastion-ip>` with the IP of the host serving the repo. The GPU driver pod must be able to reach this host on port 8088.
 
-NOTE: The NVIDIA CUDA repo (`developer.download.nvidia.com`) must also be reachable from the GPU node for CUDA headers. If using a proxy, add this domain to the allow list. If fully air-gapped, the CUDA development packages must also be included in the local repo.
+IMPORTANT: `python3 -m http.server` does not survive a reboot and is not reproducible. For anything longer-lived than a one-off test, bake the RPMs into an image and serve them from an in-cluster Deployment instead.
 
-=== Step 5: Verify the driver
+NOTE: Some driver versions also pull CUDA development packages from `developer.download.nvidia.com`. This does not apply to the DTK route, which resolves everything locally and runs `nvidia-installer` with `--no-kernel-modules`. If you hit it on this fallback path, either allow that domain through the proxy or add the CUDA development packages to the local repo.
+
+==== Step F4: Verify the driver
 
 [source,bash]
 ----
