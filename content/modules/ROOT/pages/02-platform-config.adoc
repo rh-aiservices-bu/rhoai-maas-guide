@@ -295,6 +295,8 @@ oc patch gateway maas-default-gateway -n openshift-ingress --type=merge -p '{
 
 The Gateway restricts HTTPRoute attachment to namespaces explicitly labeled with `maas.opendatahub.io/gateway-access=true`. This follows the principle of least privilege - only namespaces that are designated to expose services through the Gateway can create routes.
 
+TIP: For additional Gateway hardening beyond namespace selectors - including RBAC restrictions on HTTPRoute creation, ValidatingAdmissionPolicy enforcement, and audit procedures - see the KCS link:https://access.redhat.com/solutions/7145755[How to verify and secure configuration of OpenShift AI Gateway for Model Serving].
+
 [IMPORTANT]
 ====
 Any namespace that needs to serve models through the MaaS Gateway must be labeled with `maas.opendatahub.io/gateway-access=true`. Without this label, HTTPRoutes created in that namespace will not be accepted by the Gateway and the model will not be reachable.
@@ -460,6 +462,7 @@ manifests/02-platform-config/
 * link:https://docs.redhat.com/en/documentation/red_hat_connectivity_link[Red Hat Connectivity Link documentation]
 * link:https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/monitoring/enabling-monitoring-for-user-defined-projects[OpenShift User Workload Monitoring]
 * link:https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/networking/gateway-api[Gateway API on OpenShift]
+* link:https://access.redhat.com/solutions/7145755[Gateway Hardening KCS - Verify and secure Gateway for Model Serving]
 
 == Next step
 
