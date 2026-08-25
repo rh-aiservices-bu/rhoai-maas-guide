@@ -12,7 +12,7 @@ spec:
   gatewayClassName: openshift-default
   listeners:
     - name: http
-      hostname: maas.${CLUSTER_DOMAIN}
+      hostname: ${MAAS_HOSTNAME}
       port: 80
       protocol: HTTP
       allowedRoutes:
@@ -22,7 +22,7 @@ spec:
             matchLabels:
               maas.opendatahub.io/gateway-access: "true"
     - name: https
-      hostname: maas.${CLUSTER_DOMAIN}
+      hostname: ${MAAS_HOSTNAME}
       port: 443
       protocol: HTTPS
       allowedRoutes:

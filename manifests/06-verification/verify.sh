@@ -213,7 +213,8 @@ log_info "Connected to: $(oc whoami --show-server)"
 
 # Detect cluster domain
 CLUSTER_DOMAIN=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')
-HOST="https://maas.${CLUSTER_DOMAIN}"
+MAAS_HOSTNAME="${MAAS_HOSTNAME:-maas.${CLUSTER_DOMAIN}}"
+HOST="https://${MAAS_HOSTNAME}"
 log_info "MaaS URL: ${HOST}"
 
 # Gateway
@@ -280,7 +281,7 @@ fi
 HEALTH_CODE="000"
 for attempt in 1 2 3; do
     HEALTH_CODE=$(curl -sSk --connect-timeout 10 --max-time 30 \
-        ${GATEWAY_IP:+--resolve "maas.${CLUSTER_DOMAIN}:443:${GATEWAY_IP}"} \
+        ${GATEWAY_IP:+--resolve "${MAAS_HOSTNAME}:443:${GATEWAY_IP}"} \
         -o /dev/null -w '%{http_code}' \
         "${HOST}/maas-api/health" 2>/dev/null) || true
     [ -z "$HEALTH_CODE" ] && HEALTH_CODE="000"
@@ -296,7 +297,7 @@ done
 # Helper for curl with optional DNS resolution (only for cloud LB hostnames)
 maas_curl() {
     if [ -n "${GATEWAY_IP:-}" ]; then
-        curl -sSk --connect-timeout 10 --max-time 30 --resolve "maas.${CLUSTER_DOMAIN}:443:${GATEWAY_IP}" "$@"
+        curl -sSk --connect-timeout 10 --max-time 30 --resolve "${MAAS_HOSTNAME}:443:${GATEWAY_IP}" "$@"
     else
         curl -sSk --connect-timeout 10 --max-time 30 "$@"
     fi
@@ -309,7 +310,7 @@ if [ "$HEALTH_CODE" = "000" ] && [ "$DISCONNECTED" = true ]; then
         -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}' 2>/dev/null || echo "")
     NODE_INT_IP=$(oc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
     if [ -n "$GW_NODEPORT" ] && [ -n "$NODE_INT_IP" ]; then
-        NODEPORT_HOST="maas.${CLUSTER_DOMAIN}"
+        NODEPORT_HOST="${MAAS_HOSTNAME}"
         HEALTH_CODE=$(curl -sSk --connect-timeout 10 --max-time 30 \
             --resolve "${NODEPORT_HOST}:${GW_NODEPORT}:${NODE_INT_IP}" \
             -o /dev/null -w '%{http_code}' \
@@ -332,7 +333,7 @@ if [ "$HEALTH_CODE" = "200" ]; then
     [ -z "${GW_NODEPORT:-}" ] && log_pass "Health endpoint returns HTTP 200"
 elif [ "$HEALTH_CODE" = "000" ]; then
     log_fail "Health endpoint unreachable (DNS may still be propagating, or gateway pod is restarting)"
-    log_warn "Try: curl -sk --resolve 'maas.${CLUSTER_DOMAIN}:443:<ELB_IP>' ${HOST}/maas-api/health"
+    log_warn "Try: curl -sk --resolve '${MAAS_HOSTNAME}:443:<ELB_IP>' ${HOST}/maas-api/health"
 else
     log_warn "Health endpoint returned HTTP $HEALTH_CODE (expected 200)"
 fi

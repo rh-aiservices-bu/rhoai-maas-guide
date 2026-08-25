@@ -4,7 +4,7 @@ metadata:
   name: maas-default-gateway-https
   namespace: openshift-ingress
 spec:
-  host: maas.${CLUSTER_DOMAIN}
+  host: ${MAAS_HOSTNAME}
   port:
     targetPort: https
   tls:

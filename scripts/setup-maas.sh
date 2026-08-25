@@ -25,6 +25,7 @@
 #   --skip-verify        Skip Phase 6 (verification)
 #   --with-observability Also run Phase 7 (Tempo + OpenTelemetry + COO + telemetry)
 #   --with-external-models Also run Phase 8 (ExternalModel deployment)
+#   --maas-hostname <h>  Custom gateway hostname (default: maas.<cluster-domain>, or MAAS_HOSTNAME env var)
 #   --external-model-api-key <key>  API key for external provider (or EXTERNAL_MODEL_API_KEY env var)
 #   --dry-run            Preview without applying
 #   -h, --help           Show this help message
@@ -57,6 +58,7 @@ SKIP_MODELS=false
 SKIP_VERIFY=false
 WITH_OBSERVABILITY=false
 WITH_EXTERNAL_MODELS=false
+MAAS_HOSTNAME="${MAAS_HOSTNAME:-}"
 EXTERNAL_MODEL_PROVIDER="${EXTERNAL_MODEL_PROVIDER:-openai}"
 EXTERNAL_MODEL_API_KEY="${EXTERNAL_MODEL_API_KEY:-}"
 DISCONNECTED=${DISCONNECTED:-false}
@@ -70,6 +72,7 @@ while [[ $# -gt 0 ]]; do
         --skip-verify) SKIP_VERIFY=true; shift ;;
         --with-observability) WITH_OBSERVABILITY=true; shift ;;
         --with-external-models) WITH_EXTERNAL_MODELS=true; shift ;;
+        --maas-hostname) MAAS_HOSTNAME="$2"; shift 2 ;;
         --external-model-provider) EXTERNAL_MODEL_PROVIDER="$2"; shift 2 ;;
         --external-model-api-key) EXTERNAL_MODEL_API_KEY="$2"; shift 2 ;;
         --disconnected) DISCONNECTED=true; shift ;;
@@ -85,6 +88,7 @@ idempotent  - re-running skips what's already done.
 Options:
   --model <name>       Model: simulator, granite-tiny-gpu, gpt-oss-20b, gemma, auto (default: auto)
   --from-phase <N>     Start from phase N (0-8, default: 0)
+  --maas-hostname <h>  Custom gateway hostname (default: maas.<cluster-domain>, or MAAS_HOSTNAME env var)
   --skip-models        Skip Phase 5 (model deployment)
   --skip-verify        Skip Phase 6 (verification)
   --disconnected       Disconnected/air-gapped mode (oci:// URIs, skip Phase 8)
@@ -162,6 +166,8 @@ if [ -z "$CLUSTER_DOMAIN" ]; then
     exit 1
 fi
 log_info "Cluster domain: ${CLUSTER_DOMAIN}"
+MAAS_HOSTNAME="${MAAS_HOSTNAME:-maas.${CLUSTER_DOMAIN}}"
+log_info "MaaS hostname:  ${MAAS_HOSTNAME}"
 
 # Detect TLS certificate name
 CERT_NAME=$(oc get ingresscontroller default -n openshift-ingress-operator \
@@ -277,6 +283,19 @@ if should_run 1; then
                 ns="${ns_label%% *}"
                 label="${ns_label#* }"
                 log_info "  Waiting for CSV in $ns..."
+                # Wait for CSV to appear first (oc wait exits immediately if no resources match)
+                CSV_WAIT_ELAPSED=0
+                while [ $CSV_WAIT_ELAPSED -lt 900 ]; do
+                    CSV_COUNT=$(oc get csv -n "$ns" -l "$label=" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                    [ "$CSV_COUNT" -gt 0 ] && break
+                    sleep 10
+                    CSV_WAIT_ELAPSED=$((CSV_WAIT_ELAPSED + 10))
+                    [ $((CSV_WAIT_ELAPSED % 60)) -eq 0 ] && log_info "    Still waiting for CSV to appear in $ns... (${CSV_WAIT_ELAPSED}s)"
+                done
+                if [ $CSV_WAIT_ELAPSED -ge 900 ]; then
+                    log_error "  CSV in $ns never appeared within 900s - aborting (re-run with --from-phase 1 after manual check)"
+                    exit 1
+                fi
                 oc wait csv -n "$ns" -l "$label=" \
                     --for=jsonpath='{.status.phase}'=Succeeded --timeout=900s 2>/dev/null || \
                     { log_error "  CSV in $ns did not reach Succeeded within 900s - aborting (re-run with --from-phase 1 after manual check)"; exit 1; }
@@ -355,9 +374,9 @@ if should_run 2; then
 
         if [ "$DRY_RUN" = false ]; then
             if ! oc wait --for=condition=Ready kuadrant/kuadrant -n kuadrant-system --timeout=60s 2>/dev/null; then
-                KUADRANT_MSG=$(oc get kuadrant kuadrant -n kuadrant-system \
-                    -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || echo "")
-                if echo "$KUADRANT_MSG" | grep -i "MissingDependency" >/dev/null 2>&1; then
+                KUADRANT_REASON=$(oc get kuadrant kuadrant -n kuadrant-system \
+                    -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}' 2>/dev/null || echo "")
+                if [ "$KUADRANT_REASON" = "MissingDependency" ]; then
                     log_warn "Kuadrant reports MissingDependency (Istio race)  - restarting operator pod..."
                     oc delete pod -n openshift-operators \
                         $(oc get pods -n openshift-operators --no-headers 2>/dev/null | grep kuadrant-operator | awk '{print $1}' | head -1) 2>/dev/null || \
@@ -434,14 +453,14 @@ if should_run 2; then
             log_error "Gateway template not found: $GATEWAY_TEMPLATE"
             exit 1
         fi
-        log_info "Rendering with CLUSTER_DOMAIN=${CLUSTER_DOMAIN}, CERT_NAME=${CERT_NAME}"
-        export CLUSTER_DOMAIN CERT_NAME
+        log_info "Rendering with CLUSTER_DOMAIN=${CLUSTER_DOMAIN}, CERT_NAME=${CERT_NAME}, MAAS_HOSTNAME=${MAAS_HOSTNAME}"
+        export CLUSTER_DOMAIN CERT_NAME MAAS_HOSTNAME
         # Apply gateway resource ConfigMap first (sets 2Gi memory limit via parametersRef)
         run_cmd oc apply -f "$MANIFESTS_DIR/02-platform-config/gateway-resources.yaml"
         if [ "$DRY_RUN" = true ]; then
             log_info "[DRY RUN] envsubst < gateway.yaml.tmpl | oc apply -f -"
         else
-            envsubst '${CLUSTER_DOMAIN} ${CERT_NAME}' < "$GATEWAY_TEMPLATE" | oc apply -f -
+            envsubst '${CLUSTER_DOMAIN} ${CERT_NAME} ${MAAS_HOSTNAME}' < "$GATEWAY_TEMPLATE" | oc apply -f -
         fi
         if [ "$DRY_RUN" = false ]; then
             if ! oc wait gateway/maas-default-gateway -n openshift-ingress --for=condition=Programmed --timeout=120s 2>/dev/null; then
@@ -511,8 +530,8 @@ if should_run 2; then
                     log_info "Creating passthrough Route as fallback..."
                     ROUTE_TMPL="$MANIFESTS_DIR/03-maas-platform/openshift-gateway-setup/route.yaml.tmpl"
                     if [ -f "$ROUTE_TMPL" ]; then
-                        export CLUSTER_DOMAIN
-                        envsubst '${CLUSTER_DOMAIN}' < "$ROUTE_TMPL" | oc apply -f -
+                        export CLUSTER_DOMAIN MAAS_HOSTNAME
+                        envsubst '${CLUSTER_DOMAIN} ${MAAS_HOSTNAME}' < "$ROUTE_TMPL" | oc apply -f -
                         log_info "Route maas-default-gateway-https created  - traffic routed via OpenShift ingress"
                     else
                         log_warn "Route template not found: $ROUTE_TMPL"
@@ -614,12 +633,12 @@ if should_run 3; then
     # Step 3: Ensure Gateway + TLS exists (may have been created in Phase 2)
     if ! oc get gateway maas-default-gateway -n openshift-ingress &>/dev/null 2>&1; then
         log_step "Rendering and applying Gateway (not created in Phase 2)..."
-        export CLUSTER_DOMAIN CERT_NAME
+        export CLUSTER_DOMAIN CERT_NAME MAAS_HOSTNAME
         run_cmd oc apply -f "$MANIFESTS_DIR/02-platform-config/gateway-resources.yaml"
         if [ "$DRY_RUN" = true ]; then
             log_info "[DRY RUN] envsubst < gateway.yaml.tmpl | oc apply -f -"
         else
-            envsubst '${CLUSTER_DOMAIN} ${CERT_NAME}' < "$MANIFESTS_DIR/02-platform-config/gateway.yaml.tmpl" | oc apply -f -
+            envsubst '${CLUSTER_DOMAIN} ${CERT_NAME} ${MAAS_HOSTNAME}' < "$MANIFESTS_DIR/02-platform-config/gateway.yaml.tmpl" | oc apply -f -
         fi
     fi
     # Ensure Authorino TLS is configured (may have been done in Phase 2)
@@ -732,7 +751,7 @@ if should_run 4; then
     # Health check (in disconnected mode, external ELB may be unreachable - try NodePort fallback)
     if [ "$DRY_RUN" = false ]; then
         HTTP_CODE=$(curl -sk --connect-timeout 10 --max-time 15 -o /dev/null -w '%{http_code}' \
-            "https://maas.${CLUSTER_DOMAIN}/maas-api/health" 2>/dev/null) || true
+            "https://${MAAS_HOSTNAME}/maas-api/health" 2>/dev/null) || true
         [ -z "$HTTP_CODE" ] && HTTP_CODE="000"
         if [ "$HTTP_CODE" = "200" ]; then
             log_info "Health endpoint: HTTP 200"
@@ -745,8 +764,8 @@ if should_run 4; then
             NODE_INT_IP=$(oc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
             if [ -n "$GW_NODEPORT" ] && [ -n "$NODE_INT_IP" ]; then
                 NP_CODE=$(curl -sk --connect-timeout 10 --max-time 15 -o /dev/null -w '%{http_code}' \
-                    --resolve "maas.${CLUSTER_DOMAIN}:${GW_NODEPORT}:${NODE_INT_IP}" \
-                    "https://maas.${CLUSTER_DOMAIN}:${GW_NODEPORT}/maas-api/health" 2>/dev/null) || true
+                    --resolve "${MAAS_HOSTNAME}:${GW_NODEPORT}:${NODE_INT_IP}" \
+                    "https://${MAAS_HOSTNAME}:${GW_NODEPORT}/maas-api/health" 2>/dev/null) || true
                 [ -z "$NP_CODE" ] && NP_CODE="000"
                 if [ "$NP_CODE" = "200" ] || [ "$NP_CODE" = "401" ]; then
                     log_info "Health endpoint: HTTP ${NP_CODE} (via NodePort ${GW_NODEPORT})"
@@ -1089,7 +1108,7 @@ if should_run 8 && [ "$WITH_EXTERNAL_MODELS" = true ]; then
                         log_warn "MaaSModelRef not Ready after ${TIMEOUT}s (phase: ${MODELREF_PHASE:-unknown})"
                     fi
 
-                    MAAS_GW="https://maas.${CLUSTER_DOMAIN}"
+                    MAAS_GW="https://${MAAS_HOSTNAME}"
                     OC_TOKEN=$(oc whoami -t 2>/dev/null || echo "")
                     if [ -n "$OC_TOKEN" ]; then
                         MODEL_READY=$(curl -sk "${MAAS_GW}/maas-api/v1/models" \
@@ -1158,7 +1177,7 @@ fi
 echo ""
 log_phase "" "Summary"
 
-MAAS_URL="https://maas.${CLUSTER_DOMAIN}"
+MAAS_URL="https://${MAAS_HOSTNAME}"
 
 if [ "$DRY_RUN" = true ]; then
     log_info "MaaS API URL:  ${MAAS_URL}"
@@ -1178,8 +1197,8 @@ else
         NODE_INT_IP=$(oc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
         if [ -n "$GW_NODEPORT" ] && [ -n "$NODE_INT_IP" ]; then
             HEALTH=$(curl -sk --connect-timeout 10 --max-time 15 -o /dev/null -w '%{http_code}' \
-                --resolve "maas.${CLUSTER_DOMAIN}:${GW_NODEPORT}:${NODE_INT_IP}" \
-                "https://maas.${CLUSTER_DOMAIN}:${GW_NODEPORT}/maas-api/health" 2>/dev/null) || true
+                --resolve "${MAAS_HOSTNAME}:${GW_NODEPORT}:${NODE_INT_IP}" \
+                "https://${MAAS_HOSTNAME}:${GW_NODEPORT}/maas-api/health" 2>/dev/null) || true
             [ -z "$HEALTH" ] && HEALTH="000"
             HEALTH="${HEALTH} (NodePort)"
         fi

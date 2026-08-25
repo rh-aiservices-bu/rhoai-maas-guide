@@ -13,8 +13,9 @@ spec:
         user: auth.identity.userid
         # Subscription metadata for usage attribution and billing
         subscription: auth.identity.selected_subscription
-        organization_id: auth.identity.subscription_info.organizationId
-        cost_center: auth.identity.subscription_info.costCenter
+        # Before RHOAI 3.4.4 (RHOAIENG-79318) organization_id and cost_center must be omitted
+        # organization_id: auth.identity.subscription_info.organizationId
+        # cost_center: auth.identity.subscription_info.costCenter
   targetRef:
     group: gateway.networking.k8s.io
     kind: Gateway
