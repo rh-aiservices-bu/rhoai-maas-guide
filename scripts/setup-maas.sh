@@ -679,7 +679,8 @@ if should_run 4; then
         log_step "Applying DSC and DSCI..."
         run_cmd oc apply -f "$MANIFESTS_DIR/04-rhoai-config/dscinitialization.yaml"
         run_cmd oc apply -f "$MANIFESTS_DIR/04-rhoai-config/datasciencecluster.yaml"
-        log_info "DSC/DSCI applied"
+        run_cmd oc apply -f "$MANIFESTS_DIR/04-rhoai-config/hardwareprofile.yaml"
+        log_info "DSC/DSCI/HardwareProfile applied"
 
         if [ "$DRY_RUN" = false ]; then
             log_info "Waiting for KserveReady condition (up to 5 minutes)..."

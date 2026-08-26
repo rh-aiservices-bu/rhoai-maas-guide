@@ -53,6 +53,15 @@ Create the Data Science Cluster:
 oc apply -f manifests/04-rhoai-config/datasciencecluster.yaml
 ----
 
+Apply the GPU HardwareProfile so RHOAI properly schedules GPU workloads:
+
+[source,bash]
+----
+oc apply -f manifests/04-rhoai-config/hardwareprofile.yaml
+----
+
+NOTE: Without this HardwareProfile, GPU model deployments may hang. The node will show `nvidia.com/gpu: 0` requested even when the GPU is physically present, because RHOAI needs a HardwareProfile to map GPU resources to workloads.
+
 The DataScienceCluster reconciles multiple components. Wait for `KServe` and the `Model Controller` (MaaS) to reach Ready:
 
 [source,bash]
@@ -151,6 +160,9 @@ Verify the following flags are set:
 
 | `OdhDashboardConfig/odh-dashboard-config`
 | Enables MaaS, GenAI Studio, Auth Policies, and Observability UI tabs
+
+| `HardwareProfile/gpu`
+| Registers GPU resources with RHOAI for proper GPU scheduling
 |===
 
 == Troubleshooting
@@ -180,6 +192,7 @@ manifests/04-rhoai-config/
   dscinitialization.yaml         # DSCInitialization CR
   datasciencecluster.yaml        # DataScienceCluster CR
   odh-dashboard-config.yaml      # OdhDashboardConfig CR
+  hardwareprofile.yaml           # GPU HardwareProfile for proper GPU scheduling
 ----
 
 == References

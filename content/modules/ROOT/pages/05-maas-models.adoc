@@ -12,6 +12,8 @@ IMPORTANT: This guide is not a replacement for the link:https://docs.redhat.com/
 * MaaS Gateway available in `openshift-ingress` namespace
 * `maas-api` and `maas-controller` pods running in `redhat-ods-applications`
 
+IMPORTANT: GPU models use FP8 quantization, which requires NVIDIA GPUs with compute capability >= 80 (Ampere architecture or newer). T4 GPUs (compute capability 75) and A10G GPUs are *not supported* with the current vLLM version. Use L4, L40, L40S, A100, or H100 GPUs.
+
 == Available Models
 
 === simulator (recommended for initial testing)
@@ -35,7 +37,7 @@ Red Hat AI Granite 4.0-h-tiny FP8 Dynamic, a small Granite model (~1B parameters
 
 === gemma
 
-Google Gemma 2 9B IT FP8 running on the Red Hat AI Inference Server (vLLM CUDA). A 9B parameter instruction-tuned model with FP8 quantization, suitable for general-purpose text generation and code tasks. Fits on a single A10G GPU (24GB VRAM).
+Google Gemma 2 9B IT FP8 running on the Red Hat AI Inference Server (vLLM CUDA). A 9B parameter instruction-tuned model with FP8 quantization, suitable for general-purpose text generation and code tasks. Fits on a single L4 GPU (24GB VRAM).
 
 * *Runtime*: vLLM CUDA (registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.3.0)
 * *Model weights*: OCI modelcar `registry.redhat.io/rhelai1/modelcar-gemma-2-9b-it-fp8:1.5`
@@ -48,7 +50,7 @@ NOTE: Gemma is a US-origin model, making it suitable for deployments with export
 
 === gpt-oss-20b
 
-OpenAI gpt-oss-20b running on the Red Hat AI Inference Server (vLLM CUDA). Requires a capable GPU node (A10G or better) with sufficient VRAM.
+OpenAI gpt-oss-20b running on the Red Hat AI Inference Server (vLLM CUDA). Requires a capable GPU node (L4 or better) with sufficient VRAM.
 
 * *Runtime*: vLLM CUDA (registry.redhat.io/rhaiis/vllm-cuda-rhel9:3.3.0)
 * *Model weights*: OCI modelcar from registry.redhat.io (~8GB download)
@@ -151,13 +153,13 @@ Or deploy a GPU model if your cluster has NVIDIA GPUs:
 
 [source,bash]
 ----
-# Gemma 2 9B IT FP8 (12GB+ VRAM, single A10G)
+# Gemma 2 9B IT FP8 (12GB+ VRAM, single L4)
 oc apply -k manifests/05-maas-models/gemma/
 
 # Granite 4.0-h-tiny FP8 (8GB+ VRAM)
 oc apply -k manifests/05-maas-models/granite-tiny-gpu/
 
-# GPT-oss-20b (16GB+ VRAM, A10G or better)
+# GPT-oss-20b (16GB+ VRAM, L4 or better)
 oc apply -k manifests/05-maas-models/gpt-oss-20b/
 ----
 

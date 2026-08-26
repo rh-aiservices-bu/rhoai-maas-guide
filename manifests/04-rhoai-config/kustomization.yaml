@@ -5,3 +5,4 @@ resources:
   - dscinitialization.yaml
   - datasciencecluster.yaml
   - odh-dashboard-config.yaml
+  - hardwareprofile.yaml
