@@ -403,6 +403,8 @@ for item in data.get('items',[]):
         if [ "${RESTORE_SUB:-false}" = true ]; then
             mv "$MANIFESTS_DIR/01-prerequisites/operators/rhoai-operator/subscription.yaml.bak" \
                "$MANIFESTS_DIR/01-prerequisites/operators/rhoai-operator/subscription.yaml"
+            run_cmd oc patch sub rhods-operator -n redhat-ods-operator \
+                --type merge -p '{"spec":{"channel":"stable-3.x"}}'
             log_info "Restored RHOAI subscription to channel: stable-3.x"
         fi
     fi
@@ -760,7 +762,8 @@ fi
 if should_run 4; then
     log_phase 4 "RHOAI Configuration"
 
-    if [ "$HAS_MAAS_MANAGED" = true ]; then
+    if [ "$HAS_MAAS_MANAGED" = true ] && \
+       { [ "$IS_35_PLUS" = false ] || [ "$MAAS_STATE_35" = "Managed" ]; }; then
         log_info "DSC already has MaaS: Managed, skipping"
     else
         log_step "Applying DSC and DSCI..."
