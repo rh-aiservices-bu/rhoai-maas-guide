@@ -109,7 +109,7 @@ Get the Keycloak route hostname and construct the issuer URL:
 
 [source,bash]
 ----
-KEYCLOAK_HOST=$(oc get route keycloak -n maas-keycloak -o jsonpath='{.spec.host}')
+KEYCLOAK_HOST=$(oc get route -n maas-keycloak -o jsonpath='{.items[0].spec.host}')
 KEYCLOAK_ISSUER="https://${KEYCLOAK_HOST}/realms/maas"
 echo "Issuer URL: ${KEYCLOAK_ISSUER}"
 ----
@@ -297,7 +297,7 @@ Expected output:
 
 [source,bash]
 ----
-KEYCLOAK_HOST=$(oc get route keycloak -n maas-keycloak -o jsonpath='{.spec.host}')
+KEYCLOAK_HOST=$(oc get route -n maas-keycloak -o jsonpath='{.items[0].spec.host}')
 KEYCLOAK_ISSUER="https://${KEYCLOAK_HOST}/realms/maas"
 
 TOKEN=$(curl -sSk -X POST "${KEYCLOAK_ISSUER}/protocol/openid-connect/token" \
@@ -335,7 +335,7 @@ API_KEY_RESPONSE=$(curl -sSk -X POST \
     "https://maas.${CLUSTER_DOMAIN}/maas-api/v1/api-keys")
 
 echo "$API_KEY_RESPONSE" | jq .
-API_KEY=$(echo "$API_KEY_RESPONSE" | jq -r '.apiKey')
+API_KEY=$(echo "$API_KEY_RESPONSE" | jq -r '.key')
 ----
 
 IMPORTANT: API keys capture the user's group memberships at the time of creation. If a user is removed from a group in Keycloak, their existing API keys retain the original group associations until they expire or are manually revoked.
