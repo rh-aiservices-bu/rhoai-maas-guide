@@ -62,6 +62,11 @@ NOTE: The namespace manifest includes the `maas.opendatahub.io/gateway-access=tr
 
 Create the provider credential Secret. This is done imperatively (never stored in manifests):
 
+[tabs]
+====
+RHOAI 3.5+::
++
+--
 [source,bash]
 ----
 oc create secret generic openai-api-key \
@@ -69,16 +74,30 @@ oc create secret generic openai-api-key \
     -n external-models \
     --dry-run=client -o yaml | oc apply -f -
 
-## RHOAI 3.5+
 oc label secret openai-api-key -n external-models \
     inference.llm-d.ai/ipp-managed=true --overwrite
+----
 
-## RHOAI 3.4
+IMPORTANT: The `inference.llm-d.ai/ipp-managed=true` label is required. Without it, the payload-processing ext-proc will not inject the API key and inference will fail with a 500 "credentials not found" error.
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc create secret generic openai-api-key \
+    --from-literal=api-key="$OPENAI_API_KEY" \
+    -n external-models \
+    --dry-run=client -o yaml | oc apply -f -
+
 oc label secret openai-api-key -n external-models \
     inference.networking.k8s.io/bbr-managed=true --overwrite
 ----
 
-IMPORTANT: The secret label is version-specific. RHOAI 3.5+ uses `inference.llm-d.ai/ipp-managed=true`. RHOAI 3.4 uses `inference.networking.k8s.io/bbr-managed=true`. Without the correct label, the ext-proc will not inject the API key and the provider will reject calls with a 500 "credentials not found" error.
+IMPORTANT: The `inference.networking.k8s.io/bbr-managed=true` label is required. Without it, the BBR ext-proc will not inject the API key and the provider will reject calls with 401.
+--
+====
 
 == Step 2: Apply the External Model Resources
 
@@ -280,6 +299,11 @@ oc apply -f manifests/08-external-models/bedrock/namespace.yaml
 
 Create the credential Secret (never stored in manifests):
 
+[tabs]
+====
+RHOAI 3.5+::
++
+--
 [source,bash]
 ----
 oc create secret generic bedrock-api-key \
@@ -287,14 +311,26 @@ oc create secret generic bedrock-api-key \
     -n external-models \
     --dry-run=client -o yaml | oc apply -f -
 
-## RHOAI 3.5+
 oc label secret bedrock-api-key -n external-models \
     inference.llm-d.ai/ipp-managed=true --overwrite
+----
+--
 
-## RHOAI 3.4
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc create secret generic bedrock-api-key \
+    --from-literal=api-key="$BEDROCK_API_KEY" \
+    -n external-models \
+    --dry-run=client -o yaml | oc apply -f -
+
 oc label secret bedrock-api-key -n external-models \
     inference.networking.k8s.io/bbr-managed=true --overwrite
 ----
+--
+====
 
 Apply the external model and MaaS governance resources:
 
