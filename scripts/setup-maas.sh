@@ -23,7 +23,7 @@
 #   --from-phase <N>     Start from phase N (default: 0)
 #   --skip-models        Skip Phase 5 (model deployment)
 #   --skip-verify        Skip Phase 6 (verification)
-#   --with-observability Also run Phase 7 (Tempo + OpenTelemetry + COO + telemetry)
+#   --with-observability Also run Phase 7 (Tempo + OpenTelemetry + COO + telemetry + Loki usage dashboards)
 #   --with-external-models Also run Phase 8 (ExternalModel deployment)
 #   --maas-hostname <h>  Custom gateway hostname (default: maas.<cluster-domain>, or MAAS_HOSTNAME env var)
 #   --external-model-api-key <key>  API key for external provider (or EXTERNAL_MODEL_API_KEY env var)
@@ -95,7 +95,7 @@ Options:
   --skip-models        Skip Phase 5 (model deployment)
   --skip-verify        Skip Phase 6 (verification)
   --disconnected       Disconnected/air-gapped mode (oci:// URIs, skip Phase 8)
-  --with-observability Also run Phase 7 (Tempo + OpenTelemetry + COO + Gateway telemetry)
+  --with-observability Also run Phase 7 (Tempo + OpenTelemetry + COO + telemetry + Loki usage dashboards)
   --with-external-models Also run Phase 8 (ExternalModel deployment + test)
   --external-model-provider <p>   Provider: openai (default), gemini, bedrock (or set EXTERNAL_MODEL_PROVIDER)
   --external-model-api-key <key>  API key for external provider (or set EXTERNAL_MODEL_API_KEY)
@@ -110,7 +110,7 @@ Phases:
   4  RHOAI config       DSC with MaaS: Managed, Dashboard flags
   5  Deploy model       Auto-detect GPU, apply model Kustomize manifests
   6  Verify             6-phase E2E verification (API, auth, rate limits)
-  7  Observability      Tempo + OpenTelemetry + COO + Gateway telemetry (only with --with-observability)
+  7  Observability      Tempo + OpenTelemetry + COO + telemetry + Loki usage dashboards (only with --with-observability)
   8  External models    ExternalModel + governance (only with --with-external-models, skipped in --disconnected)
 
 Auto-detection (--model auto):
@@ -1130,6 +1130,58 @@ if should_run 7 && [ "$WITH_OBSERVABILITY" = true ]; then
     log_step "Applying Gateway telemetry..."
     run_cmd oc apply -k "$MANIFESTS_DIR/07-observability/telemetry/"
     log_info "Gateway telemetry applied"
+
+    # Usage Dashboards with Loki (3.5+ only)
+    if [ "$IS_35_PLUS" = true ]; then
+        log_step "Installing Loki Operator (usage dashboards)..."
+        run_cmd oc apply -k "$MANIFESTS_DIR/07-observability/loki/"
+        if [ "$DRY_RUN" = false ]; then
+            log_info "Waiting for Loki CSV..."
+            TIMEOUT=300
+            ELAPSED=0
+            while [ $ELAPSED -lt $TIMEOUT ]; do
+                LOKI_PHASE=$(oc get csv -n openshift-operators-redhat --no-headers 2>/dev/null \
+                    | grep loki-operator | awk '{print $NF}' || echo "")
+                [ "$LOKI_PHASE" = "Succeeded" ] && break
+                sleep 10
+                ELAPSED=$((ELAPSED + 10))
+            done
+            if [ "${LOKI_PHASE:-}" = "Succeeded" ]; then
+                log_info "Loki CSV: Succeeded"
+            else
+                log_warn "Loki CSV not Succeeded after ${TIMEOUT}s"
+            fi
+        fi
+
+        log_step "Deploying MinIO + LokiStack for usage logging..."
+        LOKI_STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' 2>/dev/null || echo "")
+        if [ -z "$LOKI_STORAGE_CLASS" ]; then
+            LOKI_STORAGE_CLASS="gp3-csi"
+            log_warn "No default StorageClass found, using fallback: ${LOKI_STORAGE_CLASS}"
+        else
+            log_info "Using default StorageClass: ${LOKI_STORAGE_CLASS}"
+        fi
+        run_cmd oc apply -f "$MANIFESTS_DIR/07-observability/usage-logging/minio.yaml"
+        run_cmd oc apply -f "$MANIFESTS_DIR/07-observability/usage-logging/minio-secret.yaml"
+        if [ "$DRY_RUN" = true ]; then
+            log_info "[DRY RUN] lokistack.yaml with storageClassName=${LOKI_STORAGE_CLASS}"
+        else
+            sed "s/storageClassName: gp3-csi/storageClassName: ${LOKI_STORAGE_CLASS}/" \
+                "$MANIFESTS_DIR/07-observability/usage-logging/lokistack.yaml" | oc apply -f -
+        fi
+
+        if [ "$DRY_RUN" = false ]; then
+            log_info "Waiting for LokiStack to be ready..."
+            oc wait lokistack/usage -n redhat-ods-monitoring \
+                --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True --timeout=300s 2>/dev/null || \
+                log_warn "LokiStack not ready within 300s (may still be provisioning)"
+        fi
+
+        log_step "Enabling usage logging on MaaS Config..."
+        run_cmd oc patch configs.maas.opendatahub.io default --type=merge \
+            -p '{"spec":{"usageLogging":true}}'
+        log_info "Usage logging enabled - operator will create EnvoyFilter, OTEL Collector, and Perses dashboards"
+    fi
 fi
 
 # =============================================================================

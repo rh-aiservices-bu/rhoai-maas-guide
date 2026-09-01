@@ -12,6 +12,8 @@ This phase adds *optional* observability enhancements on top of UWM:
 
 . *Gateway Telemetry* - per-model, per-user, per-subscription usage metrics on the MaaS gateway. Adds fine-grained labels (`model`, `user`, `subscription`, `organization_id`, `cost_center`) to gateway metrics for usage attribution and billing.
 
+. *Loki Operator + Usage Dashboards* (RHOAI 3.5+ only) - log-based per-request usage tracking. The gateway emits structured OTLP access logs with token counts, user identity, and subscription info. Logs are shipped to a LokiStack via an OpenTelemetry Collector. The RHOAI console shows admin and user-scoped usage dashboards under *Observe & monitor*.
+
 TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
 
 IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} documentation (link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[3.4]). It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
@@ -111,9 +113,78 @@ Once COO is installed and the MaaS gateway is running:
 oc apply -k manifests/07-observability/telemetry/
 ----
 
+== Step 6: Usage Dashboards with Loki (RHOAI 3.5+ Only)
+
+RHOAI 3.5 introduces log-based usage dashboards that provide per-request token consumption, user attribution, and subscription tracking. Unlike the Prometheus-based metrics (which aggregate data), this approach emits structured OTLP access logs from the gateway and stores them in Loki for exact per-call granularity.
+
+When enabled, the RHOAI operator automatically creates:
+
+* *EnvoyFilter* `maas-model-access-logs` - emits OTLP structured access logs from the gateway on every inference request
+* *OpenTelemetry Collector* `usage-logs` - collects the access logs and exports them to the LokiStack
+* *Tenancy Proxy* `usage-logs-tenancy-proxy` - filters user-scoped usage data so non-admin users only see their own consumption
+* *Perses Dashboards* - admin (`dashboard-4-maas-usage-logs-admin`) and user-scoped (`dashboard-5-maas-usage-logs`) dashboards visible in the RHOAI console under *Observe & monitor*
+
+=== Step 6a: Install the Loki Operator
+
+[source,bash]
+----
+oc apply -k manifests/07-observability/loki/
+----
+
+Wait for the operator CSV:
+
+[source,bash]
+----
+oc wait csv -n openshift-operators-redhat \
+  -l operators.coreos.com/loki-operator.openshift-operators-redhat="" \
+  --for=jsonpath='{.status.phase}'=Succeeded --timeout=300s
+----
+
+=== Step 6b: Deploy S3 Storage for Loki
+
+Loki requires S3-compatible object storage. For non-production deployments, the guide includes a MinIO setup:
+
+[source,bash]
+----
+oc apply -k manifests/07-observability/usage-logging/
+----
+
+This deploys MinIO in `redhat-ods-monitoring`, creates a `loki` bucket, a storage secret, and the LokiStack CR.
+
+NOTE: The LokiStack manifest uses `gp3-csi` as default StorageClass (common on AWS). If your cluster uses a different default (e.g. `ocs-external-storagecluster-ceph-rbd` on OCS), edit `manifests/07-observability/usage-logging/lokistack.yaml` before applying. For production, replace MinIO with an ObjectBucketClaim (NooBaa/ODF) or a cloud S3 bucket and update `minio-secret` with the real credentials.
+
+Wait for the LokiStack to be ready:
+
+[source,bash]
+----
+oc wait lokistack/usage -n redhat-ods-monitoring \
+  --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True --timeout=300s
+----
+
+=== Step 6c: Enable Usage Logging
+
+Patch the MaaS Config to enable the usage logging pipeline:
+
+[source,bash]
+----
+oc patch configs.maas.opendatahub.io default --type=merge \
+  -p '{"spec":{"usageLogging":true}}'
+----
+
+The RHOAI operator will create the EnvoyFilter, OTEL Collector, Tenancy Proxy, and Perses Dashboards automatically. Verify:
+
+[source,bash]
+----
+oc get envoyfilter maas-model-access-logs -n openshift-ingress
+oc get opentelemetrycollector usage-logs -n redhat-ods-monitoring
+oc get persesdashboard -n redhat-ods-monitoring | grep usage-logs
+----
+
+The usage dashboards will appear in the RHOAI console under *Observe & monitor > Dashboard*, showing per-model token consumption, per-user breakdowns, and subscription usage.
+
 == Verification
 
-Check all three observability operators are installed:
+Check all four observability operators are installed:
 
 [source,bash]
 ----
@@ -125,6 +196,9 @@ oc get csv -n openshift-opentelemetry-operator | grep opentelemetry
 
 oc get csv -n openshift-cluster-observability-operator | grep cluster-observability-operator
 # Expected: cluster-observability-operator   Succeeded
+
+oc get csv -n openshift-operators-redhat | grep loki
+# Expected: loki-operator   Succeeded
 ----
 
 Check the required CRDs are registered:
@@ -139,6 +213,9 @@ oc get crd opentelemetrycollectors.opentelemetry.io
 
 # COO / Perses
 oc get crd perses.perses.dev
+
+# Loki
+oc get crd lokistacks.loki.grafana.com
 ----
 
 Check the TelemetryPolicy exists:
@@ -177,10 +254,20 @@ manifests/07-observability/
     namespace.yaml               # COO namespace
     operatorgroup.yaml           # COO OperatorGroup
     subscription.yaml            # COO Subscription
+  loki/
+    kustomization.yaml               # Loki operator subscription
+    namespace.yaml                   # openshift-operators-redhat namespace
+    operatorgroup.yaml               # Loki OperatorGroup
+    subscription.yaml                # Loki Subscription
   telemetry/
     gateway-telemetry-policy.yaml    # Kuadrant TelemetryPolicy
     istio-gateway-telemetry.yaml     # Istio Telemetry CR
     kustomization.yaml
+  usage-logging/
+    kustomization.yaml               # MinIO + LokiStack
+    minio.yaml                       # MinIO deployment + bucket job
+    minio-secret.yaml                # S3 credentials for Loki
+    lokistack.yaml                   # LokiStack CR (edit storageClassName for your cluster)
 ----
 
 == References
@@ -191,6 +278,8 @@ manifests/07-observability/
 * link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index#maas-observability_maas-deploy[RHOAI 3.5 Observability dashboard]
 * link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index#maas-observability_maas-deploy[RHOAI 3.4 Observability dashboard]
 * link:https://docs.kuadrant.io/dev/kuadrant-operator/doc/reference/telemetrypolicy/[Kuadrant TelemetryPolicy]
+* link:https://developers.redhat.com/articles/2026/07/06/track-model-usage-openshift-ai-usage-dashboard[Track model usage with the OpenShift AI Usage Dashboard]
+* link:https://opendatahub-io.github.io/models-as-a-service/dev/observability/setup/#logs-based-usage-dashboards[MaaS upstream - Logs-based Usage Dashboards]
 
 == Next step
 

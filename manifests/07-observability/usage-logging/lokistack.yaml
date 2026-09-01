@@ -1,0 +1,29 @@
+apiVersion: loki.grafana.com/v1
+kind: LokiStack
+metadata:
+  name: usage
+  namespace: redhat-ods-monitoring
+spec:
+  limits:
+    global:
+      otlp:
+        streamLabels:
+          resourceAttributes:
+            - name: service.name
+            - name: subscription
+            - name: model
+            - name: response_type
+            - name: kubernetes_namespace_name
+  managementState: Managed
+  size: 1x.demo
+  storage:
+    schemas:
+      - effectiveDate: "2024-10-01"
+        version: v13
+    secret:
+      credentialMode: static
+      name: minio-secret
+      type: s3
+  storageClassName: gp3-csi
+  tenants:
+    mode: openshift-logging
