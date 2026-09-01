@@ -1,11 +1,13 @@
-apiVersion: maas.opendatahub.io/v1alpha1
+apiVersion: inference.opendatahub.io/v1alpha1
 kind: ExternalModel
 metadata:
   name: aws-gpt-oss-20b
   namespace: external-models
 spec:
-  provider: bedrock-openai
-  targetModel: openai.gpt-oss-20b
-  endpoint: bedrock-mantle.us-east-2.api.aws
-  credentialRef:
-    name: bedrock-api-key
+  modelName: openai.gpt-oss-20b
+  externalProviderRefs:
+    - ref:
+        name: bedrock
+      targetModel: openai.gpt-oss-20b
+      apiFormat: openai-chat
+      path: /v1/chat/completions

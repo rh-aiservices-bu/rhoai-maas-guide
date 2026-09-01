@@ -1,11 +1,13 @@
-apiVersion: maas.opendatahub.io/v1alpha1
+apiVersion: inference.opendatahub.io/v1alpha1
 kind: ExternalModel
 metadata:
   name: gemini-2-5-flash
   namespace: external-models
 spec:
-  provider: openai
-  targetModel: gemini-2.5-flash
-  endpoint: generativelanguage.googleapis.com
-  credentialRef:
-    name: gemini-api-key
+  modelName: gemini-2.5-flash
+  externalProviderRefs:
+    - ref:
+        name: gemini
+      targetModel: gemini-2.5-flash
+      apiFormat: openai-chat
+      path: /v1beta/openai/chat/completions

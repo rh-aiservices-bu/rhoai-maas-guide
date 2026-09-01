@@ -1,0 +1,12 @@
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: bedrock
+  namespace: external-models
+spec:
+  provider: bedrock-openai
+  endpoint: bedrock-mantle.us-east-2.api.aws
+  auth:
+    type: apikey
+    secretRef:
+      name: bedrock-api-key

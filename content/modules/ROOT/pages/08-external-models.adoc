@@ -12,6 +12,29 @@ IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} docum
 
 == How It Works
 
+[tabs]
+====
+RHOAI 3.5+::
++
+--
+An external model deployment requires six resources:
+
+. *Secret* - stores the provider API key. Must have the label `inference.networking.k8s.io/bbr-managed=true` so the BBR ext-proc can inject the credential into upstream requests.
+
+. *ExternalProvider* - defines the provider endpoint and authentication configuration (API type, secret reference).
+
+. *ExternalModel* - references the provider and maps the model with routing config (`apiFormat`, `path`, `targetModel`). The BBR (Backend Binding Resolver) handles path rewriting and authentication header injection.
+
+. *MaaSModelRef* - registers the external model in the MaaS catalog so it appears in the API and can be governed.
+
+. *MaaSAuthPolicy* - grants access to specific users or groups.
+
+. *MaaSSubscription* - sets rate limits (tokens per hour) and priority.
+--
+
+RHOAI 3.4::
++
+--
 An external model deployment requires five resources:
 
 . *Secret* - stores the provider API key. Must have the label `inference.networking.k8s.io/bbr-managed=true` so the BBR ext-proc can inject the credential into upstream requests.
@@ -23,6 +46,8 @@ An external model deployment requires five resources:
 . *MaaSAuthPolicy* - grants access to specific users or groups.
 
 . *MaaSSubscription* - sets rate limits (tokens per hour) and priority.
+--
+====
 
 == Step 1: Create the Namespace and Secret
 
@@ -50,11 +75,57 @@ oc label secret openai-api-key -n external-models \
 
 IMPORTANT: The `inference.networking.k8s.io/bbr-managed=true` label is required. Without it, the BBR ext-proc will not inject the API key into upstream requests and the provider will reject calls with 401.
 
-== Step 2: Apply the ExternalModel CR
+== Step 2: Apply the External Model Resources
 
+[tabs]
+====
+RHOAI 3.5+::
++
+--
 [source,bash]
 ----
 oc apply -k manifests/08-external-models/openai/model/
+----
+
+This creates two resources - the `ExternalProvider` and `ExternalModel`:
+
+[source,yaml]
+----
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: openai
+  namespace: external-models
+spec:
+  provider: openai
+  endpoint: api.openai.com
+  auth:
+    type: apikey
+    secretRef:
+      name: openai-api-key
+---
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: gpt-4o-mini
+  namespace: external-models
+spec:
+  modelName: gpt-4o-mini
+  externalProviderRefs:
+    - ref:
+        name: openai
+      targetModel: gpt-4o-mini
+      apiFormat: openai-chat
+      path: /v1/chat/completions
+----
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc apply -f manifests/08-external-models/openai/model/external-model-34.yaml
 ----
 
 This creates the `ExternalModel` resource:
@@ -73,6 +144,8 @@ spec:
   credentialRef:
     name: openai-api-key
 ----
+--
+====
 
 == Step 3: Apply MaaS Governance
 
@@ -213,11 +286,58 @@ oc label secret bedrock-api-key -n external-models \
     inference.networking.k8s.io/bbr-managed=true --overwrite
 ----
 
-Apply the ExternalModel and MaaS governance resources:
+Apply the external model and MaaS governance resources:
 
+[tabs]
+====
+RHOAI 3.5+::
++
+--
 [source,bash]
 ----
 oc apply -k manifests/08-external-models/bedrock/model/
+oc apply -k manifests/08-external-models/bedrock/maas/
+----
+
+The ExternalProvider and ExternalModel CRs:
+
+[source,yaml]
+----
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: bedrock
+  namespace: external-models
+spec:
+  provider: bedrock-openai
+  endpoint: bedrock-mantle.us-east-2.api.aws
+  auth:
+    type: apikey
+    secretRef:
+      name: bedrock-api-key
+---
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: aws-gpt-oss-20b
+  namespace: external-models
+spec:
+  modelName: openai.gpt-oss-20b
+  externalProviderRefs:
+    - ref:
+        name: bedrock
+      targetModel: openai.gpt-oss-20b
+      apiFormat: openai-chat
+      path: /v1/chat/completions
+----
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc apply -f manifests/08-external-models/bedrock/model/external-model-34.yaml
 oc apply -k manifests/08-external-models/bedrock/maas/
 ----
 
@@ -237,6 +357,8 @@ spec:
   credentialRef:
     name: bedrock-api-key
 ----
+--
+====
 
 NOTE: The `endpoint` must match your AWS region. Replace `us-east-2` with your region if different.
 
@@ -283,6 +405,8 @@ curl -sk "${MAAS_GW}/external-models/aws-gpt-oss-20b/v1/chat/completions" \
 
 The BBR `openai` provider hardcodes the upstream path to `/v1/chat/completions`, but Gemini requires `/v1beta/openai/chat/completions`. See the <<google-gemini,Google Gemini>> section above for details. Tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592].
 
+NOTE: On RHOAI 3.5+, the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that allows overriding the upstream path. The Gemini manifest sets `path: /v1beta/openai/chat/completions`, which may resolve this issue without needing a dedicated Gemini provider translator in the BBR.
+
 == Appendix
 
 === Directory Structure
@@ -294,8 +418,10 @@ manifests/08-external-models/
     kustomization.yaml           # Top-level: namespace + model + maas
     namespace.yaml               # external-models namespace
     model/
-      kustomization.yaml
-      external-model.yaml        # ExternalModel CR (gpt-4o-mini)
+      kustomization.yaml         # References 3.5+ manifests (ExternalProvider + ExternalModel)
+      external-provider.yaml     # ExternalProvider CR (3.5+)
+      external-model.yaml        # ExternalModel CR (3.5+, references provider)
+      external-model-34.yaml     # ExternalModel CR (3.4, standalone with credentialRef)
     maas/
       kustomization.yaml
       maas-model.yaml            # MaaSModelRef
@@ -306,7 +432,9 @@ manifests/08-external-models/
     namespace.yaml
     model/
       kustomization.yaml
-      external-model.yaml        # ExternalModel CR (gemini-2.5-flash)
+      external-provider.yaml     # ExternalProvider CR (3.5+)
+      external-model.yaml        # ExternalModel CR (3.5+)
+      external-model-34.yaml     # ExternalModel CR (3.4)
     maas/
       kustomization.yaml
       maas-model.yaml
@@ -317,7 +445,9 @@ manifests/08-external-models/
     namespace.yaml
     model/
       kustomization.yaml
-      external-model.yaml        # ExternalModel CR (openai.gpt-oss-20b via Mantle)
+      external-provider.yaml     # ExternalProvider CR (3.5+)
+      external-model.yaml        # ExternalModel CR (3.5+)
+      external-model-34.yaml     # ExternalModel CR (3.4)
     maas/
       kustomization.yaml
       maas-model.yaml
@@ -336,7 +466,8 @@ The `provider` field in the ExternalModel spec maps to a BBR payload translator.
 
 == References
 
-* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index#maas-external-model_maas-deploy[RHOAI ExternalModel documentation]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index#maas-external-model_maas-deploy[RHOAI 3.5 ExternalProvider documentation]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index#maas-external-model_maas-deploy[RHOAI 3.4 ExternalModel documentation]
 * link:https://github.com/opendatahub-io/ai-gateway-payload-processing[BBR (ai-gateway-payload-processing) repository]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592 - Gemini BBR path incompatibility]
 

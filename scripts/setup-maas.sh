@@ -1200,8 +1200,13 @@ if should_run 8 && [ "$WITH_EXTERNAL_MODELS" = true ]; then
                     log_info "Secret ${EXTMODEL_SECRET} created/updated (bbr-managed label applied)"
                 fi
 
-                log_step "Applying ExternalModel CR..."
-                run_cmd oc apply -k "${PROVIDER_DIR}/model/"
+                if [ "$IS_35_PLUS" = true ]; then
+                    log_step "Applying ExternalProvider + ExternalModel CRs (3.5+)..."
+                    run_cmd oc apply -k "${PROVIDER_DIR}/model/"
+                else
+                    log_step "Applying ExternalModel CR (3.4)..."
+                    run_cmd oc apply -f "${PROVIDER_DIR}/model/external-model-34.yaml"
+                fi
 
                 log_step "Applying MaaS governance (MaaSModelRef, AuthPolicy, Subscription)..."
                 run_cmd oc apply -k "${PROVIDER_DIR}/maas/"

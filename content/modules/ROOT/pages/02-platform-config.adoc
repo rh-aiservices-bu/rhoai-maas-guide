@@ -339,7 +339,8 @@ oc label namespace redhat-ods-applications \
 
 NOTE: Model namespaces (`llm`, `external-models`) are labeled in their respective deployment phases.
 
-*Step 5e:* Create Passthrough Route (Non-Cloud Platforms Only)
+[id=step-5e-passthrough-route]
+=== Step 5e: Create Passthrough Route (Non-Cloud Platforms Only)
 
 If your platform type from Step 5a was `None`, `BareMetal`, or `OpenStack`, you must create a passthrough Route. This routes external traffic through the OpenShift ingress controller to the Gateway's LoadBalancer service.
 

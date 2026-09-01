@@ -1,0 +1,11 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: gpt-4o-mini
+  namespace: external-models
+spec:
+  provider: openai
+  targetModel: gpt-4o-mini
+  endpoint: api.openai.com
+  credentialRef:
+    name: openai-api-key

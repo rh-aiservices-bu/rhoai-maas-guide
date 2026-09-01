@@ -1,0 +1,12 @@
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: gemini
+  namespace: external-models
+spec:
+  provider: openai
+  endpoint: generativelanguage.googleapis.com
+  auth:
+    type: apikey
+    secretRef:
+      name: gemini-api-key
