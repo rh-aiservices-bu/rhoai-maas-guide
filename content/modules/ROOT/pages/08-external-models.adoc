@@ -453,7 +453,7 @@ curl -sk "${MAAS_GW}/external-models/aws-gpt-oss-20b/v1/chat/completions" \
 
 On RHOAI 3.4, the BBR `openai` provider hardcodes the upstream path to `/v1/chat/completions`, but Gemini requires `/v1beta/openai/chat/completions`. Inference requests return HTTP 404 from Google's API. Tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592].
 
-*Resolved in RHOAI 3.5+*: the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that overrides the upstream path. The Gemini manifest sets `path: /v1beta/openai/chat/completions`, and inference works end-to-end. Verified on cluster-68d72 (2026-09-01).
+*Resolved in RHOAI 3.5+*: the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that overrides the upstream path. The Gemini manifest sets `path: /v1beta/openai/chat/completions`, and inference works end-to-end.
 
 == Appendix
 
