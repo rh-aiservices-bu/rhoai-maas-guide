@@ -362,6 +362,25 @@ On non-cloud platforms, the Gateway's LoadBalancer service receives an IP from M
 The passthrough Route bridges external requests (via the OpenShift router at your cluster's public DNS) to the internal LoadBalancer IP, allowing the Gateway to be accessible from outside the cluster.
 ====
 
+[WARNING]
+====
+*Environments without a Router VIP (round-robin DNS)*
+
+This setup assumes `*.apps.<base_domain>` resolves to the OpenShift Router VIP so that the passthrough Route can intercept traffic for `maas.apps.<base_domain>`.
+
+In some on-prem environments, `*.apps` is configured as round-robin DNS pointing directly to worker node IPs instead of a single VIP. If the Router pods are not scheduled on all workers, requests may land on a node without a Router and fail silently.
+
+In that case, create a dedicated DNS A record for `maas.apps.<base_domain>` pointing to the MetalLB-assigned IP of the Gateway's LoadBalancer service:
+
+[source,bash]
+----
+oc get svc -n openshift-ingress maas-default-gateway-openshift-default \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+----
+
+Use that IP as the target for the DNS record.
+====
+
 Verify the Route was created:
 
 [source,bash]
