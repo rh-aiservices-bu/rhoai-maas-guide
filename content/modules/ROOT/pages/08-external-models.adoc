@@ -101,6 +101,8 @@ IMPORTANT: The `inference.networking.k8s.io/bbr-managed=true` label is required.
 
 == Step 2: Apply the External Model Resources
 
+Apply the model definition resources. The CRD structure changed between RHOAI versions:
+
 [tabs]
 ====
 RHOAI 3.5+::
@@ -244,9 +246,9 @@ The `--external-model-provider` flag selects which provider manifests to deploy 
 
 Manifests for Google Gemini (`gemini-2.5-flash`) are included under `manifests/08-external-models/gemini/`. To deploy Gemini instead of OpenAI, use `--external-model-provider gemini`.
 
-WARNING: There is a known incompatibility between the Gemini API and the BBR `openai` provider translator. The BBR hardcodes the upstream path to `/v1/chat/completions`, but Gemini's OpenAI-compatible endpoint requires `/v1beta/openai/chat/completions`. This means ExternalModel registration and MaaS governance will work correctly, but inference requests will return HTTP 404 from Google's API. This is tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592] and link:https://github.com/opendatahub-io/ai-gateway-payload-processing/issues/260[upstream issue #260]. Once a `gemini` provider translator is added to the BBR, Gemini external models will work end-to-end.
+NOTE: On RHOAI 3.4, there is a known incompatibility: the BBR `openai` provider hardcodes the upstream path to `/v1/chat/completions`, but Gemini requires `/v1beta/openai/chat/completions`, causing inference to return HTTP 404. This was tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592]. On RHOAI 3.5+, the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that overrides the upstream path, so Gemini works end-to-end.
 
-To deploy with Gemini (registration only, inference will 404):
+To deploy with Gemini:
 
 [source,bash]
 ----
@@ -447,11 +449,11 @@ curl -sk "${MAAS_GW}/external-models/aws-gpt-oss-20b/v1/chat/completions" \
 [[known-issues]]
 == Known Issues
 
-=== Gemini path incompatibility (RHOAIENG-68592)
+=== Gemini path incompatibility - RHOAI 3.4 only (RHOAIENG-68592)
 
-The BBR `openai` provider hardcodes the upstream path to `/v1/chat/completions`, but Gemini requires `/v1beta/openai/chat/completions`. See the <<google-gemini,Google Gemini>> section above for details. Tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592].
+On RHOAI 3.4, the BBR `openai` provider hardcodes the upstream path to `/v1/chat/completions`, but Gemini requires `/v1beta/openai/chat/completions`. Inference requests return HTTP 404 from Google's API. Tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-68592[RHOAIENG-68592].
 
-NOTE: On RHOAI 3.5+, the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that allows overriding the upstream path. The Gemini manifest sets `path: /v1beta/openai/chat/completions`, which may resolve this issue without needing a dedicated Gemini provider translator in the BBR.
+*Resolved in RHOAI 3.5+*: the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that overrides the upstream path. The Gemini manifest sets `path: /v1beta/openai/chat/completions`, and inference works end-to-end. Verified on cluster-68d72 (2026-09-01).
 
 == Appendix
 
