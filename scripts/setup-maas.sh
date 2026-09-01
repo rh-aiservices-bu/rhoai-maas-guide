@@ -1195,9 +1195,15 @@ if should_run 8 && [ "$WITH_EXTERNAL_MODELS" = true ]; then
                         --from-literal=api-key="$EXTERNAL_MODEL_API_KEY" \
                         -n "$EXTMODEL_NS" \
                         --dry-run=client -o yaml | oc apply -f - 2>/dev/null
-                    oc label secret "$EXTMODEL_SECRET" -n "$EXTMODEL_NS" \
-                        inference.networking.k8s.io/bbr-managed=true --overwrite 2>/dev/null
-                    log_info "Secret ${EXTMODEL_SECRET} created/updated (bbr-managed label applied)"
+                    if [ "$IS_35_PLUS" = true ]; then
+                        oc label secret "$EXTMODEL_SECRET" -n "$EXTMODEL_NS" \
+                            inference.llm-d.ai/ipp-managed=true --overwrite 2>/dev/null
+                        log_info "Secret ${EXTMODEL_SECRET} created/updated (ipp-managed label applied)"
+                    else
+                        oc label secret "$EXTMODEL_SECRET" -n "$EXTMODEL_NS" \
+                            inference.networking.k8s.io/bbr-managed=true --overwrite 2>/dev/null
+                        log_info "Secret ${EXTMODEL_SECRET} created/updated (bbr-managed label applied)"
+                    fi
                 fi
 
                 if [ "$IS_35_PLUS" = true ]; then

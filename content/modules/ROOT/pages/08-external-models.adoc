@@ -19,7 +19,7 @@ RHOAI 3.5+::
 --
 An external model deployment requires six resources:
 
-. *Secret* - stores the provider API key. Must have the label `inference.networking.k8s.io/bbr-managed=true` so the BBR ext-proc can inject the credential into upstream requests.
+. *Secret* - stores the provider API key. Must have the label `inference.llm-d.ai/ipp-managed=true` so the payload-processing ext-proc can inject the credential into upstream requests.
 
 . *ExternalProvider* - defines the provider endpoint and authentication configuration (API type, secret reference).
 
@@ -69,11 +69,16 @@ oc create secret generic openai-api-key \
     -n external-models \
     --dry-run=client -o yaml | oc apply -f -
 
+## RHOAI 3.5+
+oc label secret openai-api-key -n external-models \
+    inference.llm-d.ai/ipp-managed=true --overwrite
+
+## RHOAI 3.4
 oc label secret openai-api-key -n external-models \
     inference.networking.k8s.io/bbr-managed=true --overwrite
 ----
 
-IMPORTANT: The `inference.networking.k8s.io/bbr-managed=true` label is required. Without it, the BBR ext-proc will not inject the API key into upstream requests and the provider will reject calls with 401.
+IMPORTANT: The secret label is version-specific. RHOAI 3.5+ uses `inference.llm-d.ai/ipp-managed=true`. RHOAI 3.4 uses `inference.networking.k8s.io/bbr-managed=true`. Without the correct label, the ext-proc will not inject the API key and the provider will reject calls with a 500 "credentials not found" error.
 
 == Step 2: Apply the External Model Resources
 
@@ -282,6 +287,11 @@ oc create secret generic bedrock-api-key \
     -n external-models \
     --dry-run=client -o yaml | oc apply -f -
 
+## RHOAI 3.5+
+oc label secret bedrock-api-key -n external-models \
+    inference.llm-d.ai/ipp-managed=true --overwrite
+
+## RHOAI 3.4
 oc label secret bedrock-api-key -n external-models \
     inference.networking.k8s.io/bbr-managed=true --overwrite
 ----
