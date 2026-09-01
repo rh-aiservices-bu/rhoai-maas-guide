@@ -20,6 +20,9 @@
 .External Models
 * xref:08-external-models.adoc[Phase 8: External Models]
 
+.External OIDC Authentication
+* xref:09-external-oidc.adoc[Phase 9: External OIDC Authentication]
+
 .Reference
 * xref:08-architecture.adoc[Architecture & Request Flow]
 * xref:10-post-upgrade-troubleshooting.adoc[Post-Upgrade Troubleshooting]

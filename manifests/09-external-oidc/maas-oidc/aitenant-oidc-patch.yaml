@@ -1,0 +1,10 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: AITenant
+metadata:
+  name: models-as-a-service
+  namespace: ai-tenants
+spec:
+  oidc:
+    clientId: maas-oidc
+    issuerUrl: https://keycloak-maas-keycloak.apps.${CLUSTER_DOMAIN}/realms/maas
+    ttl: 300

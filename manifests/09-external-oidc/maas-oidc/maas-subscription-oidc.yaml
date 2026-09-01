@@ -1,0 +1,41 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: oidc-data-scientists
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "OIDC Data Scientists"
+    openshift.io/description: "Subscription for external OIDC data-scientists group"
+spec:
+  owner:
+    groups:
+      - name: data-scientists
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 100000
+          window: 1m
+  priority: 10
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: oidc-ml-engineers
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "OIDC ML Engineers"
+    openshift.io/description: "Subscription for external OIDC ml-engineers group"
+spec:
+  owner:
+    groups:
+      - name: ml-engineers
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 100000
+          window: 1m
+  priority: 20

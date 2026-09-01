@@ -1,0 +1,417 @@
+= Phase 9: External OIDC Authentication (Optional)
+
+NOTE: This phase requires a completed MaaS installation (through xref:04-rhoai-config.adoc[Phase 4]) and at least one model deployed (xref:05-maas-models.adoc[Phase 5]) to verify the OIDC flow end-to-end.
+
+By default, MaaS authenticates users via OpenShift tokens (TokenReview). External OIDC lets you integrate with identity providers like Keycloak, Okta, or Azure AD so users can access MaaS with their corporate credentials - no OpenShift accounts needed.
+
+TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
+
+IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} documentation (link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service#configuring-maas-external-oidc_maas-deploy[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[3.4]). It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
+
+== How It Works
+
+MaaS uses a two-tier authentication model with external OIDC:
+
+. *Platform API access* - Users get an OIDC token from the identity provider and use it as a Bearer token to call the MaaS API (list models, create API keys, manage subscriptions).
+
+. *Model inference* - Users create an API key through the MaaS API using their OIDC token. The API key is then used for inference requests (`/v1/chat/completions`). API keys capture the user's group memberships at creation time.
+
+Group-based access control works through OIDC token claims:
+
+. The OIDC provider defines user groups (e.g., `data-scientists`, `ml-engineers`)
+. The OIDC token includes a `groups` claim with the user's group memberships
+. MaaS subscriptions and authorization policies reference these group names
+. MaaS validates group memberships directly from the OIDC token - no OpenShift group sync needed
+
+NOTE: Group names in MaaS subscriptions must match the group names in the OIDC token `groups` claim exactly.
+
+IMPORTANT: When using external OIDC, users create API keys through the MaaS API using `curl` or other HTTP clients. The {rhoai} dashboard uses OpenShift OAuth and does not support API key creation for external OIDC users.
+
+== Automated Setup
+
+To deploy Keycloak, configure OIDC, and run verification in one go:
+
+[source,bash]
+----
+# Deploy Keycloak + configure MaaS for OIDC
+./manifests/09-external-oidc/setup-keycloak.sh
+
+# Verify the OIDC flow
+./manifests/09-external-oidc/test-external-oidc.sh
+----
+
+To tear everything down:
+
+[source,bash]
+----
+./manifests/09-external-oidc/setup-keycloak.sh --cleanup
+----
+
+The rest of this page walks through each step manually.
+
+== Step 1: Deploy Keycloak
+
+This section deploys Red Hat Build of Keycloak (RHBK) as the OIDC provider. If you already have an external identity provider, skip to <<step-3-configure-maas-for-external-oidc,Step 3>>.
+
+=== Install the RHBK operator
+
+[source,bash]
+----
+oc create namespace maas-keycloak --dry-run=client -o yaml | oc apply -f -
+oc apply -k manifests/09-external-oidc/keycloak/operator/
+----
+
+Wait for the operator to install:
+
+[source,bash]
+----
+# Watch until PHASE shows "Succeeded"
+oc get csv -n maas-keycloak -w
+----
+
+=== Deploy Keycloak and PostgreSQL
+
+[source,bash]
+----
+oc apply -k manifests/09-external-oidc/keycloak/instance/
+----
+
+This creates:
+
+* A PostgreSQL database for Keycloak storage
+* A Keycloak instance connected to PostgreSQL
+* A `KeycloakRealmImport` that creates the `maas` realm with test users and groups
+
+Wait for Keycloak to be ready:
+
+[source,bash]
+----
+# Wait for PostgreSQL
+oc rollout status deployment/keycloak-pgsql -n maas-keycloak --timeout=120s
+
+# Wait for Keycloak (check Ready condition)
+oc get keycloak keycloak -n maas-keycloak -w
+----
+
+The `READY` column should show `True`. Then check the realm import:
+
+[source,bash]
+----
+oc get keycloakrealmimport maas -n maas-keycloak \
+    -o jsonpath='{.status.conditions[?(@.type=="Done")].status}'
+----
+
+Should return `True`.
+
+== Step 2: Discover the Keycloak Issuer URL
+
+Get the Keycloak route hostname and construct the issuer URL:
+
+[source,bash]
+----
+KEYCLOAK_HOST=$(oc get route keycloak -n maas-keycloak -o jsonpath='{.spec.host}')
+KEYCLOAK_ISSUER="https://${KEYCLOAK_HOST}/realms/maas"
+echo "Issuer URL: ${KEYCLOAK_ISSUER}"
+----
+
+Verify the OIDC discovery endpoint is accessible:
+
+[source,bash]
+----
+curl -sSk "${KEYCLOAK_ISSUER}/.well-known/openid-configuration" | jq .
+----
+
+You should see a JSON document with `issuer`, `authorization_endpoint`, `token_endpoint`, and other OIDC metadata.
+
+=== Test users and groups
+
+The imported realm includes two test users:
+
+[cols="1,1,1", options="header"]
+|===
+| Username | Password | Groups
+
+| `maas-user`
+| `maas-user`
+| `data-scientists`, `ml-engineers`
+
+| `restricted-user`
+| `restricted-user`
+| `data-scientists`
+|===
+
+You can verify the groups claim by getting a token:
+
+[source,bash]
+----
+# Get a token for maas-user
+TOKEN=$(curl -sSk -X POST "${KEYCLOAK_ISSUER}/protocol/openid-connect/token" \
+    -d "grant_type=password" \
+    -d "client_id=maas-oidc" \
+    -d "username=maas-user" \
+    -d "password=maas-user" \
+    -d "scope=openid groups" | jq -r '.access_token')
+
+# Decode the JWT payload and check groups
+echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{groups, preferred_username}'
+----
+
+Expected output:
+
+[source,json]
+----
+{
+  "groups": [
+    "data-scientists",
+    "ml-engineers"
+  ],
+  "preferred_username": "maas-user"
+}
+----
+
+[[step-3-configure-maas-for-external-oidc]]
+== Step 3: Configure MaaS for External OIDC
+
+Patch the MaaS tenant resource with the OIDC provider configuration:
+
+[tabs]
+====
+RHOAI 3.5+::
++
+--
+[source,bash]
+----
+oc patch aitenants.maas.opendatahub.io models-as-a-service -n ai-tenants \
+    --type merge \
+    -p "{\"spec\": {\"oidc\": {\"clientId\": \"maas-oidc\", \"issuerUrl\": \"${KEYCLOAK_ISSUER}\", \"ttl\": 300}}}"
+----
+
+Verify the patch was applied:
+
+[source,bash]
+----
+oc get aitenant models-as-a-service -n ai-tenants -o jsonpath='{.spec.oidc}' | jq .
+----
+
+Expected output:
+
+[source,json]
+----
+{
+  "clientId": "maas-oidc",
+  "issuerUrl": "https://keycloak-maas-keycloak.apps.<cluster-domain>/realms/maas",
+  "ttl": 300
+}
+----
+
+The fields:
+
+* `clientId` - The Keycloak client ID registered for MaaS (`maas-oidc`)
+* `issuerUrl` - The OIDC issuer URL. MaaS fetches JWKS keys from `<issuerUrl>/.well-known/openid-configuration` to verify token signatures
+* `ttl` - How long (seconds) MaaS caches the OIDC provider's signing keys before refreshing (default: 300, minimum: 30)
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc patch tenants.maas.opendatahub.io default-tenant -n models-as-a-service \
+    --type merge \
+    -p "{\"spec\": {\"externalOIDC\": {\"clientId\": \"maas-oidc\", \"issuerUrl\": \"${KEYCLOAK_ISSUER}\"}}}"
+----
+
+Verify the patch was applied:
+
+[source,bash]
+----
+oc get tenant default-tenant -n models-as-a-service -o jsonpath='{.spec.externalOIDC}' | jq .
+----
+
+Expected output:
+
+[source,json]
+----
+{
+  "clientId": "maas-oidc",
+  "issuerUrl": "https://keycloak-maas-keycloak.apps.<cluster-domain>/realms/maas"
+}
+----
+--
+====
+
+== Step 4: Create Subscriptions for OIDC Groups
+
+MaaS subscriptions control which groups can access which models and at what rate limits. Create subscriptions that reference the OIDC group names:
+
+[source,bash]
+----
+oc apply -k manifests/09-external-oidc/maas-oidc/
+----
+
+This creates:
+
+* Two `MaaSSubscription` resources targeting the `data-scientists` and `ml-engineers` groups
+* Two `MaaSAuthPolicy` resources granting those groups access to the simulator model
+
+NOTE: The group names in subscriptions (`data-scientists`, `ml-engineers`) must match exactly the group names in the OIDC token `groups` claim. MaaS validates group memberships directly from the token without any OpenShift group sync.
+
+Verify the resources were created:
+
+[source,bash]
+----
+oc get maassubscription,maasauthpolicy -n models-as-a-service
+----
+
+You should see the OIDC subscriptions and auth policies alongside any existing ones.
+
+If you have models other than the simulator deployed, you can edit the subscription and auth policy manifests to reference your model names and namespaces before applying.
+
+== Step 5: Verify External OIDC
+
+=== Automated verification
+
+[source,bash]
+----
+./manifests/09-external-oidc/test-external-oidc.sh
+----
+
+Expected output:
+
+[source]
+----
+=========================================
+  External OIDC Test Summary
+=========================================
+  MaaS URL:    https://maas.<cluster-domain>
+  Keycloak:    https://keycloak-maas-keycloak.apps.<cluster-domain>
+  Passed:      6
+  Failed:      0
+  Status:      ALL CHECKS PASSED
+=========================================
+----
+
+=== Manual verification
+
+==== Get an OIDC token
+
+[source,bash]
+----
+KEYCLOAK_HOST=$(oc get route keycloak -n maas-keycloak -o jsonpath='{.spec.host}')
+KEYCLOAK_ISSUER="https://${KEYCLOAK_HOST}/realms/maas"
+
+TOKEN=$(curl -sSk -X POST "${KEYCLOAK_ISSUER}/protocol/openid-connect/token" \
+    -d "grant_type=password" \
+    -d "client_id=maas-oidc" \
+    -d "username=maas-user" \
+    -d "password=maas-user" \
+    -d "scope=openid groups" | jq -r '.access_token')
+
+echo "Token: ${TOKEN:0:50}..."
+----
+
+==== List available models
+
+[source,bash]
+----
+CLUSTER_DOMAIN=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')
+
+curl -sSk \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    "https://maas.${CLUSTER_DOMAIN}/maas-api/v1/models" | jq .
+----
+
+If authentication is successful, the API returns a list of models available to the groups in your token. An empty list means the token is valid but the user's groups have no matching subscriptions.
+
+==== Create an API key
+
+[source,bash]
+----
+API_KEY_RESPONSE=$(curl -sSk -X POST \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"name": "my-oidc-key", "expiresInDays": 7}' \
+    "https://maas.${CLUSTER_DOMAIN}/maas-api/v1/api-keys")
+
+echo "$API_KEY_RESPONSE" | jq .
+API_KEY=$(echo "$API_KEY_RESPONSE" | jq -r '.apiKey')
+----
+
+IMPORTANT: API keys capture the user's group memberships at the time of creation. If a user is removed from a group in Keycloak, their existing API keys retain the original group associations until they expire or are manually revoked.
+
+==== Run inference with the API key
+
+[source,bash]
+----
+curl -sSk -X POST \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"model": "simulator", "messages": [{"role": "user", "content": "Hello from OIDC!"}], "max_tokens": 20}' \
+    "https://maas.${CLUSTER_DOMAIN}/v1/chat/completions" | jq .
+----
+
+== Cleanup
+
+To remove the OIDC configuration and Keycloak:
+
+[source,bash]
+----
+# Automated cleanup
+./manifests/09-external-oidc/setup-keycloak.sh --cleanup
+----
+
+Or manually:
+
+[tabs]
+====
+RHOAI 3.5+::
++
+--
+[source,bash]
+----
+# Remove OIDC config from tenant
+oc patch aitenants.maas.opendatahub.io models-as-a-service -n ai-tenants \
+    --type json \
+    -p '[{"op": "remove", "path": "/spec/oidc"}]'
+
+# Remove OIDC subscriptions and auth policies
+oc delete maassubscription oidc-data-scientists oidc-ml-engineers -n models-as-a-service
+oc delete maasauthpolicy oidc-data-scientists-access oidc-ml-engineers-access -n models-as-a-service
+
+# Remove Keycloak
+oc delete namespace maas-keycloak
+----
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+# Remove OIDC config from tenant
+oc patch tenants.maas.opendatahub.io default-tenant -n models-as-a-service \
+    --type json \
+    -p '[{"op": "remove", "path": "/spec/externalOIDC"}]'
+
+# Remove OIDC subscriptions and auth policies
+oc delete maassubscription oidc-data-scientists oidc-ml-engineers -n models-as-a-service
+oc delete maasauthpolicy oidc-data-scientists-access oidc-ml-engineers-access -n models-as-a-service
+
+# Remove Keycloak
+oc delete namespace maas-keycloak
+----
+--
+====
+
+After removing the OIDC configuration, MaaS falls back to the default OpenShift TokenReview authentication. Existing API keys created by OIDC users will stop working once revoked or expired.
+
+== Bring Your Own Identity Provider
+
+If you have an existing OIDC provider (Okta, Azure AD, etc.) instead of Keycloak, you only need:
+
+. A public (or confidential) OIDC client registered for MaaS
+. The client configured to include the `groups` claim in ID/access tokens
+. User groups that map to MaaS subscription group names
+
+Skip Steps 1-2 and go directly to <<step-3-configure-maas-for-external-oidc,Step 3>>, replacing the `clientId` and `issuerUrl` with your provider's values.

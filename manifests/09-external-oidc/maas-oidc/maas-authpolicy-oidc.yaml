@@ -1,0 +1,33 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: oidc-data-scientists-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "OIDC Data Scientists Access"
+    openshift.io/description: "Grants data-scientists OIDC group access to the simulator model"
+spec:
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+  subjects:
+    groups:
+      - name: data-scientists
+    users: []
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: oidc-ml-engineers-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "OIDC ML Engineers Access"
+    openshift.io/description: "Grants ml-engineers OIDC group access to the simulator model"
+spec:
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+  subjects:
+    groups:
+      - name: ml-engineers
+    users: []

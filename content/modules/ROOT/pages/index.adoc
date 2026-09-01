@@ -100,6 +100,17 @@ Each phase has step-by-step instructions, status gates, and troubleshooting.
 | 5-10 min
 |===
 
+=== External OIDC Authentication
+
+[cols="1,3,1", options="header"]
+|===
+| Phase | Description | Time
+
+| xref:09-external-oidc.adoc[9. External OIDC Authentication] _(optional)_
+| Integrate MaaS with Keycloak or other OIDC providers for corporate authentication
+| 10-15 min
+|===
+
 == Automated Setup
 
 For end-to-end deployment using a single script, see the xref:quick-start.adoc[Automated Setup] page.
