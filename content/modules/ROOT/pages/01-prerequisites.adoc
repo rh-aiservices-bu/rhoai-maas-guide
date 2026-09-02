@@ -80,6 +80,21 @@ oc apply -k manifests/01-prerequisites/operators/
 
 This installs all four required operator subscriptions. OLM will resolve and install each operator automatically.
 
+[NOTE]
+====
+If any of these operators are already installed on your cluster (e.g. via OperatorHub), this command may fail with an OperatorGroup conflict - OLM only allows one OperatorGroup per namespace. In that case, delete the duplicate OperatorGroup that was just created:
+
+[source,bash]
+----
+# Check which namespaces have duplicate OperatorGroups
+for ns in redhat-ods-operator cert-manager-operator openshift-lws-operator; do
+  oc get operatorgroup -n "$ns" --no-headers 2>/dev/null
+done
+# Delete the one created by this guide (keep the existing one)
+oc delete operatorgroup <duplicate-name> -n <namespace>
+----
+====
+
 === Step 2 (Optional): Install GPU Operators
 
 If your cluster has GPU nodes (or you plan to add them), install the GPU operators:
@@ -164,6 +179,8 @@ Install the MetalLB operator:
 ----
 oc apply -k manifests/01-prerequisites/metallb/
 ----
+
+NOTE: If MetalLB is already installed on your cluster, this may fail with an OperatorGroup conflict. Delete the duplicate OperatorGroup from `metallb-system` namespace (see the note in Step 1 above).
 
 Wait for the MetalLB CSV to succeed, then create the MetalLB CR and configure an IP pool:
 

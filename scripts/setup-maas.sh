@@ -317,8 +317,23 @@ if should_run 1; then
         fi
 
         log_info "Applying operator subscriptions..."
-        run_cmd oc apply -k "$MANIFESTS_DIR/01-prerequisites/operators/"
-        log_info "Operator subscriptions applied"
+        # Apply each operator individually, skipping OperatorGroup if one already
+        # exists in the namespace to avoid OLM conflicts (GH #99)
+        for op_dir in "$MANIFESTS_DIR"/01-prerequisites/operators/*/; do
+            [ -d "$op_dir" ] || continue
+            for f in "$op_dir"*.yaml; do
+                [ -f "$f" ] || continue
+                if [ "$(basename "$f")" = "operatorgroup.yaml" ]; then
+                    og_ns=$(grep 'namespace:' "$f" | awk '{print $2}')
+                    if [ -n "$og_ns" ] && oc get operatorgroup -n "$og_ns" --no-headers 2>/dev/null | grep -q .; then
+                        log_info "OperatorGroup already exists in $og_ns, skipping"
+                        continue
+                    fi
+                fi
+                [ "$(basename "$f")" = "kustomization.yaml" ] && continue
+                run_cmd oc apply -f "$f"
+            done
+        done
 
         log_info "Waiting for operator CSVs (this may take 5-10 minutes)..."
         if [ "$DRY_RUN" = false ]; then
@@ -529,7 +544,19 @@ if should_run 2; then
 
                         if [ "$HAS_METALLB" = false ]; then
                             log_info "Installing MetalLB operator..."
-                            oc apply -k "$MANIFESTS_DIR/01-prerequisites/metallb/"
+                            # Apply MetalLB resources individually, skip OG if one exists (GH #99)
+                            for f in "$MANIFESTS_DIR"/01-prerequisites/metallb/*.yaml; do
+                                [ -f "$f" ] || continue
+                                [ "$(basename "$f")" = "kustomization.yaml" ] && continue
+                                [ "$(basename "$f")" = "metallb.yaml" ] && continue
+                                if [ "$(basename "$f")" = "operatorgroup.yaml" ]; then
+                                    if oc get operatorgroup -n metallb-system --no-headers 2>/dev/null | grep -q .; then
+                                        log_info "OperatorGroup already exists in metallb-system, skipping"
+                                        continue
+                                    fi
+                                fi
+                                oc apply -f "$f"
+                            done
                             log_info "Waiting for MetalLB CSV..."
                             METALLB_TIMEOUT=120
                             METALLB_ELAPSED=0
