@@ -482,35 +482,39 @@ if should_run 2; then
             log_info "[DRY RUN] Would wait for Kuadrant Ready"
         fi
 
-        log_step "Patching Authorino CR to enable TLS listener (docs section 1.4, step 2)..."
-        if [ "$DRY_RUN" = true ]; then
-            log_info "[DRY RUN] oc patch authorino authorino -n kuadrant-system --type=merge (enable TLS + certSecretRef)"
-        else
-            oc patch authorino authorino -n kuadrant-system --type=merge --patch '{
-              "spec": {
-                "listener": {
-                  "tls": {
-                    "enabled": true,
-                    "certSecretRef": {
-                      "name": "authorino-server-cert"
+        if oc get authorino authorino -n kuadrant-system &>/dev/null 2>&1; then
+            log_step "Patching Authorino CR to enable TLS listener (docs section 1.4, step 2)..."
+            if [ "$DRY_RUN" = true ]; then
+                log_info "[DRY RUN] oc patch authorino authorino -n kuadrant-system --type=merge (enable TLS + certSecretRef)"
+            else
+                oc patch authorino authorino -n kuadrant-system --type=merge --patch '{
+                  "spec": {
+                    "listener": {
+                      "tls": {
+                        "enabled": true,
+                        "certSecretRef": {
+                          "name": "authorino-server-cert"
+                        }
+                      }
                     }
                   }
-                }
-              }
-            }'
-            log_info "Authorino TLS listener enabled with certSecretRef: authorino-server-cert"
-        fi
+                }'
+                log_info "Authorino TLS listener enabled with certSecretRef: authorino-server-cert"
+            fi
 
-        log_step "Configuring Authorino TLS env vars (docs section 1.4, step 3)..."
-        run_cmd oc -n kuadrant-system set env deployment/authorino \
-            SSL_CERT_FILE=/etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt \
-            REQUESTS_CA_BUNDLE=/etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt
-        log_info "Authorino SSL env vars set"
+            log_step "Configuring Authorino TLS env vars (docs section 1.4, step 3)..."
+            run_cmd oc -n kuadrant-system set env deployment/authorino \
+                SSL_CERT_FILE=/etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt \
+                REQUESTS_CA_BUNDLE=/etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt
+            log_info "Authorino SSL env vars set"
 
-        if [ "$DRY_RUN" = false ]; then
-            oc get secret authorino-server-cert -n kuadrant-system &>/dev/null && \
-                log_info "Authorino TLS cert generated" || \
-                log_warn "Authorino TLS cert not yet available"
+            if [ "$DRY_RUN" = false ]; then
+                oc get secret authorino-server-cert -n kuadrant-system &>/dev/null && \
+                    log_info "Authorino TLS cert generated" || \
+                    log_warn "Authorino TLS cert not yet available"
+            fi
+        else
+            log_info "Authorino CR not yet available (Kuadrant waiting for Istio) - will configure TLS in Phase 3"
         fi
     fi
 
