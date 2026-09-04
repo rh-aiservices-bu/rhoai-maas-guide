@@ -116,7 +116,7 @@ The MaaSModelRef goes through these phases:
 | The resource spec is missing or structurally invalid.
 |===
 
-Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both reference the same MaaSModelRef. Both are required for the model to reach `Ready` phase.
+Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both reference the same MaaSModelRef. Both are required for the model to reach `Ready` phase. These two CRDs are independent - updating one does NOT auto-update the other. For details on keeping them in sync, see xref:05-maas-models.adoc#governance-pairing[Governance Pairing] in Phase 5.
 
 == What Changes vs What Stays the Same
 

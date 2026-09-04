@@ -92,6 +92,18 @@ Defines rate-limiting tiers for model access. Each model ships with two tiers:
 
 Higher-priority subscriptions take precedence. You can adjust limits, windows, and subject groups to match your usage policies.
 
+[[governance-pairing]]
+=== Governance Pairing: Why Both Are Required
+
+[IMPORTANT]
+====
+A `MaaSModelRef` reaches `Ready` phase only when *both* a `MaaSSubscription` AND a `MaaSAuthPolicy` reference it. This is called *governance pairing*. If only one of them references a model, the model stays in `Pending` phase with the condition `No active subscription and auth policy pairing found`, and inference requests will fail.
+
+These two CRDs are intentionally separate - they serve different purposes (access control vs rate limiting) and can target different groups. For example, you can grant all users access via one `MaaSAuthPolicy` while having separate `MaaSSubscription` resources with different rate limits per department.
+
+However, *updating one does NOT auto-update the other*. If you add a model to a `MaaSSubscription` (via CLI or UI), you must also add it to a `MaaSAuthPolicy`. The controller does not sync them automatically.
+====
+
 == Deploying a Model
 
 [NOTE]
@@ -228,6 +240,31 @@ For GPU models, replace the model name with `granite-4-tiny` or `gpt-oss-20b` as
 ----
 oc delete -k manifests/05-maas-models/simulator/
 ----
+
+== Adding a Model to an Existing Subscription
+
+If you already have a `MaaSSubscription` and `MaaSAuthPolicy` for one model and want to add a second model, you need to update *both* resources. This is a common Day 2 operation that catches people off guard.
+
+Deploy the new model (LLMInferenceService + MaaSModelRef) as usual, then update both the subscription and the auth policy:
+
+[source,bash]
+----
+# 1. Add the new model to the existing MaaSSubscription
+oc patch maassubscription <subscription-name> -n models-as-a-service --type=json \
+  -p '[{"op":"add","path":"/spec/modelRefs/-","value":{"name":"<new-model-ref>","namespace":"llm","tokenRateLimits":[{"limit":100,"window":"1m"}]}}]'
+
+# 2. Add the new model to the existing MaaSAuthPolicy
+oc patch maasauthpolicy <policy-name> -n models-as-a-service --type=json \
+  -p '[{"op":"add","path":"/spec/modelRefs/-","value":{"name":"<new-model-ref>","namespace":"llm"}}]'
+
+# 3. Verify the new model reaches Ready
+oc get maasmodelref -n llm -o wide
+----
+
+[WARNING]
+====
+If you update only the `MaaSSubscription` without updating the `MaaSAuthPolicy`, the new model will stay in `Pending` phase. The `MaaSModelRef` condition will show `No active subscription and auth policy pairing found`. This applies to both CLI and UI edits. See <<governance-pairing>> for details.
+====
 
 == Appendix
 
