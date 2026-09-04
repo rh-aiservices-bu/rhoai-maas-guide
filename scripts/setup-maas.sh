@@ -150,6 +150,28 @@ wait_for() {
     log_info "$desc: done"
 }
 
+wait_for_crd() {
+    local crd_name="$1"
+    local timeout="${2:-300}"
+    local elapsed=0
+    log_info "Waiting for CRD ${crd_name}..."
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Would wait for CRD: $crd_name"
+        return 0
+    fi
+    while [ $elapsed -lt $timeout ]; do
+        if oc get crd "$crd_name" &>/dev/null; then
+            log_info "CRD ${crd_name}: registered"
+            return 0
+        fi
+        sleep 10
+        elapsed=$((elapsed + 10))
+        [ $((elapsed % 60)) -eq 0 ] && log_info "  Still waiting for CRD ${crd_name}... (${elapsed}s)"
+    done
+    log_error "CRD ${crd_name} not registered within ${timeout}s"
+    return 1
+}
+
 # =============================================================================
 # Phase 0: Preflight
 # =============================================================================
@@ -806,8 +828,7 @@ if should_run 4; then
             log_info "Using RHOAI 3.4 DSC (kserve.modelsAsService)"
             run_cmd oc apply -f "$MANIFESTS_DIR/04-rhoai-config/datasciencecluster-34.yaml"
         fi
-        run_cmd oc apply -f "$MANIFESTS_DIR/04-rhoai-config/hardwareprofile.yaml"
-        log_info "DSC/DSCI/HardwareProfile applied"
+        log_info "DSC/DSCI applied"
 
         if [ "$DRY_RUN" = false ]; then
             log_info "Waiting for KserveReady condition (up to 5 minutes)..."
@@ -822,14 +843,15 @@ if should_run 4; then
                     log_warn "ModelControllerReady did not become True within 300s"
             fi
 
-            if oc get crd maasmodelrefs.maas.opendatahub.io &>/dev/null; then
-                log_info "MaaS CRDs registered"
-            else
-                log_warn "MaaS CRDs not yet registered  - operator may still be reconciling"
-            fi
+            wait_for_crd "maasmodelrefs.maas.opendatahub.io" 300
         fi
 
+        log_step "Applying HardwareProfile..."
+        wait_for_crd "hardwareprofiles.infrastructure.opendatahub.io" 300
+        run_cmd oc apply -f "$MANIFESTS_DIR/04-rhoai-config/hardwareprofile.yaml"
+
         log_step "Applying OdhDashboardConfig..."
+        wait_for_crd "odhdashboardconfigs.opendatahub.io" 300
         run_cmd oc apply -f "$MANIFESTS_DIR/04-rhoai-config/odh-dashboard-config.yaml"
         if [ "$DRY_RUN" = false ]; then
             for _attempt in 1 2 3; do
