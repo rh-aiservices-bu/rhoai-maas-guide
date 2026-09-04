@@ -1,4 +1,4 @@
-= Model Migration
+= Model Swap
 
 This page explains how to replace a model backend in {rhoai} {maas} without changing anything from the customer's perspective - same endpoint, same API key, same model ID. The key is the `MaaSModelRef` abstraction layer that decouples the customer-facing API from the actual inference backend.
 
@@ -8,18 +8,18 @@ IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} docum
 
 == Overview
 
-Model migration is the process of swapping the inference backend behind a model without affecting customers. Typical scenarios include:
+A model swap is the process of replacing the inference backend behind a model without affecting customers. Typical scenarios include:
 
 * Upgrading to a newer model version (e.g. Qwen 3.6 to Qwen 3.8)
 * Replacing a GPU model with a more efficient one
 * Moving from a simulator to a real model (or vice versa)
 * Switching hardware (e.g. different GPU type or node pool)
 
-The migration works because `MaaSModelRef` acts as an indirection layer. Auth policies, subscriptions, and API keys all reference the MaaSModelRef by name - they have no knowledge of which `LLMInferenceService` sits behind it. Swapping the backend is a one-field patch.
+The swap works because `MaaSModelRef` acts as an indirection layer. Auth policies, subscriptions, and API keys all reference the MaaSModelRef by name - they have no knowledge of which `LLMInferenceService` sits behind it. Swapping the backend is a one-field patch.
 
 == Resource Hierarchy
 
-Understanding how resources relate to each other is critical for a safe migration. Some resources are created by the admin, others are auto-created by `maas-controller`.
+Understanding how resources relate to each other is critical for a safe swap. Some resources are created by the admin, others are auto-created by `maas-controller`.
 
 [cols="2,1,1,3", options="header"]
 |===
@@ -63,34 +63,9 @@ Understanding how resources relate to each other is critical for a safe migratio
 
 === The Abstraction Layer
 
-The diagram below shows how the resources connect. The MaaSModelRef is the pivot point - everything above it (auth, subscriptions, API keys) stays the same during migration. Only the pointer below it (to the LLMInferenceService) changes.
+The diagram below shows how the resources connect. The MaaSModelRef is the pivot point - everything above it (auth, subscriptions, API keys) stays the same during a swap. Only the pointer below it (to the LLMInferenceService) changes.
 
-[source]
-----
-                    ┌──────────────────┐
-                    │   API Key        │
-                    │ (bound to sub)   │
-                    └────────┬─────────┘
-                             │ references
-                    ┌────────▼─────────┐
-                    │ MaaSSubscription  │──── rate limits
-                    └────────┬─────────┘
-                             │ references by name
-  ┌──────────────┐  ┌────────▼─────────┐
-  │MaaSAuthPolicy│──│  MaaSModelRef    │ ◄── stable identity
-  │ (access)     │  │  (the pointer)   │     (customers see this)
-  └──────────────┘  └────────┬─────────┘
-                             │ spec.modelRef.name
-           ┌─────────────────┼─────────────────┐
-           │ BEFORE          │                  │ AFTER
-  ┌────────▼─────────┐      │         ┌────────▼─────────┐
-  │LLMInferenceService│      │         │LLMInferenceService│
-  │ (old model)       │      │         │ (new model)       │
-  └──────────────────┘      │         └──────────────────┘
-                             │
-                      migration = change
-                      this one pointer
-----
+image::model-swap-diagram.png[Model Swap Architecture,align=center]
 
 === MaaSModelRef Phase Transitions
 
@@ -134,7 +109,7 @@ Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both r
 
 | MaaSModelRef name
 | *No*
-| This is the model identity that customers see. Keeping it the same is what makes the migration seamless.
+| This is the model identity that customers see. Keeping it the same is what makes the swap seamless.
 
 | MaaSAuthPolicy
 | *No*
@@ -164,13 +139,13 @@ Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both r
 * Admin access to the model namespace and `models-as-a-service` namespace
 * The replacement model image available (pulled or accessible from the cluster)
 
-== Migration Procedure
+== Swap Procedure
 
 This procedure assumes you have a model already deployed and registered with MaaS (LLMInferenceService + MaaSModelRef + MaaSAuthPolicy + MaaSSubscription). We will deploy a replacement LLMInferenceService, swap the MaaSModelRef pointer, and clean up the old resources.
 
 === Step 1: Deploy the Replacement Model
 
-Deploy a new LLMInferenceService alongside the existing one. Use the template in `manifests/99-model-migration/replacement-model/` or create your own.
+Deploy a new LLMInferenceService alongside the existing one. Use the template in `manifests/99-model-swap/replacement-model/` or create your own.
 
 IMPORTANT: The new LLMInferenceService *must* use the same `spec.model.name` as the existing one. This is the model ID that customers send in their API requests (`/v1/chat/completions`). If the names differ, customers would need to update their client code.
 
@@ -179,10 +154,10 @@ Edit the template to match your environment:
 [source,bash]
 ----
 # Review and customize the replacement model manifest
-vi manifests/99-model-migration/replacement-model/llm/model.yaml
+vi manifests/99-model-swap/replacement-model/llm/model.yaml
 
 # Deploy the replacement model
-oc apply -k manifests/99-model-migration/replacement-model/
+oc apply -k manifests/99-model-swap/replacement-model/
 ----
 
 Or deploy directly with a YAML manifest:
@@ -238,7 +213,7 @@ For GPU models, this can take 5-15 minutes while the image is pulled and model w
 
 === Step 3: Swap the MaaSModelRef Pointer
 
-This is the migration itself. Patch the MaaSModelRef to point to the new LLMInferenceService:
+This is the swap itself. Patch the MaaSModelRef to point to the new LLMInferenceService:
 
 [source,bash]
 ----
@@ -254,7 +229,7 @@ oc patch maasmodelref qwen-coder -n llm --type=merge \
   -p '{"spec":{"modelRef":{"name":"qwen-38"}}}'
 ----
 
-This one-field change is what makes the migration seamless. The MaaSModelRef name stays the same, so all auth policies, subscriptions, and API keys continue to work.
+This one-field change is what makes the swap seamless. The MaaSModelRef name stays the same, so all auth policies, subscriptions, and API keys continue to work.
 
 === Step 4: Delete the Old LLMInferenceService
 
@@ -306,7 +281,7 @@ oc get maassubscription -n models-as-a-service
 oc get tokenratelimitpolicy -n llm
 ----
 
-Test inference using the same API key and model ID as before the migration:
+Test inference using the same API key and model ID as before the swap:
 
 [source,bash]
 ----
@@ -374,11 +349,11 @@ Always use the model ID as returned by the `/v1/models` endpoint to avoid 404 er
 
 == Template Manifests
 
-The `manifests/99-model-migration/` directory contains a template for the replacement model:
+The `manifests/99-model-swap/` directory contains a template for the replacement model:
 
 [source]
 ----
-99-model-migration/
+99-model-swap/
   replacement-model/
     kustomization.yaml          # Aggregates llm/ subdirectory
     llm/
@@ -386,9 +361,9 @@ The `manifests/99-model-migration/` directory contains a template for the replac
       model.yaml                # LLMInferenceService template
 ----
 
-The template uses a CPU simulator by default. For a real migration, replace the container image, model URI, and resource requests in `model.yaml` to match the new model.
+The template uses a CPU simulator by default. For a real swap, replace the container image, model URI, and resource requests in `model.yaml` to match the new model.
 
-No `maas/` subdirectory is included because the MaaS control plane resources (MaaSModelRef, MaaSAuthPolicy, MaaSSubscription) already exist and do not change during migration. Only the LLMInferenceService backend is replaced.
+No `maas/` subdirectory is included because the MaaS control plane resources (MaaSModelRef, MaaSAuthPolicy, MaaSSubscription) already exist and do not change during a swap. Only the LLMInferenceService backend is replaced.
 
 == References
 

@@ -29,7 +29,7 @@
 
 .Reference
 * xref:08-architecture.adoc[Architecture & Request Flow]
-* xref:11-model-migration.adoc[Model Migration]
+* xref:11-model-swap.adoc[Model Swap]
 
 .Cleanup
 * xref:09-cleanup.adoc[Cleanup & Teardown]
