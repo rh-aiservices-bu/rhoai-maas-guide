@@ -25,6 +25,7 @@
 
 .Reference
 * xref:08-architecture.adoc[Architecture & Request Flow]
+* xref:11-model-migration.adoc[Model Migration]
 * xref:10-post-upgrade-troubleshooting.adoc[Post-Upgrade Troubleshooting]
 
 .Cleanup

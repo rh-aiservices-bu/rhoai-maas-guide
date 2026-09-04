@@ -1,0 +1,397 @@
+= Model Migration
+
+This page explains how to replace a model backend in {rhoai} {maas} without changing anything from the customer's perspective - same endpoint, same API key, same model ID. The key is the `MaaSModelRef` abstraction layer that decouples the customer-facing API from the actual inference backend.
+
+TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
+
+IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} documentation (link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[3.4]). It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
+
+== Overview
+
+Model migration is the process of swapping the inference backend behind a model without affecting customers. Typical scenarios include:
+
+* Upgrading to a newer model version (e.g. Qwen 3.6 to Qwen 3.8)
+* Replacing a GPU model with a more efficient one
+* Moving from a simulator to a real model (or vice versa)
+* Switching hardware (e.g. different GPU type or node pool)
+
+The migration works because `MaaSModelRef` acts as an indirection layer. Auth policies, subscriptions, and API keys all reference the MaaSModelRef by name - they have no knowledge of which `LLMInferenceService` sits behind it. Swapping the backend is a one-field patch.
+
+== Resource Hierarchy
+
+Understanding how resources relate to each other is critical for a safe migration. Some resources are created by the admin, others are auto-created by `maas-controller`.
+
+[cols="2,1,1,3", options="header"]
+|===
+| Resource | Namespace | Created By | Role
+
+| *LLMInferenceService*
+| `llm` (model ns)
+| Admin
+| Defines the inference workload: container, model weights, resources, gateway routing. This is the actual serving pod.
+
+| *MaaSModelRef*
+| `llm` (model ns)
+| Admin
+| Registers the model with the MaaS control plane. Points to an LLMInferenceService (or ExternalModel) via `spec.modelRef`. This is the stable identity that customers interact with.
+
+| *MaaSAuthPolicy*
+| `models-as-a-service`
+| Admin
+| Controls who can access the model. References MaaSModelRef by name + namespace.
+
+| *MaaSSubscription*
+| `models-as-a-service`
+| Admin
+| Defines rate-limiting tiers. References MaaSModelRef by name + namespace. API keys are permanently bound to a subscription at creation time.
+
+| *HTTPRoute*
+| `llm` (model ns)
+| Controller (KServe)
+| Routes traffic from the Gateway to the model pod. Created automatically when the LLMInferenceService is deployed.
+
+| *TokenRateLimitPolicy*
+| `llm` (model ns)
+| Controller (maas-controller)
+| Enforces token rate limits from MaaSSubscription. Owned by the HTTPRoute - garbage collected when the HTTPRoute is deleted.
+
+| *AuthPolicy (singleton)*
+| Gateway ns
+| Controller (maas-controller)
+| Shared gateway-level auth policy. One per gateway, not per model.
+|===
+
+=== The Abstraction Layer
+
+The diagram below shows how the resources connect. The MaaSModelRef is the pivot point - everything above it (auth, subscriptions, API keys) stays the same during migration. Only the pointer below it (to the LLMInferenceService) changes.
+
+[source]
+----
+                    ┌──────────────────┐
+                    │   API Key        │
+                    │ (bound to sub)   │
+                    └────────┬─────────┘
+                             │ references
+                    ┌────────▼─────────┐
+                    │ MaaSSubscription  │──── rate limits
+                    └────────┬─────────┘
+                             │ references by name
+  ┌──────────────┐  ┌────────▼─────────┐
+  │MaaSAuthPolicy│──│  MaaSModelRef    │ ◄── stable identity
+  │ (access)     │  │  (the pointer)   │     (customers see this)
+  └──────────────┘  └────────┬─────────┘
+                             │ spec.modelRef.name
+           ┌─────────────────┼─────────────────┐
+           │ BEFORE          │                  │ AFTER
+  ┌────────▼─────────┐      │         ┌────────▼─────────┐
+  │LLMInferenceService│      │         │LLMInferenceService│
+  │ (old model)       │      │         │ (new model)       │
+  └──────────────────┘      │         └──────────────────┘
+                             │
+                      migration = change
+                      this one pointer
+----
+
+=== MaaSModelRef Phase Transitions
+
+The MaaSModelRef goes through these phases:
+
+[cols="1,3", options="header"]
+|===
+| Phase | Meaning
+
+| *Pending*
+| Backend is initializing or no governance pairing found yet.
+
+| *Ready*
+| Backend is healthy AND at least one MaaSSubscription + MaaSAuthPolicy pair is active. Inference is possible.
+
+| *Unhealthy*
+| Governance is attached but the backend has a runtime or health failure.
+
+| *Failed*
+| Non-recoverable reconciliation error.
+
+| *Invalid*
+| The resource spec is missing or structurally invalid.
+|===
+
+Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both reference the same MaaSModelRef. Both are required for the model to reach `Ready` phase.
+
+== What Changes vs What Stays the Same
+
+[cols="2,1,3", options="header"]
+|===
+| Component | Changes? | Why
+
+| LLMInferenceService
+| Yes
+| New backend deployed, old one deleted.
+
+| MaaSModelRef `spec.modelRef.name`
+| Yes
+| Pointer swapped to the new LLMInferenceService.
+
+| MaaSModelRef name
+| *No*
+| This is the model identity that customers see. Keeping it the same is what makes the migration seamless.
+
+| MaaSAuthPolicy
+| *No*
+| References MaaSModelRef by name (unchanged).
+
+| MaaSSubscription
+| *No*
+| References MaaSModelRef by name (unchanged).
+
+| API keys
+| *No*
+| Bound to a subscription at creation time. Subscription is unchanged, so keys keep working.
+
+| Model ID in requests
+| *No*
+| Both LLMInferenceServices serve the same `spec.model.name`, so the model ID in `/v1/chat/completions` stays the same.
+
+| Endpoint URL
+| *No*
+| Resolved from MaaSModelRef (name unchanged).
+|===
+
+== Prerequisites
+
+* xref:01-prerequisites.adoc[Phases 1]-xref:04-rhoai-config.adoc[4] completed ({rhoai} installed, {maas} platform running)
+* An existing model deployed and serving through MaaS (see xref:05-maas-models.adoc[Phase 5: Model Deployment])
+* Admin access to the model namespace and `models-as-a-service` namespace
+* The replacement model image available (pulled or accessible from the cluster)
+
+== Migration Procedure
+
+This procedure assumes you have a model already deployed and registered with MaaS (LLMInferenceService + MaaSModelRef + MaaSAuthPolicy + MaaSSubscription). We will deploy a replacement LLMInferenceService, swap the MaaSModelRef pointer, and clean up the old resources.
+
+=== Step 1: Deploy the Replacement Model
+
+Deploy a new LLMInferenceService alongside the existing one. Use the template in `manifests/99-model-migration/replacement-model/` or create your own.
+
+IMPORTANT: The new LLMInferenceService *must* use the same `spec.model.name` as the existing one. This is the model ID that customers send in their API requests (`/v1/chat/completions`). If the names differ, customers would need to update their client code.
+
+Edit the template to match your environment:
+
+[source,bash]
+----
+# Review and customize the replacement model manifest
+vi manifests/99-model-migration/replacement-model/llm/model.yaml
+
+# Deploy the replacement model
+oc apply -k manifests/99-model-migration/replacement-model/
+----
+
+Or deploy directly with a YAML manifest:
+
+[source,yaml]
+----
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: <new-model-name>       # <1>
+  namespace: llm
+spec:
+  model:
+    uri: <model-uri>           # <2>
+    name: <vendor/model-name>  # <3>
+  replicas: 1
+  router:
+    route: {}
+    gateway:
+      refs:
+        - name: maas-default-gateway
+          namespace: openshift-ingress
+  template:
+    containers:
+      - name: main
+        image: "<inference-image>"  # <4>
+        # ... rest of container spec
+----
+<1> A new, unique name for the replacement model (e.g. `qwen-38`, `granite-v2`).
+<2> Model weights URI - update for the new model version.
+<3> Must match the existing model's `spec.model.name` exactly.
+<4> Inference runtime image - update if the new model uses a different runtime.
+
+=== Step 2: Verify the Replacement is Ready
+
+Wait for both LLMInferenceServices to be running:
+
+[source,bash]
+----
+oc get llminferenceservice -n llm
+----
+
+Expected output - both old and new show a `Ready` condition:
+
+[source]
+----
+NAME        READY   ...
+old-model   True    ...
+new-model   True    ...
+----
+
+For GPU models, this can take 5-15 minutes while the image is pulled and model weights are loaded.
+
+=== Step 3: Swap the MaaSModelRef Pointer
+
+This is the migration itself. Patch the MaaSModelRef to point to the new LLMInferenceService:
+
+[source,bash]
+----
+oc patch maasmodelref <maasmodelref-name> -n llm --type=merge \
+  -p '{"spec":{"modelRef":{"name":"<new-model-name>"}}}'
+----
+
+For example, if your MaaSModelRef is called `qwen-coder` and the new LLMInferenceService is `qwen-38`:
+
+[source,bash]
+----
+oc patch maasmodelref qwen-coder -n llm --type=merge \
+  -p '{"spec":{"modelRef":{"name":"qwen-38"}}}'
+----
+
+This one-field change is what makes the migration seamless. The MaaSModelRef name stays the same, so all auth policies, subscriptions, and API keys continue to work.
+
+=== Step 4: Delete the Old LLMInferenceService
+
+WARNING: You must delete the old LLMInferenceService *before* testing inference. Both LLMInferenceServices share the same `spec.model.name`, which creates conflicting body-based routing (BBR) HTTPRoute rules. The gateway continues routing to the first-created backend until the conflict is resolved.
+
+[source,bash]
+----
+oc delete llminferenceservice <old-model-name> -n llm
+----
+
+This deletes the old inference pods, its HTTPRoute, and frees any GPU resources it was using.
+
+=== Step 5: Clean Up Stale TokenRateLimitPolicy
+
+After swapping the MaaSModelRef and deleting the old LLMInferenceService, the `TokenRateLimitPolicy` (TRLP) may retain an owner reference to the old HTTPRoute. This causes the MaaSSubscription to go `Failed` because the TRLP references a non-existent route.
+
+Delete the stale TRLP so the controller can recreate it with the correct owner reference:
+
+[source,bash]
+----
+oc delete tokenratelimitpolicy maas-trlp-<maasmodelref-name> -n llm
+----
+
+For example:
+
+[source,bash]
+----
+oc delete tokenratelimitpolicy maas-trlp-qwen-coder -n llm
+----
+
+The `maas-controller` will automatically recreate the TRLP, now correctly owned by the new HTTPRoute.
+
+=== Step 6: Verify
+
+Confirm that everything is healthy:
+
+[source,bash]
+----
+# MaaSModelRef should be Ready
+oc get maasmodelref -n llm -o wide
+
+# Only the new LLMInferenceService should exist
+oc get llminferenceservice -n llm
+
+# Subscriptions should be active (not Failed)
+oc get maassubscription -n models-as-a-service
+
+# TRLP should exist and reference the new HTTPRoute
+oc get tokenratelimitpolicy -n llm
+----
+
+Test inference using the same API key and model ID as before the migration:
+
+[source,bash]
+----
+CLUSTER_DOMAIN=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')
+MAAS_URL="maas.${CLUSTER_DOMAIN}"
+
+# List models - should show the same model entry
+curl -sk "https://${MAAS_URL}/v1/models" \
+  -H "Authorization: Bearer ${API_KEY}" | jq .
+
+# Send inference - same model ID, same API key
+curl -sk "https://${MAAS_URL}/v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "<full-model-id>",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }' | jq .
+----
+
+NOTE: The model ID in the request body must be the full publisher path as returned by `/v1/models`. For LLMInferenceService models, this is `publishers/<namespace>/models/<spec.model.name>` (e.g. `publishers/llm/models/facebook/opt-125m`). Using the short name returns a 404.
+
+== Operational Notes
+
+[WARNING]
+====
+*BBR Routing Conflict*
+
+When two LLMInferenceServices in the same namespace share the same `spec.model.name`, their HTTPRoutes create conflicting body-based routing (BBR) rules. The gateway cannot disambiguate and routes to the first-created backend. This is why Step 4 (delete old model) must happen before Step 6 (verify) - not after.
+====
+
+[WARNING]
+====
+*TokenRateLimitPolicy Stale Owner Reference*
+
+The `TokenRateLimitPolicy` is auto-created by `maas-controller` and owned by the HTTPRoute. When the MaaSModelRef pointer changes, the TRLP still references the old HTTPRoute. Deleting the TRLP (Step 5) lets the controller recreate it with the correct owner. If you skip this, the MaaSSubscription may go `Failed` with an error like: `Object <namespace>/maas-trlp-<name> is already owned by another HTTPRoute`.
+====
+
+[NOTE]
+====
+*endpointOverride*
+
+If you created the MaaSModelRef manually (not through the Kustomize manifests in Phase 5), the controller may not be able to auto-discover the endpoint URL. In that case, set `spec.endpointOverride` on the MaaSModelRef:
+
+[source,bash]
+----
+oc patch maasmodelref <name> -n llm --type=merge \
+  -p '{"spec":{"endpointOverride":"https://maas.<cluster-domain>/"}}'
+----
+
+You can check if this is needed by looking at the MaaSModelRef status. If it is stuck in `Unhealthy` with an empty endpoint, `endpointOverride` is the fix.
+====
+
+[NOTE]
+====
+*Model ID Format*
+
+The model ID used in inference requests (`/v1/chat/completions`) is the full publisher path, not the short model name. For example:
+
+* Short name: `facebook/opt-125m`
+* Full publisher path: `publishers/llm/models/facebook/opt-125m`
+
+Always use the model ID as returned by the `/v1/models` endpoint to avoid 404 errors.
+====
+
+== Template Manifests
+
+The `manifests/99-model-migration/` directory contains a template for the replacement model:
+
+[source]
+----
+99-model-migration/
+  replacement-model/
+    kustomization.yaml          # Aggregates llm/ subdirectory
+    llm/
+      kustomization.yaml        # Sets namespace: llm
+      model.yaml                # LLMInferenceService template
+----
+
+The template uses a CPU simulator by default. For a real migration, replace the container image, model URI, and resource requests in `model.yaml` to match the new model.
+
+No `maas/` subdirectory is included because the MaaS control plane resources (MaaSModelRef, MaaSAuthPolicy, MaaSSubscription) already exist and do not change during migration. Only the LLMInferenceService backend is replaced.
+
+== References
+
+* xref:08-architecture.adoc[Architecture & Request Flow] - full {maas} component overview and request lifecycle
+* xref:05-maas-models.adoc[Phase 5: Model Deployment] - how to deploy a model from scratch
+* link:https://opendatahub-io.github.io/models-as-a-service/latest/[Upstream MaaS Documentation]
