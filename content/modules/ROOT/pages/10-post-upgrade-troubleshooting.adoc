@@ -35,6 +35,9 @@ The 3.5 release introduces several structural changes to the {maas} platform:
 
 | *Tenant CR*
 | `Tenant` is deprecated. Replaced by `MaasTenantConfig`. Legacy values are preserved during AITenant bootstrap.
+
+| *DSC component rename*
+| `llamastackoperator` is renamed to `ogx`. If upgrading from 3.4, update the DSC spec or the Playground section will not appear.
 |===
 
 [[issue-1]]

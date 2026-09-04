@@ -31,8 +31,8 @@ spec:
       defaultClusterQueueName: default
       defaultLocalQueueName: default
       managementState: Removed
-    # -- LlamaStack Operator (required for GenAI Studio) --
-    llamastackoperator:
+    # -- OGX (required for GenAI Studio / Playground) --
+    ogx:
       managementState: Managed
     # -- MLflow Operator --
     mlflowoperator:
