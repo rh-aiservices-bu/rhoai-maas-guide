@@ -69,7 +69,7 @@ RHOAI 3.4::
 oc apply -f manifests/04-rhoai-config/datasciencecluster-34.yaml
 ----
 
-WARNING: The `kserve.modelsAsService` DSC path is deprecated in RHOAI 3.5 and replaced by `aigateway.modelsAsAService`. Plan your migration to the 3.5+ manifest.
+WARNING: The `kserve.modelsAsService` DSC path is deprecated in RHOAI 3.5 and replaced by `aigateway.modelsAsAService`. Without `aigateway` set to `Managed`, regular (non-admin) users will not see the *AI asset endpoints* page in the Dashboard. If upgrading from 3.4, see xref:12-platform-upgrade.adoc[Platform Upgrade (3.4 -> 3.5)].
 --
 ====
 

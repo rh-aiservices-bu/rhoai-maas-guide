@@ -4,6 +4,8 @@ This page covers known issues and workarounds for customers who upgraded {rhoai}
 
 IMPORTANT: This guide is not a replacement for the official {rhoai} link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/release_notes/known-issues_relnotes[3.5 Release Notes - Known Issues]. Always check the release notes for the latest updates.
 
+TIP: For step-by-step migration instructions, see xref:12-platform-upgrade.adoc[Platform Upgrade (3.4 -> 3.5)]. This page covers troubleshooting for issues that occur during or after the migration.
+
 == What Changes in the 3.4 -> 3.5 Upgrade
 
 The 3.5 release introduces several structural changes to the {maas} platform:

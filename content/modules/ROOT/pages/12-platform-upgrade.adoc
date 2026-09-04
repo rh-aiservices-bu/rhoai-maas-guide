@@ -1,0 +1,340 @@
+= Platform Upgrade (3.4 -> 3.5)
+
+This page walks through migrating your {maas} configuration after upgrading the {rhoai} operator from 3.4 to 3.5. The operator upgrade itself is handled by OLM (change the subscription channel from `stable-3.4` to `stable-3.x`). This guide covers everything else: DSC fields, namespaces, ExternalModel API changes, and dashboard configuration.
+
+IMPORTANT: This guide is not a replacement for the official {rhoai} link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/release_notes/known-issues_relnotes[3.5 Release Notes - Known Issues]. Always check the release notes for the latest updates.
+
+== Prerequisites
+
+* {rhoai} 3.5+ operator is installed (OLM has completed the upgrade)
+* `cluster-admin` access
+* {maas} was previously working on 3.4
+
+Verify the operator version before proceeding:
+
+[source,bash]
+----
+oc get csv -n redhat-ods-operator | grep rhods-operator
+----
+
+Expected output (version must be 3.5.x or higher):
+
+[source]
+----
+NAME                     DISPLAY                 VERSION   REPLACES               PHASE
+rhods-operator.3.5.0     Red Hat OpenShift AI    3.5.0     rhods-operator.3.4.3   Succeeded
+----
+
+If the version still shows 3.4.x, the OLM upgrade has not completed yet. Check the subscription channel and InstallPlan before proceeding.
+
+== What Changes
+
+The 3.5 release restructures how {maas} is configured in the DataScienceCluster. Here are the key changes that require action:
+
+[cols="1,2,2", options="header"]
+|===
+| Area | 3.4 | 3.5+
+
+| *DSC MaaS field*
+| `kserve.modelsAsService`
+| `aigateway.modelsAsAService`
+
+| *DSC Playground*
+| `llamastackoperator`
+| `ogx`
+
+| *maas-api namespace*
+| `redhat-ods-applications`
+| `redhat-ai-gateway-infra`
+
+| *ExternalModel API*
+| `maas.opendatahub.io/v1alpha1`
+| `inference.opendatahub.io/v1alpha1` (ExternalProvider)
+
+| *Dashboard config*
+| `maasAuthPolicies` flag supported
+| `maasAuthPolicies` rejected by admission webhook
+|===
+
+For the full list of structural changes (status conditions, new CRDs, Tenant CR deprecation), see the xref:10-post-upgrade-troubleshooting.adoc#_what_changes_in_the_3_4_3_5_upgrade[What Changes] table in the troubleshooting page.
+
+== Step 1: Back Up Current State
+
+Before making any changes, back up your current configuration:
+
+[source,bash]
+----
+# Back up the DataScienceCluster
+oc get dsc default-dsc -o yaml > dsc-backup.yaml
+
+# Back up the dashboard config
+oc get odhdashboardconfig odh-dashboard-config -n redhat-ods-applications -o yaml > dashboard-backup.yaml
+
+# Back up ExternalModels if you have any
+oc get externalmodel.maas.opendatahub.io -A -o yaml > externalmodels-backup.yaml 2>/dev/null || true
+----
+
+== Step 2: Add aigateway Component to the DSC
+
+The {maas} control plane moved from `kserve.modelsAsService` to its own top-level `aigateway` component in 3.5. Add it to the DSC:
+
+[source,bash]
+----
+oc patch datasciencecluster default-dsc --type=merge \
+  -p '{"spec":{"components":{"aigateway":{"managementState":"Managed","modelsAsAService":{"managementState":"Managed"}}}}}'
+----
+
+WARNING: Without `aigateway` set to `Managed`, regular (non-admin) users will not see the *AI asset endpoints* page (under Gen AI studio) in the {rhoai} Dashboard. Admin users may still see it, which makes this a silent failure that only affects your end users.
+
+Verify the patch was applied:
+
+[source,bash]
+----
+oc get datasciencecluster default-dsc \
+  -o jsonpath='{.spec.components.aigateway.modelsAsAService.managementState}'
+# Expected: Managed
+----
+
+== Step 3: Add ogx Component (AI Playground)
+
+The `llamastackoperator` DSC component was renamed to `ogx` in 3.5. Add the new component:
+
+[source,bash]
+----
+oc patch datasciencecluster default-dsc --type=merge \
+  -p '{"spec":{"components":{"ogx":{"managementState":"Managed"}}}}'
+----
+
+NOTE: Without `ogx`, the AI Playground section will not appear in the Dashboard. The old `llamastackoperator` field can be left as-is in the DSC - it is ignored in 3.5.
+
+== Step 4: Handle the Frozen kserve.modelsAsService Field
+
+The old `kserve.modelsAsService` field is frozen by CEL validation (`self == oldSelf`). You cannot change its value in-place. This is by design - it prevents accidental removal of a running {maas} configuration during the transition period.
+
+You will see a policy 299 deprecation warning:
+
+[source]
+----
+DataScienceCluster default-dsc violates policy 299 - "spec.components.kserve.modelsAsService is deprecated;
+use spec.components.aigateway.modelsAsAService instead. Clear to Removed after migration (re-enabling is blocked).
+The field remains respected at least through 3.6."
+----
+
+This warning is **expected** at this point. Both old and new paths coexist through 3.6, so {maas} continues to work while both are present.
+
+After you have confirmed that `aigateway.modelsAsAService` is working (<<verification,Step 10>>), you can silence the warning by setting the old field to `Removed`:
+
+[source,bash]
+----
+oc patch datasciencecluster default-dsc --type=json \
+  -p '[{"op":"replace","path":"/spec/components/kserve/modelsAsService/managementState","value":"Removed"}]'
+----
+
+IMPORTANT: On fresh {rhoai} 3.5+ installs, do NOT add `kserve.modelsAsService` to the DSC. The CEL validation will reject any attempt to re-enable it after it has been set to `Removed`.
+
+== Step 5: Wait for DSC Ready
+
+Wait for the DataScienceCluster to finish reconciling after the patches:
+
+[source,bash]
+----
+oc wait datasciencecluster default-dsc --for=condition=Ready --timeout=600s
+----
+
+If the DSC does not become Ready within the timeout, check which component is blocking:
+
+[source,bash]
+----
+oc get datasciencecluster default-dsc -o jsonpath='{range .status.conditions[*]}{.type}: {.status} ({.reason}) {.message}{"\n"}{end}'
+----
+
+TIP: The MCP Lifecycle Operator (new in 3.5) is a common blocker - it can OOMKill on clusters with many secrets. See xref:10-post-upgrade-troubleshooting.adoc#issue-1[Issue 1: MCP Lifecycle Operator OOMKill] for the workaround.
+
+== Step 6: Verify Namespace and Secrets
+
+In 3.5, `maas-api` moves to the `redhat-ai-gateway-infra` namespace. The controller should auto-create this namespace and copy the `maas-db-config` secret.
+
+Verify the namespace exists:
+
+[source,bash]
+----
+oc get namespace redhat-ai-gateway-infra
+----
+
+Verify the `maas-db-config` secret was copied to the new namespace:
+
+[source,bash]
+----
+oc get secret maas-db-config -n redhat-ai-gateway-infra
+----
+
+If the secret is missing, copy it manually:
+
+[source,bash]
+----
+oc get secret maas-db-config -n redhat-ods-applications -o json | \
+  jq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.ownerReferences) | .metadata.namespace = "redhat-ai-gateway-infra"' | \
+  oc apply -f -
+----
+
+Verify `maas-api` is running in the new namespace:
+
+[source,bash]
+----
+oc rollout status deployment/maas-api -n redhat-ai-gateway-infra --timeout=120s
+----
+
+== Step 7: Label Namespace for Gateway Access
+
+If the MaaS gateway is configured with label-based namespace selection (the secure configuration), the new namespace needs the matching label. Without it, the gateway rejects HTTPRoutes from `redhat-ai-gateway-infra` and the Dashboard shows "Error loading components".
+
+[source,bash]
+----
+oc label namespace redhat-ai-gateway-infra maas.opendatahub.io/gateway-access=true --overwrite
+----
+
+Verify the HTTPRoutes are accepted:
+
+[source,bash]
+----
+oc get httproute -n redhat-ai-gateway-infra -o wide
+----
+
+If HTTPRoutes show `NotAccepted`, see xref:10-post-upgrade-troubleshooting.adoc#issue-3[Issue 3: MaaS Gateway Namespace Label] for diagnosis steps.
+
+== Step 8: Migrate ExternalModels (if applicable)
+
+If you have ExternalModel resources (third-party LLM APIs like OpenAI, Bedrock, Gemini), they need manual migration. The old `ExternalModel` CRD under `maas.opendatahub.io/v1alpha1` is not auto-migrated to the new `ExternalProvider` CRD under `inference.opendatahub.io/v1alpha1`.
+
+Check for existing ExternalModels:
+
+[source,bash]
+----
+# Old API group (3.4)
+oc get externalmodel.maas.opendatahub.io -A
+
+# New API group (3.5)
+oc get externalprovider.inference.opendatahub.io -A
+----
+
+If you have old ExternalModels, recreate each one under the new API. Example for an OpenAI provider:
+
+[source,bash]
+----
+# 1. Create the new ExternalProvider
+cat <<EOF | oc apply -f -
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: openai
+  namespace: <model-namespace>
+spec:
+  endpoint: "api.openai.com"
+  provider: "openai"
+  auth:
+    type: apikey
+    secretRef:
+      name: openai-api-key
+EOF
+
+# 2. Delete the old ExternalModel (after verifying the new one is Ready)
+oc get externalprovider openai -n <model-namespace>
+oc delete externalmodel.maas.opendatahub.io openai -n <model-namespace>
+----
+
+WARNING: The 3.5 `ExternalProvider` CRD has a stricter validation regex on `spec.auth.secretRef.name` that does not allow dots. If your secret names contain dots (e.g. `glm5.1-w8a8-key`), you must rename them first. See xref:10-post-upgrade-troubleshooting.adoc#issue-2[Issue 2: ExternalModel Migration - Secret Names with Dots] for details.
+
+== Step 9: Update OdhDashboardConfig
+
+The `maasAuthPolicies` flag was removed from the `OdhDashboardConfig` CRD in 3.5. The admission webhook rejects any manifest that includes it.
+
+Check if your dashboard config has the flag:
+
+[source,bash]
+----
+oc get odhdashboardconfig odh-dashboard-config -n redhat-ods-applications \
+  -o jsonpath='{.spec.dashboardConfig.maasAuthPolicies}'
+----
+
+If it returns a value, remove it:
+
+[source,bash]
+----
+oc patch odhdashboardconfig odh-dashboard-config -n redhat-ods-applications --type=json \
+  -p '[{"op":"remove","path":"/spec/dashboardConfig/maasAuthPolicies"}]'
+----
+
+[[verification]]
+== Step 10: Verification Checklist
+
+Run through these checks to confirm the migration is complete:
+
+[cols="2,3", options="header"]
+|===
+| Check | Command
+
+| DSC is Ready
+| `oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'` +
+Expected: `True`
+
+| maas-api in new namespace
+| `oc get pods -n redhat-ai-gateway-infra \| grep maas-api` +
+Expected: `Running`
+
+| MaaS Config CR exists
+| `oc get configs.maas.opendatahub.io default` +
+Expected: resource found
+
+| ModelsAsAServiceReady
+| `oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="ModelsAsAServiceReady")].status}'` +
+Expected: `True`
+
+| Health endpoint
+| `CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')` +
+`curl -sk "https://maas.${CLUSTER_DOMAIN}/maas-api/health"` +
+Expected: `{"status":"healthy"}`
+
+| Regular user sees AI asset endpoints
+| Log into the {rhoai} Dashboard as a non-admin user and verify the *AI asset endpoints* page is visible under Gen AI studio
+
+| No policy 299 warning (after Step 4 cleanup)
+| `oc get dsc default-dsc -o jsonpath='{.spec.components.kserve.modelsAsService.managementState}'` +
+Expected: `Removed` (or empty if the field was deleted)
+|===
+
+== Troubleshooting
+
+If you hit issues during migration, see the xref:10-post-upgrade-troubleshooting.adoc[Post-Upgrade Troubleshooting] page. Here is a quick mapping from migration symptoms to known issues:
+
+[cols="2,1", options="header"]
+|===
+| Symptom During Migration | See
+
+| DSC stuck not-ready after patching
+| xref:10-post-upgrade-troubleshooting.adoc#issue-1[Issue 1] (MCP Lifecycle Operator OOM)
+
+| Dashboard shows "Error loading components"
+| xref:10-post-upgrade-troubleshooting.adoc#issue-3[Issue 3] (namespace label) or xref:10-post-upgrade-troubleshooting.adoc#issue-4[Issue 4] (hostname discovery)
+
+| maas-api returns 500 on `/v1/tenants`
+| xref:10-post-upgrade-troubleshooting.adoc#issue-4[Issue 4] (gateway hostname discovery)
+
+| ExternalProvider creation fails on secret name
+| xref:10-post-upgrade-troubleshooting.adoc#issue-2[Issue 2] (dotted secret names)
+
+| HTTPRoutes show `NotAccepted`
+| xref:10-post-upgrade-troubleshooting.adoc#issue-3[Issue 3] (namespace label)
+
+| HTTP 500/503 under load after migration
+| xref:10-post-upgrade-troubleshooting.adoc#issue-7[Issue 7] (WASM auth timeout)
+
+| HTTP 429 Too Many Requests
+| xref:10-post-upgrade-troubleshooting.adoc#issue-9[Issue 9] (token rate limit default)
+|===
+
+== References
+
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/release_notes/known-issues_relnotes[RHOAI 3.5 Release Notes - Known Issues]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[RHOAI 3.5 MaaS Official Docs]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[RHOAI 3.4 MaaS Official Docs]
+* link:{repo-url}/issues/107[GH #107 - aigateway required for AI Assets Endpoints visibility]
