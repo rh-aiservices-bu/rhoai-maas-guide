@@ -109,7 +109,7 @@ oc get pods -n kuadrant-system
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-external-model.svg" alt="External model request sequence" style="min-width:1970px;width:100%" />
+<img src="_images/deepdive-external-model.svg" alt="External model request sequence" style="width:100%" />
 </div>
 ++++
 
@@ -194,7 +194,7 @@ oc get pods -n kuadrant-system
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-pd-disaggregated.svg" alt="Internal Model P/D disaggregated sequence" style="min-width:1450px;width:100%" />
+<img src="_images/deepdive-pd-disaggregated.svg" alt="Internal Model P/D disaggregated sequence" style="width:100%" />
 </div>
 ++++
 
@@ -318,7 +318,7 @@ oc get aitenant -A
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-debugging.svg" alt="Debugging decision tree" style="min-width:1170px;width:100%" />
+<img src="_images/deepdive-debugging.svg" alt="Debugging decision tree" style="width:100%" />
 </div>
 ++++
 
