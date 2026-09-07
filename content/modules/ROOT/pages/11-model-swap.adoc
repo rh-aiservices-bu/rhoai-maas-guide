@@ -1,6 +1,6 @@
 = Model Swap
 
-This page explains how to replace a model backend in {rhoai} {maas} without changing anything from the customer's perspective - same endpoint, same API key, same model ID. The key is the `MaaSModelRef` abstraction layer that decouples the customer-facing API from the actual inference backend.
+This page explains how to replace a model backend in {rhoai} {maas} without changing anything from the customer's perspective - same API key, same model ID. The key is the `MaaSModelRef` abstraction layer that decouples the customer-facing API from the actual inference backend. Customers must use the body-based routing (BBR) endpoint (`/v1/chat/completions`) for seamless swaps.
 
 TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
 
@@ -127,10 +127,16 @@ Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both r
 | *No*
 | Both LLMInferenceServices serve the same `spec.model.name`, so the model ID in `/v1/chat/completions` stays the same.
 
-| Endpoint URL
+| BBR endpoint (`/v1/chat/completions`)
 | *No*
-| Resolved from MaaSModelRef (name unchanged).
+| Body-based routing uses the model ID in the request body, which is derived from `spec.model.name` (unchanged). Customers using this endpoint need no changes.
+
+| Per-model URL path (`/llm/<name>/...`)
+| *Yes*
+| The per-model URL path is derived from the LLMInferenceService name, which changes during a swap. Customers using per-model URLs must switch to the BBR endpoint.
 |===
+
+WARNING: The per-model URL path (`/llm/<llminferenceservice-name>/v1/chat/completions`) changes after a swap because it is derived from the LLMInferenceService name, not the MaaSModelRef name. Always use the BBR endpoint (`/v1/chat/completions`) with the full publisher model ID in the request body (e.g. `publishers/llm/models/facebook/opt-125m`) for swap-safe client integration.
 
 == Prerequisites
 
