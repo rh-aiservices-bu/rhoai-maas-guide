@@ -239,7 +239,9 @@ This one-field change is what makes the swap seamless. The MaaSModelRef name sta
 
 === Step 4: Delete the Old LLMInferenceService
 
-WARNING: You must delete the old LLMInferenceService *before* testing inference. Both LLMInferenceServices share the same `spec.model.name`, which creates conflicting body-based routing (BBR) HTTPRoute rules. The gateway continues routing to the first-created backend until the conflict is resolved.
+Delete the old LLMInferenceService. Both LLMInferenceServices share the same `spec.model.name`, which creates two HTTPRoutes with identical BBR match rules. The gateway accepts both routes but sends 100% of traffic to the first-created backend (the old one) - the new model gets zero requests. Deleting the old model removes its HTTPRoute and lets the gateway route to the new one.
+
+NOTE: This means the swap is not zero-downtime. There is a brief window between deleting the old model and the new one's HTTPRoute taking effect where requests may fail. For most deployments the gap is under a few seconds.
 
 [source,bash]
 ----
@@ -316,7 +318,7 @@ NOTE: The model ID in the request body must be the full publisher path as return
 ====
 *BBR Routing Conflict*
 
-When two LLMInferenceServices in the same namespace share the same `spec.model.name`, their HTTPRoutes create conflicting body-based routing (BBR) rules. The gateway cannot disambiguate and routes to the first-created backend. This is why Step 4 (delete old model) must happen before Step 6 (verify) - not after.
+When two LLMInferenceServices in the same namespace share the same `spec.model.name`, their HTTPRoutes create identical BBR match rules. The gateway accepts both routes but routes 100% of traffic to the first-created backend - the new model receives zero requests. This was validated on OCP 4.21: 10/10 requests hit the old pod, 0/10 hit the new one. Deleting the old LLMInferenceService removes its HTTPRoute and lets the gateway discover the new one. There is no way to "test the new model first" while the old one exists.
 ====
 
 [WARNING]
