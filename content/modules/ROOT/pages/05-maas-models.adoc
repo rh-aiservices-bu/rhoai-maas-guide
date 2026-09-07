@@ -58,6 +58,19 @@ OpenAI gpt-oss-20b running on the Red Hat AI Inference Server (vLLM CUDA). Requi
 * *GPU memory*: ~16GB required
 * *Startup time*: 5-15 minutes (image pull + model loading)
 
+=== qwen3-06b
+
+Qwen3-0.6B running on the Red Hat AI Inference Server (vLLM CPU). A small but capable 0.6B parameter model that runs entirely on CPU - no GPU required. Good for clusters without GPU infrastructure that still need a real (non-simulated) LLM endpoint.
+
+* *Runtime*: vLLM CPU (registry.redhat.io/rhaiis/vllm-cpu-rhel9)
+* *Model weights*: HuggingFace `hf://Qwen/Qwen3-0.6B`
+* *Resources*: 4-8 CPU, 16Gi memory
+* *GPU*: Not required
+* *Context length*: 2048 tokens
+* *Startup time*: 2-5 minutes (HuggingFace download + CPU model loading)
+
+NOTE: This model downloads weights from HuggingFace (`hf://`), so it is subject to the same HuggingFace Xet download hang described above for the simulator. If the pod is stuck in `Init:0/1`, apply the `HF_HUB_DISABLE_XET` workaround.
+
 === simulator-disconnected
 
 A variant of the simulator for air-gapped clusters. Uses `oci://` storage URI instead of `hf://` because HuggingFace is unreachable in disconnected environments. Functionally identical to the connected simulator - the inference container generates random responses regardless of the model URI.
@@ -159,6 +172,14 @@ For disconnected (air-gapped) clusters, use the disconnected simulator variant:
 [source,bash]
 ----
 oc apply -k manifests/05-maas-models/simulator-disconnected/
+----
+
+Or deploy a CPU model that provides real inference without GPU:
+
+[source,bash]
+----
+# Qwen3-0.6B (CPU-only, no GPU required)
+oc apply -k manifests/05-maas-models/qwen3-06b/
 ----
 
 Or deploy a GPU model if your cluster has NVIDIA GPUs:
