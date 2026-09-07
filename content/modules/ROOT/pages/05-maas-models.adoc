@@ -214,6 +214,8 @@ API_KEY=$(curl -sk -X POST "https://${MAAS_URL}/maas-api/v1/api-keys" \
   -d '{"name": "test-key", "subscription": "simulator-free", "expiresIn": "1h"}' \
   | jq -r '.key')
 
+echo "API_KEY: ${API_KEY}"
+
 # List available models
 curl -sk "https://${MAAS_URL}/v1/models" \
   -H "Authorization: Bearer ${API_KEY}"
@@ -222,6 +224,8 @@ curl -sk "https://${MAAS_URL}/v1/models" \
 MODEL_URL=$(curl -sk "https://${MAAS_URL}/v1/models" \
   -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].url')
 
+echo "MODEL_URL: ${MODEL_URL}"
+
 # Send a chat completion request (uses the model-specific URL path)
 curl -sk "${MODEL_URL}/v1/chat/completions" \
   -H "Authorization: Bearer ${API_KEY}" \
@@ -229,7 +233,7 @@ curl -sk "${MODEL_URL}/v1/chat/completions" \
   -d '{
     "model": "facebook/opt-125m",
     "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+  }' | jq
 ----
 
 For GPU models, replace the model name with `granite-4-tiny` or `gpt-oss-20b` as appropriate.
