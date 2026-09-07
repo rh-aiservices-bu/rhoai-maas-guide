@@ -30,6 +30,7 @@
 .Reference
 * xref:08-architecture.adoc[Architecture & Request Flow]
 * xref:08b-request-deepdive.adoc[Request Deep Dive]
+* xref:08c-api-key-security.adoc[API Key Security]
 * xref:11-model-swap.adoc[Model Swap]
 
 .Cleanup
