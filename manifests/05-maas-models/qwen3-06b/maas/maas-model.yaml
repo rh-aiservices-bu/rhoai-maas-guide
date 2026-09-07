@@ -1,0 +1,12 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: qwen3-06b
+  namespace: llm
+  annotations:
+    openshift.io/display-name: "Qwen/Qwen3-0.6B"
+    openshift.io/description: "Qwen3 0.6B model on vLLM CPU - no GPU required"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: qwen3-06b
