@@ -53,7 +53,7 @@ Every component lives in a specific namespace. Here is the full layout for RHOAI
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-namespace-map.svg" alt="RHOAI 3.5 namespace map" style="min-width:1000px;width:100%" />
+<img src="_images/deepdive-namespace-map.svg" alt="RHOAI 3.5 namespace map" style="min-width:1800px;width:100%" />
 </div>
 ++++
 
@@ -109,7 +109,7 @@ oc get pods -n kuadrant-system
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-external-model.svg" alt="External model request sequence" style="min-width:1100px;width:100%" />
+<img src="_images/deepdive-external-model.svg" alt="External model request sequence" style="min-width:1970px;width:100%" />
 </div>
 ++++
 
@@ -194,7 +194,7 @@ oc get pods -n kuadrant-system
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-pd-disaggregated.svg" alt="Internal Model P/D disaggregated sequence" style="min-width:900px;width:100%" />
+<img src="_images/deepdive-pd-disaggregated.svg" alt="Internal Model P/D disaggregated sequence" style="min-width:1450px;width:100%" />
 </div>
 ++++
 
@@ -239,7 +239,7 @@ After step 16 (IPP Post returns to Gateway), the internal model flow diverges:
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-crd-hierarchy.svg" alt="CRD relationship hierarchy" style="min-width:1000px;width:100%" />
+<img src="_images/deepdive-crd-hierarchy.svg" alt="CRD relationship hierarchy" style="min-width:1750px;width:100%" />
 </div>
 ++++
 
@@ -318,7 +318,7 @@ oc get aitenant -A
 
 ++++
 <div style="overflow-x:auto;max-width:100%">
-<img src="_images/deepdive-debugging.svg" alt="Debugging decision tree" style="min-width:800px;width:100%" />
+<img src="_images/deepdive-debugging.svg" alt="Debugging decision tree" style="min-width:1170px;width:100%" />
 </div>
 ++++
 
