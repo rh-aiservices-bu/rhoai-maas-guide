@@ -372,11 +372,15 @@ oc get "${GATEWAY_DEPLOY}" -n openshift-ingress \
 
 If you are on RHCL 1.4.x, apply both workarounds from the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/release_notes/known-issues_relnotes#RHOAIENG-76586_relnotes[release notes]:
 
-**1. Increase gateway memory to 2Gi:**
+**1. Disconnect the Gateway from operator management and increase memory to 2Gi:**
 
 [source,bash]
 ----
 GATEWAY_NAME="maas-default-gateway"
+
+# Prevent operator from reverting gateway changes
+oc annotate gateway ${GATEWAY_NAME} -n openshift-ingress \
+  opendatahub.io/managed=false
 
 oc apply -f - <<EOF
 apiVersion: v1
@@ -403,6 +407,8 @@ oc patch gateway ${GATEWAY_NAME} -n openshift-ingress --type=merge \
 **2. Add identity filter to AuthPolicy:**
 
 Add a `response.success.filters.identity` section to your AuthPolicy so that Authorino writes the user identity into the WASM plugin context. Without this, rate limit counters that use `auth.identity.user.username` fail silently. See the full AuthPolicy patch in the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/release_notes/known-issues_relnotes#RHOAIENG-76586_relnotes[release notes].
+
+IMPORTANT: Remove the `opendatahub.io/managed=false` annotation from the Gateway before any future {rhoai} upgrades so the controller can manage it again.
 
 [[issue-7]]
 == Issue 7: WASM Auth Timeout Under Load
