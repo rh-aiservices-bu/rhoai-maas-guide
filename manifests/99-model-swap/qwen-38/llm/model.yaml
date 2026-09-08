@@ -1,16 +1,11 @@
 apiVersion: serving.kserve.io/v1alpha1
 kind: LLMInferenceService
 metadata:
-  # Change this name to something that identifies the new model version.
-  # Example: qwen-38, granite-v2, gemma-2-9b-v2
-  name: <new-model-name>
+  name: qwen-38
 spec:
   model:
     uri: hf://sshleifer/tiny-gpt2
-    # IMPORTANT: this must match the existing model's spec.model.name exactly.
-    # BBR (body-based routing) uses this field to route inference requests.
-    # If the names differ, customers would need to change the model ID in their API calls.
-    name: <vendor/model-name>
+    name: Qwen/Qwen3-Coder
   replicas: 1
   router:
     route: {}
@@ -28,7 +23,7 @@ spec:
           - --port
           - "8000"
           - --model
-          - <vendor/model-name>
+          - Qwen/Qwen3-Coder
           - --mode
           - random
           - --ssl-certfile

@@ -1,0 +1,16 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: qwen-coder-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Qwen Coder Access"
+    openshift.io/description: "Grants all authenticated users access to the Qwen Coder model"
+spec:
+  modelRefs:
+    - name: qwen-coder
+      namespace: llm
+  subjects:
+    groups:
+      - name: system:authenticated
+    users: []
