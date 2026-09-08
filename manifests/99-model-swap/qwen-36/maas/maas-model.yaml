@@ -1,0 +1,12 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: qwen-coder
+  namespace: llm
+  annotations:
+    openshift.io/display-name: "Qwen3 Coder (Simulated)"
+    openshift.io/description: "CPU-only simulator for testing model swap procedure"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: qwen-36

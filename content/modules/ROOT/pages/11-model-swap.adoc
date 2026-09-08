@@ -101,23 +101,23 @@ Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both r
 
 | LLMInferenceService
 | Yes
-| New backend deployed, old one deleted.
+| New backend deployed (`qwen-38`), old one deleted (`qwen-36`).
 
 | MaaSModelRef `spec.modelRef.name`
 | Yes
-| Pointer swapped to the new LLMInferenceService.
+| Pointer swapped from `qwen-36` to `qwen-38`.
 
 | MaaSModelRef name
 | *No*
-| This is the model identity that customers see. Keeping it the same is what makes the swap seamless.
+| `qwen-coder` is the stable identity that customers see. Keeping it the same is what makes the swap seamless.
 
 | MaaSAuthPolicy
 | *No*
-| References MaaSModelRef by name (unchanged).
+| References MaaSModelRef `qwen-coder` by name (unchanged).
 
 | MaaSSubscription
 | *No*
-| References MaaSModelRef by name (unchanged).
+| References MaaSModelRef `qwen-coder` by name (unchanged).
 
 | API keys
 | *No*
@@ -125,79 +125,69 @@ Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both r
 
 | Model ID in requests
 | *No*
-| Both LLMInferenceServices serve the same `spec.model.name`, so the model ID in `/v1/chat/completions` stays the same.
+| Both `qwen-36` and `qwen-38` serve the same `spec.model.name` (`Qwen/Qwen3-Coder`), so the model ID in `/v1/chat/completions` stays the same.
 
 | BBR endpoint (`/v1/chat/completions`)
 | *No*
-| Body-based routing uses the model ID in the request body, which is derived from `spec.model.name` (unchanged). Customers using this endpoint need no changes.
+| Body-based routing uses the model ID in the request body (`Qwen/Qwen3-Coder`), which is derived from `spec.model.name` (unchanged). Customers using this endpoint need no changes.
 
 | Per-model URL path (`/llm/<name>/...`)
 | *Yes*
-| The per-model URL path is derived from the LLMInferenceService name, which changes during a swap. Customers using per-model URLs must switch to the BBR endpoint.
+| The per-model URL path changes from `/llm/qwen-36/...` to `/llm/qwen-38/...` because it is derived from the LLMInferenceService name. Customers using per-model URLs must switch to the BBR endpoint.
 |===
 
-WARNING: The per-model URL path (`/llm/<llminferenceservice-name>/v1/chat/completions`) changes after a swap because it is derived from the LLMInferenceService name, not the MaaSModelRef name. Always use the BBR endpoint (`/v1/chat/completions`) with the full publisher model ID in the request body (e.g. `publishers/llm/models/facebook/opt-125m`) for swap-safe client integration.
+WARNING: The per-model URL path changes after a swap: `/llm/qwen-36/v1/chat/completions` becomes `/llm/qwen-38/v1/chat/completions` because it is derived from the LLMInferenceService name, not the MaaSModelRef name. Always use the BBR endpoint (`/v1/chat/completions`) with the full publisher model ID in the request body (e.g. `publishers/llm/models/Qwen/Qwen3-Coder`) for swap-safe client integration.
 
 == Prerequisites
 
-* xref:01-prerequisites.adoc[Phases 1]-xref:04-rhoai-config.adoc[4] completed ({rhoai} installed, {maas} platform running)
-* An existing model deployed and serving through MaaS (see xref:05-maas-models.adoc[Phase 5: Model Deployment])
+* xref:01-prerequisites.adoc[Phases 1]-xref:05-maas-models.adoc[5] completed ({rhoai} installed, {maas} platform running, `llm` namespace created)
 * Admin access to the model namespace and `models-as-a-service` namespace
-* The replacement model image available (pulled or accessible from the cluster)
 
 == Swap Procedure
 
-This procedure assumes you have a model already deployed and registered with MaaS (LLMInferenceService + MaaSModelRef + MaaSAuthPolicy + MaaSSubscription). We will deploy a replacement LLMInferenceService, swap the MaaSModelRef pointer, and clean up the old resources.
+This procedure walks through the full swap lifecycle using the provided Qwen 3.6 -> 3.8 simulator templates. Both templates use the CPU simulator image (`llm-d-inference-sim`), so no GPU is required.
 
-=== Step 1: Deploy the Replacement Model
+The scenario: you have a model called `qwen-36` registered with MaaS through a MaaSModelRef called `qwen-coder`. You want to replace it with `qwen-38` without affecting customers.
 
-Deploy a new LLMInferenceService alongside the existing one. Use the template in `manifests/99-model-swap/replacement-model/` or create your own.
+TIP: If you already have a model deployed from xref:05-maas-models.adoc[Phase 5], you can skip the original model deployment and adapt the steps to your existing model names.
 
-IMPORTANT: The new LLMInferenceService *must* use the same `spec.model.name` as the existing one. This is the model ID that customers send in their API requests (`/v1/chat/completions`). If the names differ, customers would need to update their client code.
+=== Step 1: Deploy the Original Model
 
-Edit the template to match your environment:
+Deploy the original model (`qwen-36`) with its full MaaS stack (MaaSModelRef, AuthPolicy, Subscriptions):
 
 [source,bash]
 ----
-# Review and customize the replacement model manifest
-vi manifests/99-model-swap/replacement-model/llm/model.yaml
-
-# Deploy the replacement model
-oc apply -k manifests/99-model-swap/replacement-model/
+oc apply -k manifests/99-model-swap/qwen-36/
 ----
 
-Or deploy directly with a YAML manifest:
+Wait for the model to become Ready:
 
-[source,yaml]
+[source,bash]
 ----
-apiVersion: serving.kserve.io/v1alpha1
-kind: LLMInferenceService
-metadata:
-  name: <new-model-name>       # <1>
-  namespace: llm
-spec:
-  model:
-    uri: <model-uri>           # <2>
-    name: <vendor/model-name>  # <3>
-  replicas: 1
-  router:
-    route: {}
-    gateway:
-      refs:
-        - name: maas-default-gateway
-          namespace: openshift-ingress
-  template:
-    containers:
-      - name: main
-        image: "<inference-image>"  # <4>
-        # ... rest of container spec
+oc wait llminferenceservice qwen-36 -n llm --for=condition=Ready --timeout=300s
+oc get maasmodelref -n llm -o wide
 ----
-<1> A new, unique name for the replacement model (e.g. `qwen-38`, `granite-v2`).
-<2> Model weights URI - update for the new model version.
-<3> Must match the existing model's `spec.model.name` exactly.
-<4> Inference runtime image - update if the new model uses a different runtime.
 
-=== Step 2: Verify the Replacement is Ready
+Expected output:
+
+[source]
+----
+NAME          PHASE   ENDPOINT                                                  HTTPROUTE                GATEWAY              AGE
+qwen-coder    Ready   https://maas.<cluster-domain>/                            qwen-36-kserve-route     maas-default-gateway  ...
+----
+
+=== Step 2: Deploy the Replacement Model
+
+Deploy the replacement (`qwen-38`) alongside the existing one:
+
+[source,bash]
+----
+oc apply -k manifests/99-model-swap/qwen-38/
+----
+
+IMPORTANT: The new LLMInferenceService *must* use the same `spec.model.name` as the existing one. Both `qwen-36` and `qwen-38` use `Qwen/Qwen3-Coder`. This is the model ID that customers send in their API requests (`/v1/chat/completions`). If the names differ, customers would need to update their client code.
+
+=== Step 3: Verify the Replacement is Ready
 
 Wait for both LLMInferenceServices to be running:
 
@@ -210,24 +200,16 @@ Expected output - both old and new show a `Ready` condition:
 
 [source]
 ----
-NAME        READY   ...
-old-model   True    ...
-new-model   True    ...
+NAME       READY   ...
+qwen-36    True    ...
+qwen-38    True    ...
 ----
 
 For GPU models, this can take 5-15 minutes while the image is pulled and model weights are loaded.
 
-=== Step 3: Swap the MaaSModelRef Pointer
+=== Step 4: Swap the MaaSModelRef Pointer
 
 This is the swap itself. Patch the MaaSModelRef to point to the new LLMInferenceService:
-
-[source,bash]
-----
-oc patch maasmodelref <maasmodelref-name> -n llm --type=merge \
-  -p '{"spec":{"modelRef":{"name":"<new-model-name>"}}}'
-----
-
-For example, if your MaaSModelRef is called `qwen-coder` and the new LLMInferenceService is `qwen-38`:
 
 [source,bash]
 ----
@@ -235,33 +217,34 @@ oc patch maasmodelref qwen-coder -n llm --type=merge \
   -p '{"spec":{"modelRef":{"name":"qwen-38"}}}'
 ----
 
-This one-field change is what makes the swap seamless. The MaaSModelRef name stays the same, so all auth policies, subscriptions, and API keys continue to work.
+This one-field change is what makes the swap seamless. The MaaSModelRef name (`qwen-coder`) stays the same, so all auth policies, subscriptions, and API keys continue to work.
 
-=== Step 4: Delete the Old LLMInferenceService
-
-Delete the old LLMInferenceService. Both LLMInferenceServices share the same `spec.model.name`, which creates two HTTPRoutes with identical BBR match rules. The gateway accepts both routes but sends 100% of traffic to the first-created backend (the old one) - the new model gets zero requests. Deleting the old model removes its HTTPRoute and lets the gateway route to the new one.
-
-NOTE: This means the swap is not zero-downtime. There is a brief window between deleting the old model and the new one's HTTPRoute taking effect where requests may fail. For most deployments the gap is under a few seconds.
+Verify the MaaSModelRef now points to `qwen-38`:
 
 [source,bash]
 ----
-oc delete llminferenceservice <old-model-name> -n llm
+oc get maasmodelref qwen-coder -n llm -o jsonpath='{.spec.modelRef.name}'
+# Expected: qwen-38
+----
+
+=== Step 5: Delete the Old LLMInferenceService
+
+While both LLMInferenceServices exist, the gateway routes 100% of BBR traffic to `qwen-36` (the first-created backend) and 0% to `qwen-38`. You must delete `qwen-36` so the gateway starts routing to `qwen-38`.
+
+NOTE: This means the swap is not zero-downtime. There is a brief window (typically a few seconds) between deleting the old model and the gateway routing to the new one where requests may fail.
+
+[source,bash]
+----
+oc delete llminferenceservice qwen-36 -n llm
 ----
 
 This deletes the old inference pods, its HTTPRoute, and frees any GPU resources it was using.
 
-=== Step 5: Clean Up Stale TokenRateLimitPolicy
+=== Step 6: Clean Up Stale TokenRateLimitPolicy
 
 After swapping the MaaSModelRef and deleting the old LLMInferenceService, the `TokenRateLimitPolicy` (TRLP) may retain an owner reference to the old HTTPRoute. This causes the MaaSSubscription to go `Failed` because the TRLP references a non-existent route.
 
 Delete the stale TRLP so the controller can recreate it with the correct owner reference:
-
-[source,bash]
-----
-oc delete tokenratelimitpolicy maas-trlp-<maasmodelref-name> -n llm
-----
-
-For example:
 
 [source,bash]
 ----
@@ -270,7 +253,7 @@ oc delete tokenratelimitpolicy maas-trlp-qwen-coder -n llm
 
 The `maas-controller` will automatically recreate the TRLP, now correctly owned by the new HTTPRoute.
 
-=== Step 6: Verify
+=== Step 7: Verify
 
 Confirm that everything is healthy:
 
@@ -289,28 +272,41 @@ oc get maassubscription -n models-as-a-service
 oc get tokenratelimitpolicy -n llm
 ----
 
-Test inference using the same API key and model ID as before the swap:
+Test inference to confirm the swap worked. If you already have an API key from before the swap, use it - the whole point is that existing keys keep working. If you need a new one:
 
 [source,bash]
 ----
 CLUSTER_DOMAIN=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')
 MAAS_URL="maas.${CLUSTER_DOMAIN}"
 
-# List models - should show the same model entry
-curl -sk "https://${MAAS_URL}/v1/models" \
-  -H "Authorization: Bearer ${API_KEY}" | jq .
+# Get admin token
+TOKEN=$(oc create token admin-user -n models-as-a-service --duration=1h)
 
-# Send inference - same model ID, same API key
+# Create API key (bound to the qwen-coder-free subscription)
+API_KEY=$(curl -sk -X POST "https://${MAAS_URL}/v1/api-keys" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"swap-test","description":"Post-swap verification","subscription":"qwen-coder-free"}' | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
+echo "API_KEY=${API_KEY}"
+----
+
+Send an inference request using the BBR endpoint:
+
+[source,bash]
+----
 curl -sk "https://${MAAS_URL}/v1/chat/completions" \
   -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "<full-model-id>",
+    "model": "publishers/llm/models/Qwen/Qwen3-Coder",
     "messages": [{"role": "user", "content": "Hello!"}]
   }' | jq .
 ----
 
-NOTE: The model ID in the request body must be the full publisher path as returned by `/v1/models`. For LLMInferenceService models, this is `publishers/<namespace>/models/<spec.model.name>` (e.g. `publishers/llm/models/facebook/opt-125m`). Using the short name returns a 404.
+A successful response confirms the swap is complete - the request was routed to `qwen-38` using the same model ID and API key that worked with `qwen-36`.
+
+NOTE: The model ID in the request body must be the full publisher path as returned by `/v1/models` (e.g. `publishers/llm/models/Qwen/Qwen3-Coder`). Using the short name (`Qwen/Qwen3-Coder`) returns a 404.
 
 == Operational Notes
 
@@ -325,7 +321,7 @@ When two LLMInferenceServices in the same namespace share the same `spec.model.n
 ====
 *TokenRateLimitPolicy Stale Owner Reference*
 
-The `TokenRateLimitPolicy` is auto-created by `maas-controller` and owned by the HTTPRoute. When the MaaSModelRef pointer changes, the TRLP still references the old HTTPRoute. Deleting the TRLP (Step 5) lets the controller recreate it with the correct owner. If you skip this, the MaaSSubscription may go `Failed` with an error like: `Object <namespace>/maas-trlp-<name> is already owned by another HTTPRoute`.
+The `TokenRateLimitPolicy` is auto-created by `maas-controller` and owned by the HTTPRoute. When the MaaSModelRef pointer changes, the TRLP still references the old HTTPRoute. Deleting the TRLP (Step 6) lets the controller recreate it with the correct owner. If you skip this, the MaaSSubscription may go `Failed` with an error like: `Object <namespace>/maas-trlp-<name> is already owned by another HTTPRoute`.
 ====
 
 [NOTE]
@@ -349,29 +345,42 @@ You can check if this is needed by looking at the MaaSModelRef status. If it is 
 
 The model ID used in inference requests (`/v1/chat/completions`) is the full publisher path, not the short model name. For example:
 
-* Short name: `facebook/opt-125m`
-* Full publisher path: `publishers/llm/models/facebook/opt-125m`
+* Short name: `Qwen/Qwen3-Coder`
+* Full publisher path: `publishers/llm/models/Qwen/Qwen3-Coder`
 
 Always use the model ID as returned by the `/v1/models` endpoint to avoid 404 errors.
 ====
 
 == Template Manifests
 
-The `manifests/99-model-swap/` directory contains a template for the replacement model:
+The `manifests/99-model-swap/` directory contains two concrete simulator-based templates that walk through the full swap lifecycle (Qwen 3.6 -> 3.8):
 
 [source]
 ----
 99-model-swap/
-  replacement-model/
-    kustomization.yaml          # Aggregates llm/ subdirectory
+  qwen-36/                             # Original model (deploy first)
+    kustomization.yaml                 # Aggregates llm/ and maas/
     llm/
-      kustomization.yaml        # Sets namespace: llm
-      model.yaml                # LLMInferenceService template
+      kustomization.yaml               # Sets namespace: llm
+      model.yaml                       # LLMInferenceService: qwen-36
+    maas/
+      kustomization.yaml               # MaaS governance resources
+      maas-model.yaml                  # MaaSModelRef: qwen-coder -> qwen-36
+      maas-auth-policy.yaml            # MaaSAuthPolicy: qwen-coder-access
+      maas-subscription-free.yaml      # Free tier (100 tokens/min)
+      maas-subscription-premium.yaml   # Premium tier (100000 tokens/min)
+  qwen-38/                             # Replacement model (deploy second)
+    kustomization.yaml                 # Aggregates llm/ only
+    llm/
+      kustomization.yaml               # Sets namespace: llm
+      model.yaml                       # LLMInferenceService: qwen-38
 ----
 
-The template uses a CPU simulator by default. For a real swap, replace the container image, model URI, and resource requests in `model.yaml` to match the new model.
+Both templates use the CPU simulator image (`llm-d-inference-sim`), so no GPU is required. Both share `spec.model.name: Qwen/Qwen3-Coder` - this is the invariant that makes the swap seamless.
 
-No `maas/` subdirectory is included because the MaaS control plane resources (MaaSModelRef, MaaSAuthPolicy, MaaSSubscription) already exist and do not change during a swap. Only the LLMInferenceService backend is replaced.
+The `qwen-36/` directory includes the full MaaS stack (MaaSModelRef + AuthPolicy + Subscriptions) because it is the original deployment. The `qwen-38/` directory only includes the LLMInferenceService because the MaaS governance resources persist unchanged across the swap - only the MaaSModelRef pointer changes.
+
+For a real swap with GPU models, replace the container image, model URI, and resource requests in both `model.yaml` files to match your actual models.
 
 == References
 
