@@ -692,6 +692,47 @@ IMPORTANT: Do NOT use `oc set env statefulset/...` or `oc set env deployment/...
 
 WARNING: The RHOAI operator manages the `OpenTelemetryCollector` CR and may revert changes on reconciliation. If that happens, annotate the CR to prevent operator management: `oc annotate opentelemetrycollector data-science-collector -n redhat-ods-monitoring opendatahub.io/managed=false`. Remove this annotation before any future {rhoai} upgrades.
 
+[[issue-12]]
+== Issue 12: HTTPRoute Rule Name Collision (Multi-Model Gateway)
+
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-93709[RHOAIENG-93709^] +
+*Status:* New
+
+In {rhoai} 3.5, the `v3-5-0-kserve-config-llm-router-route` LLMInferenceServiceConfig preset introduces 12 hardcoded `HTTPRoute.spec.rules[].name` entries (e.g., `chat-completions`, `completions`, `models`). When multiple LLMInferenceServices are attached to the same MaaS Gateway, Istio merges all their HTTPRoutes into a single Virtual Host. Because the rule names are identical across services, Envoy treats them as duplicates - one service's Endpoint Picker (EPP) configuration overwrites the other's, causing all traffic to be routed to a single EPP regardless of which model was requested.
+
+This is a regression from {rhoai} 3.4 where the `name` field was omitted in the preset, allowing Istio to auto-generate unique rule names per service. Related upstream issues: link:https://github.com/istio/istio/issues/58392[istio#58392^], link:https://github.com/istio/istio/issues/61594[istio#61594^].
+
+=== Symptoms
+
+* Inference requests to a second model return responses from the first model (or vice versa)
+* Only one EPP pod receives traffic even though multiple models are deployed
+* Prefix caching and KV cache-aware routing break because requests land on the wrong EPP
+
+=== Diagnosis
+
+[source,bash]
+----
+# List all HTTPRoutes attached to the MaaS gateway
+oc get httproute -A -o json | jq -r '
+  .items[]
+  | select(.spec.parentRefs[]? | .name == "maas-default-gateway")
+  | "\(.metadata.namespace)/\(.metadata.name)"'
+
+# Check for duplicate rule names across HTTPRoutes
+oc get httproute -A -o json | jq -r '
+  [.items[]
+   | select(.spec.parentRefs[]? | .name == "maas-default-gateway")
+   | .spec.rules[]? | .name // empty]
+  | group_by(.) | map(select(length > 1) | {name: .[0], count: length})
+  | .[]'
+----
+
+If the second command returns results, you have duplicate rule names causing route shadowing.
+
+=== Status
+
+No workaround exists. The upstream fix is tracked in link:https://github.com/istio/istio/pull/61601[istio#61601^], which resolves InferencePool endpoint pickers per backendRef instead of per rule name. The LLMInferenceService routing may also add suffixes to sectionNames to avoid collisions at the HTTPRoute level.
+
 == Quick Reference: Triage Order
 
 When you hit problems after upgrading from 3.4 to 3.5, check in this order:
@@ -743,6 +784,10 @@ When you hit problems after upgrading from 3.4 to 3.5, check in this order:
 | 11
 | Cluster behind HTTP proxy and observability metrics show 0? (`oc get proxy/cluster -o jsonpath='{.spec.httpProxy}'`)
 | Override proxy env vars via OpenTelemetryCollector CR (<<issue-11,Issue 11>>)
+
+| 12
+| Multiple models on same gateway and traffic goes to wrong model?
+| No workaround yet, track RHOAIENG-93709 (<<issue-12,Issue 12>>)
 |===
 
 == References
@@ -759,4 +804,5 @@ When you hit problems after upgrading from 3.4 to 3.5, check in this order:
 * link:https://redhat.atlassian.net/browse/RHOAIENG-89785[RHOAIENG-89785 - Token rate limiting default too low]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-89786[RHOAIENG-89786 - Duplicate Playground endpoints from leftover LlamaStackDistribution]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-91640[RHOAIENG-91640 - OTEL collector proxy interception breaks observability]
+* link:https://redhat.atlassian.net/browse/RHOAIENG-93709[RHOAIENG-93709 - HTTPRoute rule name collision in multi-model gateway]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-80360[RHOAIENG-80360 - Gateway route hijacking security fix]
