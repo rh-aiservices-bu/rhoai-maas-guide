@@ -401,6 +401,77 @@ maas-default-gateway-https   maas.apps.<cluster-domain>                    maas-
 ----
 
 
+[id=step-5f-proxy]
+=== Step 5f: Corporate Proxy Configuration (OCP < 4.22 Only)
+
+On OCP versions before 4.22, the OpenShift Gateway controller does not propagate the cluster-wide proxy settings (`config.openshift.io/v1 Proxy`) into the gateway pod. If your cluster sits behind a corporate HTTP proxy, the istio-proxy container cannot reach external endpoints - this breaks ExternalModel provider calls and WASM plugin OCI image pulls.
+
+This is tracked as link:https://redhat.atlassian.net/browse/OCPBUGS-77457[OCPBUGS-77457^] and is fixed in OCP 4.22+. On earlier versions, you must inject the proxy env vars manually through the gateway ConfigMap.
+
+NOTE: If your cluster is **not** behind a corporate proxy, or you are on OCP 4.22+, skip this step.
+
+*Detect if this applies to you:*
+
+[source,bash]
+----
+# Check OCP version
+oc get clusterversion version -o jsonpath='{.status.desired.version}'
+
+# Check if the cluster has a proxy configured
+oc get proxy/cluster -o jsonpath='{.spec.httpProxy}'
+----
+
+If the OCP version is below 4.22 and `httpProxy` returns a value, apply the proxy-aware ConfigMap.
+
+*Step 5f.1:* Extract the proxy values from the cluster-wide Proxy config:
+
+[source,bash]
+----
+export HTTP_PROXY=$(oc get proxy/cluster -o jsonpath='{.spec.httpProxy}')
+export HTTPS_PROXY=$(oc get proxy/cluster -o jsonpath='{.spec.httpsProxy}')
+export NO_PROXY=$(oc get proxy/cluster -o jsonpath='{.spec.noProxy}')
+echo "HTTP_PROXY=${HTTP_PROXY}"
+echo "HTTPS_PROXY=${HTTPS_PROXY}"
+echo "NO_PROXY=${NO_PROXY}"
+----
+
+*Step 5f.2:* Apply the proxy-aware ConfigMap (this replaces the `gateway-resources.yaml` applied in Step 5b - it includes the same 2Gi memory limit plus the proxy env vars):
+
+[source,bash]
+----
+envsubst '${HTTP_PROXY} ${HTTPS_PROXY} ${NO_PROXY}' \
+  < manifests/02-platform-config/gateway-resources-proxy.yaml.tmpl \
+  | oc apply -f -
+----
+
+The gateway pod will restart automatically. Wait for it to come back:
+
+[source,bash]
+----
+oc rollout status deployment/maas-default-gateway-openshift-default \
+  -n openshift-ingress --timeout=120s
+----
+
+*Step 5f.3:* Verify the proxy env vars are set on the gateway pod:
+
+[source,bash]
+----
+GATEWAY_POD=$(oc get pods -n openshift-ingress \
+  -l gateway.networking.k8s.io/gateway-name=maas-default-gateway \
+  -o jsonpath='{.items[0].metadata.name}')
+oc exec "${GATEWAY_POD}" -n openshift-ingress -c istio-proxy \
+  -- env | grep -i proxy
+----
+
+You should see `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` with the correct values.
+
+[NOTE]
+====
+*How it works:* The `gateway-resources-proxy.yaml.tmpl` produces the same `maas-gateway-options` ConfigMap that the Gateway already references via `spec.infrastructure.parametersRef`. The gateway controller merges this ConfigMap into the generated Deployment, injecting the proxy env vars into the istio-proxy container alongside the 2Gi memory limit.
+
+If you already applied `gateway-resources.yaml` in Step 5b, this step overwrites it with the proxy-aware version. The ConfigMap name (`maas-gateway-options`) and the Gateway's `parametersRef` remain unchanged.
+====
+
 == Verification
 
 After completing all steps, confirm the full platform state:
@@ -483,6 +554,7 @@ curl -vsk https://maas.${CLUSTER_DOMAIN} 2>&1 | grep -E "SSL connection|Connecte
 ----
 manifests/02-platform-config/
   gateway-resources.yaml         # ConfigMap: gateway proxy resource overrides (2Gi memory)
+  gateway-resources-proxy.yaml.tmpl  # ConfigMap: proxy-aware variant (2Gi memory + HTTP_PROXY env vars, OCP < 4.22)
   gateway.yaml.tmpl              # Gateway template (envsubst, references ConfigMap via parametersRef)
   gatewayclass.yaml              # GatewayClass resource
   kustomization.yaml             # Aggregates all subdirectories
