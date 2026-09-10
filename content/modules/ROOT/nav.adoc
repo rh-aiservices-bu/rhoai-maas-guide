@@ -36,5 +36,8 @@
 .Cleanup
 * xref:09-cleanup.adoc[Cleanup & Teardown]
 
+.Release Notes
+* xref:release-notes.adoc[Release Notes]
+
 .Tools
 * xref:claude-code.adoc[AI-Assisted Installation]

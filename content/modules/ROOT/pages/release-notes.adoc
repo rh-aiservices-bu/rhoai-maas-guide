@@ -1,0 +1,158 @@
+= Release Notes
+
+Changelog for the {rhoai} {maas} companion guide. Covers new guide phases, automation improvements, bug fixes, and community contributions since the project started in June 2026.
+
+Each entry links to its pull request for full details.
+
+== September 2026
+
+=== New Pages
+
+* *API Key Security Reference* - Deep dive into MaaS API key internals: key anatomy, hash derivation, ValidateAPIKey flow, IDOR protection, lifecycle management, and 8-threat model. (link:{repo-url}/pull/129[#129])
+
+* *Model Swap Reference* - How to swap a model backend without customer-facing changes. Covers MaaSModelRef hierarchy, 6-step migration procedure, BBR endpoint routing, and concrete Qwen 3.6->3.8 swap templates. (link:{repo-url}/pull/113[#113], link:{repo-url}/pull/134[#134])
+
+* *Platform Upgrade Guide (3.4 -> 3.5)* - End-to-end 10-step MaaS migration guide covering DSC fields, namespace migration, ExternalModel API changes, and dashboard config. (link:{repo-url}/pull/119[#119])
+
+=== Features
+
+* *Phase 9: External OIDC Authentication* - Full Keycloak integration with PostgreSQL backend, realm import, automation script, and 6-check test suite. Supports corporate SSO with JWT claim-based authorization. (link:{repo-url}/pull/98[#98])
+
+* *Loki-based Usage Dashboards* - Added Loki Operator, MinIO, and LokiStack manifests to Phase 7. When usage logging is enabled, operator auto-creates EnvoyFilter, OTEL Collector, Tenancy Proxy, and Perses dashboards. RHOAI 3.5+ only. (link:{repo-url}/pull/96[#96])
+
+* *Qwen3-0.6B CPU-only Model* - First model in the guide that does not need a GPU. Runs on vLLM CPU runtime with 4-8 CPU and 16Gi memory. (link:{repo-url}/pull/133[#133])
+
+* *Limitador Persistence with Redis* - Added dev Redis deployment and Limitador CR patch so rate-limit counters survive pod restarts. New `--with-redis` flag for setup-maas.sh. (link:{repo-url}/pull/142[#142])
+
+* *External Models Dual 3.4/3.5 Support* - Added ExternalProvider + ExternalModel manifests for RHOAI 3.5 new `inference.opendatahub.io/v1alpha1` API. Tabs blocks in docs and version branching in setup script. (link:{repo-url}/pull/88[#88])
+
+* *Gateway Proxy Workaround* - On OCP < 4.22 behind corporate proxy, gateway pod does not get cluster-wide proxy settings. Added Step 5f with ConfigMap template for HTTP_PROXY/HTTPS_PROXY/NO_PROXY env vars. (link:{repo-url}/pull/137[#137])
+
+* *Governance Pairing Documentation* - Both MaaSAuthPolicy AND MaaSSubscription must reference the same model for Ready state. Day 2 patch commands included. (link:{repo-url}/pull/117[#117])
+
+=== Fixes
+
+* *Phase 4 CRD Race Condition* - DSC triggers async CRD registration. Script was applying HardwareProfile before CRD existed. Added wait_for_crd() helper. (link:{repo-url}/pull/108[#108])
+
+* *OGX Rename for RHOAI 3.5* - RHOAI 3.5 renamed llamastackoperator to ogx. Old key was silently ignored, blocking Playground from appearing. (link:{repo-url}/pull/110[#110])
+
+* *IPP-managed Label for External Models* - RHOAI 3.5 changed secret label from `bbr-managed` to `ipp-managed`. Without correct label, apikey-injection watcher never picks up the secret and inference returns 500. (link:{repo-url}/pull/90[#90])
+
+* *Stale DNSRecord After Gateway Service Type Change* - When gateway switches from LoadBalancer to ClusterIP, stale dnsrecord pointing to defunct AWS ELB is not cleaned up. Added troubleshooting entry with diagnosis and workaround. Filed RHOAIENG-93962. (link:{repo-url}/pull/140[#140])
+
+* *HTTPRoute Rule Name Collision* - RHOAI 3.5 hardcoded HTTPRoute rule names. Multiple models on the same gateway cause Istio to merge duplicate rules, sending all traffic to one EPP. Documented as known issue. (link:{repo-url}/pull/139[#139])
+
+* *13 Documentation Fixes from Full Guide Review* - Broken xref anchor, wrong Roo Code URL, missing namespace in oc patch, stale llamastackoperator ref, missing externalModels flag, wrong OCP version, and more across 10 files. (link:{repo-url}/pull/124[#124])
+
+* *Gateway-access Namespace Labeling for RHOAI 3.5* - Phase 2 tried to label `redhat-ai-gateway-infra` before it exists. Moved labeling to Phase 4 with safety-net re-label. (link:{repo-url}/pull/101[#101])
+
+* *OperatorGroup Skip for Pre-installed Operators* - OLM only allows one OperatorGroup per namespace. Script now checks for existing groups and skips if present. (link:{repo-url}/pull/104[#104])
+
+* *Authorino Patch Race on Fresh Install* - Script tried to patch Authorino CR before it exists. Added existence check with Phase 3 retry logic. (link:{repo-url}/pull/114[#114])
+
+* *3.4 to 3.5 Upgrade Path Bugs* - Channel not restored on cluster after `--rhoai-version 3.4`, and DSC not updated during upgrade with `--from-phase 4`. (link:{repo-url}/pull/84[#84])
+
+* *OTEL Collector Proxy Interception* - On proxied clusters, OTEL collector routes TargetAllocator request through corporate proxy. Root cause: short hostname without .svc suffix. Workaround patches OTel CR spec.env. Filed RHOAIENG-91640. (link:{repo-url}/pull/105[#105])
+
+== August 2026
+
+=== New Pages
+
+* *Post-Upgrade Troubleshooting* - 10 most common 3.4->3.5 upgrade issues with symptoms, diagnosis commands, and workarounds. Covers MCP OOM, ExternalModel migration, gateway label mismatch, hostname discovery, and more. All issues linked to Jira. (link:{repo-url}/pull/79[#79])
+
+* *Cleanup and Teardown Guide* - New Phase 9 cleanup page with `cleanup-maas.sh` script. Reverses setup in 7 phases, supports `--dry-run`, `--keep-operators`, `--from-phase`, `--yes`. (link:{repo-url}/pull/56[#56])
+
+=== Features
+
+* *RHOAI 3.4/3.5 Dual-Version Support* - Auto-detects RHOAI version from CSV. AI Gateway modularization (`kserve.modelsAsService` -> `aigateway.modelsAsAService`), dual DSC manifests, version tabs in docs. Validated across 10 walkthroughs. (link:{repo-url}/pull/76[#76])
+
+* *Disconnected/Air-gapped Full Support* - Phase 0 docs, ImageSetConfiguration, ITMS manifests, GPU MachineSet template. Added Gemma 2 9B IT FP8 model for single A10G GPU. Fixed internal LB annotation for AWS disconnected. (link:{repo-url}/pull/57[#57], link:{repo-url}/pull/58[#58], link:{repo-url}/pull/59[#59])
+
+* *WASM Shim for Disconnected Clusters* - Kuadrant WASM shim is fetched via OCI at runtime, bypassing CRI-O/IDMS. Added RELATED_IMAGE_WASMSHIM patch and WASM shim to ImageSetConfiguration/ITMS. (link:{repo-url}/pull/59[#59])
+
+* *GPU HardwareProfile and Model Cleanup* - Added HardwareProfile CR to Phase 4 for proper GPU scheduling. Removed T4 (compute capability 75 too low for FP8) and A10G (tensor tile size error with current vLLM) from supported GPUs. (link:{repo-url}/pull/72[#72])
+
+=== Fixes
+
+* *Custom Hostname Support* - Added `--maas-hostname` flag and `MAAS_HOSTNAME` env var. Fixed CSV wait on fresh clusters. Commented out TelemetryPolicy fields that crash Wasm shim before RHOAI 3.4.4. (link:{repo-url}/pull/71[#71])
+
+* *Istiod/Proxyv2 Images for Disconnected OCP >= 4.20.32* - Ingress operator embeds Istio (sail library) instead of standalone OSSM. Images are not in any catalog, causing ImagePullBackOff. Added discovery commands. (link:{repo-url}/pull/75[#75])
+
+* *RHCL Pin Removed* - Removed v1.3.4 pin since RHCL v1.4.2 fixes the WASM bugs. (link:{repo-url}/pull/56[#56])
+
+* *Skip ModelControllerReady on RHOAI 3.5+* - DSC condition was removed in 3.5, causing setup script to wait 300s for nothing on every fresh install. (link:{repo-url}/pull/78[#78])
+
+== July 2026
+
+=== Changes
+
+* *OSSM3 Removal* - On OCP 4.20+, openshift-ingress manages OSSM internally. Pre-installing servicemeshoperator3 blocked the gateway controller. Removed OSSM subscription and all manual OSSM references. (link:{repo-url}/pull/45[#45], link:{repo-url}/pull/46[#46])
+
+* *Verify-guide Claude Code Skill* - New automation skill that runs a full naive-user walkthrough on a live cluster. Covers 6 phases: cluster login, setup-maas.sh, verify.sh E2E (15 checks), 8 blind-spot regression checks, guide content verification, and report. (link:{repo-url}/pull/49[#49])
+
+* *Pipefail and RHCL Install Plan Fixes* - Fixed Phase 5 crash when all model pods are healthy (grep exit 1 under pipefail). Fixed RHCL install plan approval to use subscription status lookup. (link:{repo-url}/pull/50[#50])
+
+== June 2026
+
+=== Initial Release
+
+* *Guide Launch* - Antora documentation site deployed on GitHub Pages. Phases 1-7 covering prerequisites, platform config, MaaS platform, RHOAI config, model deployment, verification, and observability. Includes `setup-maas.sh` automation script and Kustomize manifests for each phase.
+
+* *Alpha Testing* - Initial alpha-test feedback from bryonbaker and nueda-rh covering content accuracy, missing steps, typo fixes, and redundant verification removal. (link:{repo-url}/pull/2[#2], link:{repo-url}/pull/3[#3], link:{repo-url}/pull/4[#4], link:{repo-url}/pull/8[#8])
+
+=== Features
+
+* *Architecture and Request Flow Reference* - New reference page with 4-layer component overview, 8-step request flow walkthrough, Mermaid diagrams, and FlowStory interactive visualizer link. (link:{repo-url}/pull/12[#12])
+
+* *Phase 8: External Models* - Added ExternalModel support for OpenAI (gpt-4o-mini), Google Gemini (gemini-2.5-flash), and AWS Bedrock. Kustomize manifests, `--external-model-provider` flag, and full documentation. (link:{repo-url}/pull/20[#20], link:{repo-url}/pull/21[#21])
+
+* *Gateway OOMKill Persistent Fix* - Replaced temporary `oc patch deployment` workaround with persistent ConfigMap + `spec.infrastructure.parametersRef` approach. Survives Istio reconciliation. (link:{repo-url}/pull/26[#26])
+
+* *Gateway Namespace Binding Restriction* - Switched gateway from `allowedRoutes.namespaces.from: All` to `from: Selector` with `maas.opendatahub.io/gateway-access=true` label. Only labeled namespaces can attach HTTPRoutes. (link:{repo-url}/pull/36[#36])
+
+* *DSCI Monitoring Configuration* - Phase 7 installed observability operators but never configured the DSCI to use them. Added DSCI patch with metrics and traces configuration. (link:{repo-url}/pull/37[#37])
+
+=== Fixes
+
+* *End-to-End Testing Fixes* - Fixed 5 script bugs (CSV timeout, Kuadrant pod restart label, ODH namespace label, RHOAI version parsing, OdhDashboardConfig race) and 2 doc inaccuracies from first live cluster testing. (link:{repo-url}/pull/14[#14])
+
+* *Expected Outputs Update for RHOAI 3.4.0* - Updated CSV versions, route/TLS output, CSV column names, API key creation command, verification pass count, and replaced static placeholders with shell variables. (link:{repo-url}/pull/16[#16])
+
+* *RHCL Pinned to v1.3.4* - RHCL 1.4.0 had WASM plugin loading issues causing gateway errors and breaking the RHOAI model UI. Added startingCSV + Manual install plan approval. (link:{repo-url}/pull/32[#32])
+
+* *GPU Operand Instances* - Added ClusterPolicy and NodeFeatureDiscovery CRs to Phase 1 manifests. Without these, GPU operator does not install drivers. (link:{repo-url}/pull/33[#33])
+
+* *MetalLB IP Collision on SNO* - Using node's own InternalIP for MetalLB caused kube-proxy iptables to hijack port 443 traffic, breaking OAuth callbacks, console access, and in-cluster `*.apps` routes. Now derives MetalLB IP as node IP + 1. (link:{repo-url}/pull/40[#40])
+
+== Contributors
+
+[cols="1,2", options="header"]
+|===
+| Contributor | Contributions
+
+| rcarrata
+| Primary author - guide content, automation scripts, Kustomize manifests
+
+| bryonbaker
+| Alpha testing review and documentation feedback
+
+| deewhyweb
+| GPU driver DTK kernel check improvements
+
+| nueda-rh
+| Platform configuration fixes
+
+| rafpcloud
+| Dashboard namespace labeling
+
+| skoussou
+| README link fixes
+
+| Surote
+| Custom hostname support and dashboard feature flags
+
+| stefan-bergstein
+| OperatorGroup pre-install bug report
+|===
+
+Issue reporters: hupiper, guimou, svalluru, erwangranger.
