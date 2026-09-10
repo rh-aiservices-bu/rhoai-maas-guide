@@ -342,12 +342,18 @@ IMPORTANT: API keys capture the user's group memberships at the time of creation
 
 ==== Run inference with the API key
 
+Get the model ID from `/v1/models` and send a chat completion:
+
 [source,bash]
 ----
+MODEL_ID=$(curl -sSk \
+    -H "Authorization: Bearer ${API_KEY}" \
+    "https://maas.${CLUSTER_DOMAIN}/v1/models" | jq -r '.data[0].id')
+
 curl -sSk -X POST \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
-    -d '{"model": "simulator", "messages": [{"role": "user", "content": "Hello from OIDC!"}], "max_tokens": 20}' \
+    -d "{\"model\": \"${MODEL_ID}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello from OIDC!\"}], \"max_tokens\": 20}" \
     "https://maas.${CLUSTER_DOMAIN}/v1/chat/completions" | jq .
 ----
 

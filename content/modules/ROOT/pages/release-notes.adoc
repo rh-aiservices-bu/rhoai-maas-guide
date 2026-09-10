@@ -44,6 +44,8 @@ Each entry links to its pull request for full details.
 
 * *HTTPRoute Rule Name Collision* - RHOAI 3.5 hardcoded HTTPRoute rule names. Multiple models on the same gateway cause Istio to merge duplicate rules, sending all traffic to one EPP. Documented as known issue. (link:{repo-url}/pull/139[#139])
 
+* *Body-Based Routing Curl Examples* - All inference curl examples across 5 guide pages, verify.sh, and setup-maas.sh now use body-based routing at `/v1/chat/completions` with the correct model ID from `/v1/models`. Local models require the canonical `publishers/{namespace}/models/{model-name}` format - short names return 404. Also added `qwen3-06b` to VALID_MODELS. (link:{repo-url}/pull/147[#147])
+
 * *13 Documentation Fixes from Full Guide Review* - Broken xref anchor, wrong Roo Code URL, missing namespace in oc patch, stale llamastackoperator ref, missing externalModels flag, wrong OCP version, and more across 10 files. (link:{repo-url}/pull/124[#124])
 
 * *Gateway-access Namespace Labeling for RHOAI 3.5* - Phase 2 tried to label `redhat-ai-gateway-infra` before it exists. Moved labeling to Phase 4 with safety-net re-label. (link:{repo-url}/pull/101[#101])

@@ -135,7 +135,7 @@ oc get pods -n llm
 DOMAIN=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')
 HOST="https://maas.${DOMAIN}"
 
-# Create API key (save the key and model URL for subsequent phases)
+# Create API key (save the key and model ID for subsequent phases)
 API_KEY=$(curl -sk -X POST \
   -H "Authorization: Bearer $(oc whoami -t)" \
   -H "Content-Type: application/json" \
@@ -146,10 +146,10 @@ echo "API_KEY=${API_KEY}"
 # List models
 curl -sk -H "Authorization: Bearer ${API_KEY}" "${HOST}/v1/models"
 
-# Get the model endpoint URL
-MODEL_URL=$(curl -sk -H "Authorization: Bearer ${API_KEY}" \
-  "${HOST}/v1/models" | jq -r '.data[0].url')
-echo "MODEL_URL=${MODEL_URL}"
+# Get the model ID (canonical form for body-based routing)
+MODEL_ID=$(curl -sk -H "Authorization: Bearer ${API_KEY}" \
+  "${HOST}/v1/models" | jq -r '.data[0].id')
+echo "MODEL_ID=${MODEL_ID}"
 ----
 
 === Phase 4: Auth enforcement
@@ -159,8 +159,8 @@ echo "MODEL_URL=${MODEL_URL}"
 # Should return 401 or 403
 curl -sk -o /dev/null -w '%{http_code}' \
   -H "Content-Type: application/json" \
-  -d '{"model":"facebook/opt-125m","messages":[{"role":"user","content":"Hello"}]}' \
-  "${MODEL_URL}/v1/chat/completions"
+  -d "{\"model\":\"${MODEL_ID}\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}" \
+  "${HOST}/v1/chat/completions"
 ----
 
 === Phase 5: Rate limiting
@@ -172,8 +172,8 @@ for i in $(seq 1 16); do
   curl -sk -o /dev/null -w '%{http_code}\n' \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
-    -d '{"model":"facebook/opt-125m","messages":[{"role":"user","content":"Hello, write a long essay"}],"max_tokens":50}' \
-    "${MODEL_URL}/v1/chat/completions"
+    -d "{\"model\":\"${MODEL_ID}\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello, write a long essay\"}],\"max_tokens\":50}" \
+    "${HOST}/v1/chat/completions"
 done
 ----
 

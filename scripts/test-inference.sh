@@ -4,13 +4,13 @@
 #
 # Usage:
 #   ./scripts/test-inference.sh --base-url <url> --api-key <key>
-#   ./scripts/test-inference.sh --base-url https://maas.apps.cluster.example.com/llm/model-name --api-key <key>
-#   ./scripts/test-inference.sh --base-url <url> --api-key <key> --model facebook/opt-125m --prompt "What is AI?"
+#   ./scripts/test-inference.sh --base-url https://maas.apps.cluster.example.com --api-key <key>
+#   ./scripts/test-inference.sh --base-url <url> --api-key <key> --model publishers/llm/models/facebook/opt-125m --prompt "What is AI?"
 #
 
 set -euo pipefail
 
-MODEL="facebook/opt-125m"
+MODEL="publishers/llm/models/facebook/opt-125m"
 PROMPT="Hello, how are you?"
 MAX_TOKENS=50
 ENDPOINT="chat/completions"
@@ -21,9 +21,9 @@ usage() {
     sed -n '3,9p' "$0" | sed 's/^# \{0,1\}//'
     echo ""
     echo "Options:"
-    echo "  --base-url URL      (required) MaaS base URL (e.g. https://maas.apps.cluster.example.com/llm/model-name)"
+    echo "  --base-url URL      (required) MaaS gateway URL (e.g. https://maas.apps.cluster.example.com)"
     echo "  --api-key KEY       (required) MaaS API key"
-    echo "  --model MODEL       vLLM model ID (default: $MODEL)"
+    echo "  --model MODEL       MaaS model ID (default: $MODEL)"
     echo "  --prompt TEXT       Prompt text (default: \"$PROMPT\")"
     echo "  --max-tokens N      Max tokens to generate (default: $MAX_TOKENS)"
     echo "  --endpoint TYPE     completions | chat/completions (default: $ENDPOINT)"

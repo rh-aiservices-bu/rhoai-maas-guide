@@ -125,11 +125,11 @@ Governance means at least one `MaaSSubscription` AND one `MaaSAuthPolicy` both r
 
 | Model ID in requests
 | *No*
-| Both `qwen-36` and `qwen-38` serve the same `spec.model.name` (`Qwen/Qwen3-Coder`), so the model ID in `/v1/chat/completions` stays the same.
+| Both `qwen-36` and `qwen-38` serve the same `spec.model.name` (`Qwen/Qwen3-Coder`), so the canonical model ID (`publishers/llm/models/Qwen/Qwen3-Coder`) stays the same.
 
 | BBR endpoint (`/v1/chat/completions`)
 | *No*
-| Body-based routing uses the model ID in the request body (`Qwen/Qwen3-Coder`), which is derived from `spec.model.name` (unchanged). Customers using this endpoint need no changes.
+| Body-based routing uses the canonical model ID in the request body (`publishers/llm/models/Qwen/Qwen3-Coder`), derived from the namespace and `spec.model.name` (both unchanged). Customers using this endpoint need no changes.
 
 | Per-model URL path (`/llm/<name>/...`)
 | *Yes*
