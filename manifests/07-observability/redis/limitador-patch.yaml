@@ -1,0 +1,13 @@
+# Reference patch for the Limitador CR.
+# Apply via: oc patch limitador limitador -n kuadrant-system --type=merge --patch-file manifests/07-observability/redis/limitador-patch.yaml
+# NOT included in kustomization.yaml because the Limitador CR is created by the Kuadrant operator.
+apiVersion: limitador.kuadrant.io/v1alpha1
+kind: Limitador
+metadata:
+  name: limitador
+  namespace: kuadrant-system
+spec:
+  storage:
+    redis:
+      configSecretRef:
+        name: redis-config

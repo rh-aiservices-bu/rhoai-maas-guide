@@ -247,6 +247,20 @@ if should_run 2; then
         log_info "  Tempo operator not found, skipping"
     fi
 
+    # Redis for Limitador persistence
+    if oc get namespace redis-limitador >/dev/null 2>&1; then
+        log_info "  Removing Redis for Limitador..."
+        # Revert Limitador to in-memory storage
+        if oc get limitador limitador -n kuadrant-system >/dev/null 2>&1; then
+            run_cmd oc patch limitador limitador -n kuadrant-system --type=json \
+                -p '[{"op":"remove","path":"/spec/storage"}]' 2>/dev/null || true
+        fi
+        run_cmd oc delete -k "$MANIFESTS_DIR/07-observability/redis/" --ignore-not-found 2>/dev/null || true
+        delete_namespace "redis-limitador"
+    else
+        log_info "  Redis for Limitador not found, skipping"
+    fi
+
     log_info "Observability cleanup complete"
 fi
 

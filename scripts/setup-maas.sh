@@ -57,6 +57,7 @@ FROM_PHASE=0
 SKIP_MODELS=false
 SKIP_VERIFY=false
 WITH_OBSERVABILITY=false
+WITH_REDIS=false
 WITH_EXTERNAL_MODELS=false
 MAAS_HOSTNAME="${MAAS_HOSTNAME:-}"
 EXTERNAL_MODEL_PROVIDER="${EXTERNAL_MODEL_PROVIDER:-openai}"
@@ -72,6 +73,7 @@ while [[ $# -gt 0 ]]; do
         --skip-models) SKIP_MODELS=true; shift ;;
         --skip-verify) SKIP_VERIFY=true; shift ;;
         --with-observability) WITH_OBSERVABILITY=true; shift ;;
+        --with-redis) WITH_REDIS=true; shift ;;
         --with-external-models) WITH_EXTERNAL_MODELS=true; shift ;;
         --maas-hostname) MAAS_HOSTNAME="$2"; shift 2 ;;
         --external-model-provider) EXTERNAL_MODEL_PROVIDER="$2"; shift 2 ;;
@@ -96,6 +98,7 @@ Options:
   --skip-verify        Skip Phase 6 (verification)
   --disconnected       Disconnected/air-gapped mode (oci:// URIs, skip Phase 8)
   --with-observability Also run Phase 7 (Tempo + OpenTelemetry + COO + telemetry + Loki usage dashboards)
+  --with-redis           Deploy dev Redis for Limitador counter persistence (runs in Phase 7, can combine with --with-observability)
   --with-external-models Also run Phase 8 (ExternalModel deployment + test)
   --external-model-provider <p>   Provider: openai (default), gemini, bedrock (or set EXTERNAL_MODEL_PROVIDER)
   --external-model-api-key <key>  API key for external provider (or set EXTERNAL_MODEL_API_KEY)
@@ -110,7 +113,7 @@ Phases:
   4  RHOAI config       DSC with MaaS: Managed, Dashboard flags
   5  Deploy model       Auto-detect GPU, apply model Kustomize manifests
   6  Verify             6-phase E2E verification (API, auth, rate limits)
-  7  Observability      Tempo + OpenTelemetry + COO + telemetry + Loki usage dashboards (only with --with-observability)
+  7  Observability      Tempo + OpenTelemetry + COO + telemetry + Loki usage dashboards + Redis (only with --with-observability/--with-redis)
   8  External models    ExternalModel + governance (only with --with-external-models, skipped in --disconnected)
 
 Auto-detection (--model auto):
@@ -1091,9 +1094,10 @@ fi
 # =============================================================================
 # Phase 7: Observability (Optional)
 # =============================================================================
-if should_run 7 && [ "$WITH_OBSERVABILITY" = true ]; then
+if should_run 7 && { [ "$WITH_OBSERVABILITY" = true ] || [ "$WITH_REDIS" = true ]; }; then
     log_phase 7 "Observability"
 
+    if [ "$WITH_OBSERVABILITY" = true ]; then
     # Tempo Operator
     log_step "Installing Tempo Operator..."
     run_cmd oc apply -k "$MANIFESTS_DIR/07-observability/tempo/"
@@ -1243,6 +1247,38 @@ if should_run 7 && [ "$WITH_OBSERVABILITY" = true ]; then
         run_cmd oc patch configs.maas.opendatahub.io default --type=merge \
             -p '{"spec":{"usageLogging":true}}'
         log_info "Usage logging enabled - operator will create EnvoyFilter, OTEL Collector, and Perses dashboards"
+    fi
+    fi # end WITH_OBSERVABILITY
+
+    # Redis for Limitador persistence (optional, any RHOAI version)
+    if [ "$WITH_REDIS" = true ]; then
+        log_step "Deploying Redis for Limitador persistence..."
+        run_cmd oc apply -k "$MANIFESTS_DIR/07-observability/redis/"
+        if [ "$DRY_RUN" = false ]; then
+            log_info "Waiting for Redis deployment..."
+            oc wait --for=condition=available deployment/redis -n redis-limitador --timeout=120s 2>/dev/null || \
+                log_warn "Redis deployment not ready within 120s"
+        fi
+
+        log_step "Patching Limitador CR for Redis storage..."
+        run_cmd oc patch limitador limitador -n kuadrant-system --type=merge -p '{
+          "spec": {
+            "storage": {
+              "redis": {
+                "configSecretRef": {
+                  "name": "redis-config"
+                }
+              }
+            }
+          }
+        }'
+
+        if [ "$DRY_RUN" = false ]; then
+            log_info "Waiting for Limitador to reconnect with Redis..."
+            oc wait --for=condition=ready pod -n kuadrant-system -l app=limitador --timeout=60s 2>/dev/null || true
+            log_info "Limitador pod restarted with Redis storage configured"
+        fi
+        log_info "Redis for Limitador configured"
     fi
 fi
 

@@ -182,6 +182,94 @@ oc get persesdashboard -n redhat-ods-monitoring | grep usage-logs
 
 The usage dashboards will appear in the RHOAI console under *Observe & monitor > Dashboard*, showing per-model token consumption, per-user breakdowns, and subscription usage.
 
+== Step 7: Limitador Persistence with Redis (Optional)
+
+By default, Limitador stores rate-limit counters in memory. If the Limitador pod restarts, scales, or gets rescheduled, all counters reset to zero. For example, with a 7-day rate limit window, a pod restart on day 6 gives every user a full quota refresh for the remaining window period. For production deployments, configure Redis as a persistent backend so counters survive pod lifecycle events.
+
+NOTE: Limitador supports additional storage backends beyond Redis. See the link:https://github.com/Kuadrant/limitador/blob/main/doc/server/configuration.md[Limitador configuration documentation] for details. This guide focuses on Redis.
+
+=== Step 7a: Deploy Redis (Dev/Test)
+
+[source,bash]
+----
+oc apply -k manifests/07-observability/redis/
+----
+
+Wait for the Redis deployment:
+
+[source,bash]
+----
+oc wait --for=condition=available deployment/redis -n redis-limitador --timeout=120s
+----
+
+WARNING: This deploys a single-replica, non-HA Redis instance with persistence disabled (no RDB/AOF). Data is stored in memory only and will be lost if the Redis pod itself restarts. This is for development and testing. For production, use a supported Redis-based data store - see the production guidance below.
+
+=== Step 7b: Configure Limitador for Redis
+
+Patch the Limitador CR to use the Redis secret created by the kustomize manifests:
+
+[source,bash]
+----
+oc patch limitador limitador -n kuadrant-system --type=merge -p '{
+  "spec": {
+    "storage": {
+      "redis": {
+        "configSecretRef": {
+          "name": "redis-config"
+        }
+      }
+    }
+  }
+}'
+----
+
+The Limitador operator will restart the pod automatically.
+
+=== Step 7c: Verify Redis Connection
+
+Verify the Limitador CR has the Redis storage configured:
+
+[source,bash]
+----
+oc get limitador limitador -n kuadrant-system -o jsonpath='{.spec.storage}'
+# Expected: {"redis":{"configSecretRef":{"name":"redis-config"}}}
+----
+
+Test that counters survive a pod restart. First make a few inference requests (using an existing API key) to populate Redis, then restart Limitador:
+
+[source,bash]
+----
+# Check Redis has keys (should be > 0 after making requests):
+oc exec -n redis-limitador deploy/redis -- redis-cli DBSIZE
+
+# Restart Limitador:
+oc delete pod -n kuadrant-system -l app=limitador
+oc wait --for=condition=ready pod -n kuadrant-system -l app=limitador --timeout=60s
+
+# Check Redis still has keys after restart:
+oc exec -n redis-limitador deploy/redis -- redis-cli DBSIZE
+----
+
+If the DBSIZE is the same before and after the restart, counters survived and Redis persistence is working.
+
+=== Production Redis guidance
+
+For production deployments, use a supported Redis-based data store instead of the dev instance above. Supported options include Redis Enterprise, Amazon ElastiCache, and Dragonfly.
+
+The configuration is the same - create a Secret with the Redis URL and patch the Limitador CR:
+
+[source,bash]
+----
+# Example with a production Redis endpoint
+oc -n kuadrant-system create secret generic redis-config \
+  --from-literal=URL=rediss://user:password@your-redis.example.com:6380 \
+  --dry-run=client -o yaml | oc apply -f -
+----
+
+For complete production setup steps, see the link:https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1-latest/html/installing_on_openshift_container_platform/rhcl-install-on-ocp#configure-redis_installing-rhcl-on-ocp[Red Hat Connectivity Link - Configure Redis] documentation.
+
+TIP: The link:https://developers.redhat.com/articles/2026/07/06/track-model-usage-openshift-ai-usage-dashboard[Track model usage with the OpenShift AI Usage Dashboard] article explains how Limitador counters feed the usage dashboard metrics (`authorized_calls`, `rate_limited`, `authorized_hits`). Without Redis, these metrics reset on pod restart. For accurate long-term usage tracking, RHOAI 3.5 also provides logs-based usage dashboards (Step 6 above) which are independent of Limitador counter persistence.
+
 == Verification
 
 Check all four observability operators are installed:
@@ -232,6 +320,23 @@ Check the Istio Telemetry exists:
 oc get telemetry.telemetry.istio.io latency-per-subscription -n openshift-ingress
 ----
 
+Check Redis is running (if deployed):
+
+[source,bash]
+----
+oc get deployment redis -n redis-limitador
+# Expected: READY 1/1
+
+oc get secret redis-config -n kuadrant-system
+# Expected: secret exists
+
+oc get limitador limitador -n kuadrant-system -o jsonpath='{.spec.storage}'
+# Expected: {"redis":{"configSecretRef":{"name":"redis-config"}}}
+
+oc exec -n redis-limitador deploy/redis -- redis-cli DBSIZE
+# Expected: > 0 (after making at least one inference request)
+----
+
 == Appendix
 
 === Directory Structure
@@ -268,6 +373,12 @@ manifests/07-observability/
     minio.yaml                       # MinIO deployment + bucket job
     minio-secret.yaml                # S3 credentials for Loki
     lokistack.yaml                   # LokiStack CR (edit storageClassName for your cluster)
+  redis/
+    kustomization.yaml               # Redis dev instance for Limitador persistence
+    namespace.yaml                   # redis-limitador namespace
+    redis.yaml                       # Redis Deployment + Service (dev-only)
+    redis-secret.yaml                # Redis URL secret (in kuadrant-system)
+    limitador-patch.yaml             # Limitador CR patch reference (not applied by kustomize)
 ----
 
 == References
@@ -280,6 +391,9 @@ manifests/07-observability/
 * link:https://docs.kuadrant.io/dev/kuadrant-operator/doc/reference/telemetrypolicy/[Kuadrant TelemetryPolicy]
 * link:https://developers.redhat.com/articles/2026/07/06/track-model-usage-openshift-ai-usage-dashboard[Track model usage with the OpenShift AI Usage Dashboard]
 * link:https://opendatahub-io.github.io/models-as-a-service/dev/observability/setup/#logs-based-usage-dashboards[MaaS upstream - Logs-based Usage Dashboards]
+* link:https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1-latest/html/installing_on_openshift_container_platform/rhcl-install-on-ocp#configure-redis_installing-rhcl-on-ocp[RHCL - Configure Redis for Limitador]
+* link:https://opendatahub-io.github.io/models-as-a-service/dev/advanced-administration/limitador-persistence/[MaaS upstream - Limitador Persistence]
+* link:https://github.com/Kuadrant/limitador/blob/main/doc/server/configuration.md[Limitador server configuration (storage backends)]
 
 == Next step
 
