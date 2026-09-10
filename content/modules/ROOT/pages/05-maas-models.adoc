@@ -289,7 +289,7 @@ If you update only the `MaaSSubscription` without updating the `MaaSAuthPolicy`,
 
 == ServiceAccount-Scoped Subscriptions
 
-By default, the guide's subscriptions use `system:authenticated` in `spec.owner.groups`, which means any authenticated user can create API keys bound to them. For programmatic workloads (CI/CD pipelines, batch jobs, automated testing), you can create a dedicated subscription scoped to a specific ServiceAccount with its own rate limits.
+For programmatic workloads (CI/CD pipelines, batch jobs, automated testing), you can restrict a model so that only a specific ServiceAccount can access it. This requires scoping *both* the `MaaSAuthPolicy` and the `MaaSSubscription` to the SA. If you only scope the subscription but leave the auth policy open to `system:authenticated`, any user can still access the model through other subscriptions.
 
 Create a ServiceAccount and generate a token:
 
@@ -299,7 +299,31 @@ oc create sa my-pipeline-sa -n default
 SA_TOKEN=$(oc create token my-pipeline-sa -n default --duration=24h)
 ----
 
-Create a `MaaSSubscription` that only this ServiceAccount can use:
+Create a `MaaSAuthPolicy` that only grants this ServiceAccount access to the model:
+
+[source,bash]
+----
+cat <<EOF | oc apply -f -
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: simulator-pipeline-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Simulator Pipeline Access"
+    openshift.io/description: "Grants access only to the pipeline ServiceAccount"
+spec:
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+  subjects:
+    groups: []
+    users:
+      - system:serviceaccount:default:my-pipeline-sa
+EOF
+----
+
+Create a `MaaSSubscription` scoped to the same ServiceAccount:
 
 [source,bash]
 ----
@@ -327,9 +351,12 @@ spec:
 EOF
 ----
 
-NOTE: The ServiceAccount name in `spec.owner.users` must use the full format: `system:serviceaccount:{namespace}:{sa-name}`. Setting `groups: []` ensures only this SA (and no other users) can create API keys bound to this subscription.
+NOTE: The ServiceAccount identity in both resources must use the full format: `system:serviceaccount:{namespace}:{sa-name}`. Setting `groups: []` in both ensures only this SA can access the model and create API keys.
 
-The existing `MaaSAuthPolicy` with `system:authenticated` already covers ServiceAccounts, so you do not need a separate auth policy. The governance pairing is satisfied by the existing policy.
+[IMPORTANT]
+====
+Auth policies are additive. If the existing `simulator-access` policy (from the Phase 5 deployment) is still active with `system:authenticated`, all authenticated users can still access the model through that policy - regardless of the SA-scoped policy above. For full isolation, the model should only have SA-scoped governance resources and no broader policies.
+====
 
 Test it:
 
@@ -358,7 +385,7 @@ curl -sk "https://${MAAS_URL}/v1/chat/completions" \
   }"
 ----
 
-If a regular user tries to create an API key with `"subscription": "simulator-pipeline"`, the API returns `invalid_subscription` because they are not in the subscription's `spec.owner.users` list.
+A regular user trying to create an API key with `"subscription": "simulator-pipeline"` gets `invalid_subscription` - the maas-api checks the caller's identity against `spec.owner.users` and rejects anyone not listed.
 
 == Appendix
 
