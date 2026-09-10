@@ -1220,6 +1220,8 @@ if should_run 7 && { [ "$WITH_OBSERVABILITY" = true ] || [ "$WITH_REDIS" = true 
             oc apply -k "$MANIFESTS_DIR/07-observability/telemetry/"
             log_info "Gateway telemetry applied (manual fallback)"
         fi
+    else
+        log_info "Would verify auto-created TelemetryPolicy and Istio Telemetry in openshift-ingress"
     fi
 
     # Usage Dashboards with Loki (3.5+ only)
