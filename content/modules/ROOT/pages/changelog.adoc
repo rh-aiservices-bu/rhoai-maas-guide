@@ -1,6 +1,6 @@
-= Release Notes
+= Guide Changelog
 
-Changelog for the {rhoai} {maas} companion guide. Covers new guide phases, automation improvements, bug fixes, and community contributions since the project started in June 2026.
+Changes to the {rhoai} {maas} companion guide since the project started in June 2026. Covers new guide phases, automation improvements, bug fixes, and community contributions.
 
 Each entry links to its pull request for full details.
 
