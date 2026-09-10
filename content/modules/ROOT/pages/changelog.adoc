@@ -32,6 +32,8 @@ Each entry links to its pull request for full details.
 
 * *Governance Pairing Documentation* - Both MaaSAuthPolicy AND MaaSSubscription must reference the same model for Ready state. Day 2 patch commands included. (link:{repo-url}/pull/117[#117])
 
+* *ServiceAccount-Scoped Subscriptions* - New section in Phase 5 showing how to scope a MaaSSubscription to a specific ServiceAccount via `spec.owner.users`. Useful for CI/CD pipelines and batch jobs that need their own rate limits. (link:{repo-url}/pull/150[#150])
+
 === Fixes
 
 * *Phase 4 CRD Race Condition* - DSC triggers async CRD registration. Script was applying HardwareProfile before CRD existed. Added wait_for_crd() helper. (link:{repo-url}/pull/108[#108])
