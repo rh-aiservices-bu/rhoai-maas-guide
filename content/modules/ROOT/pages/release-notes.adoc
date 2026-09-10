@@ -28,6 +28,8 @@ Each entry links to its pull request for full details.
 
 * *Gateway Proxy Workaround* - On OCP < 4.22 behind corporate proxy, gateway pod does not get cluster-wide proxy settings. Added Step 5f with ConfigMap template for HTTP_PROXY/HTTPS_PROXY/NO_PROXY env vars. (link:{repo-url}/pull/137[#137])
 
+* *Gateway Telemetry Auto-Creation* - Replaced manual `oc apply -k` telemetry step with MaasTenantConfig/Tenant CR patch. The RHOAI operator (`maas-controller`) auto-creates TelemetryPolicy and Istio Telemetry when `spec.telemetry.enabled: true` is set. Added 3.4/3.5 tabs and optional per-user metrics toggle. (link:{repo-url}/pull/146[#146])
+
 * *Governance Pairing Documentation* - Both MaaSAuthPolicy AND MaaSSubscription must reference the same model for Ready state. Day 2 patch commands included. (link:{repo-url}/pull/117[#117])
 
 === Fixes
