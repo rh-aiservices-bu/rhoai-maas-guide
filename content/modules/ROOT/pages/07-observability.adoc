@@ -159,7 +159,7 @@ oc get telemetry.telemetry.istio.io -n openshift-ingress
 --
 ====
 
-NOTE: The manifests in `manifests/07-observability/telemetry/` are kept as reference for what the operator creates. You do not need to apply them manually.
+NOTE: The manifests in `manifests/07-observability/telemetry/` are kept as a reference. The operator-created resources may differ slightly in label expressions and dimensions. You do not need to apply them manually.
 
 == Step 6: Usage Dashboards with Loki (RHOAI 3.5+ Only)
 
