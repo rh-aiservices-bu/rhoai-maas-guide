@@ -1,27 +1,31 @@
-# MaaS tiering demo
+# Tiering by group and by user
 
-Demonstrates how a `MaaSSubscription` is assigned to **groups** or to **individual
-users**, and how `priority` resolves the overlap when a user matches both.
+A `MaaSSubscription` sets a consumption tier — how many tokens an identity may
+spend in a window. Subscriptions can be assigned to a **group**, to **individual
+users**, or to both, with `priority` deciding which tier applies when a user
+matches more than one.
 
-Requires MaaS already deployed with the `simulator` model — from the repository
-root, `./scripts/setup-maas.sh --model simulator`.
+That combination is what lets you set a team-wide default and then give a named
+user their own tier without moving them out of the team.
+
+Requires MaaS deployed with the `simulator` model — from the repository root,
+`./scripts/setup-maas.sh --model simulator`.
 
 ## The mechanism
 
 ```yaml
 spec:
   owner:
-    groups:                  # []Object - each entry needs a `name` key
+    groups:                  # []Object - each entry takes a `name` key
       - name: maas-demo-users
-    users:                   # []string - PLAIN usernames, no `name` key
+    users:                   # []string - plain usernames
       - alice
   priority: 30               # higher wins when a user matches several
 ```
 
-The asymmetry between `groups` and `users` is easy to get wrong: groups are objects,
-users are bare strings.
-
 ## Cast
+
+Three users, all members of the same group:
 
 | User | Matches | Applied tier | Limit |
 | --- | --- | --- | --- |
@@ -29,15 +33,15 @@ users are bare strings.
 | `alice` | group + user override | `demo-alice-gold` (priority 30) | 5000 tokens/min |
 | `bob` | group + user override | `demo-bob-throttled` (priority 30) | 20 tokens/min |
 
-`bob` is the one to demo live — 20 tokens/min trips after about six requests.
+`bob` is the one to demo live — at 20 tokens/min his limit engages after about
+six requests, while `alice` and `carol` continue unaffected.
 
 ## Run it
 
 ```bash
 cd demo/user-level-rate-limiting
 
-# 1. Create alice/bob/carol and the maas-demo-users group.
-#    Adds an htpasswd IdP alongside any existing provider; backs up oauth/cluster first.
+# 1. Create alice/bob/carol and the maas-demo-users group
 ./setup-demo-users.sh
 
 # 2. Apply the tiers
@@ -63,9 +67,10 @@ Tear down with `./cleanup-demo.sh`.
 ## Talk track
 
 1. **Show `subscriptions.yaml`** — one group tier, two per-user overrides. Point at
-   `owner.groups` vs `owner.users`, and at `priority`.
+   `owner.groups` versus `owner.users`, and at `priority`.
 
-2. **Mint a key as bob**, noting the request does *not* name a subscription:
+2. **Mint a key as bob.** Note that the request does *not* name a subscription —
+   the platform resolves it:
 
    ```bash
    oc login -u bob -p "$DEMO_PASSWORD" --server=$(oc whoami --show-server)
@@ -75,44 +80,34 @@ Tear down with `./cleanup-demo.sh`.
      | jq .subscription
    ```
 
-   Returns `demo-bob-throttled` — MaaS resolved the highest-priority match itself.
+   Returns `demo-bob-throttled` — MaaS selected the highest-priority match on its own.
 
-3. **Run the burst** — bob hits 429 at his token limit; alice and carol sail through.
+3. **Run the burst** — bob receives 429 at his token limit; alice and carol sail through.
+   Same model, same endpoint, same request: the difference is entitlement.
 
-4. **Change a tier live** and re-run:
+4. **Change a tier live** and re-run, to show tiers are policy rather than deployment:
 
    ```bash
    oc patch maassubscription demo-bob-throttled -n models-as-a-service --type=merge \
      -p '{"spec":{"modelRefs":[{"name":"facebook-opt-125m-simulated","namespace":"llm","tokenRateLimits":[{"limit":5000,"window":"1m"}]}]}}'
    ```
 
-## Two gotchas
+## How limits behave
 
-**Model name.** The inference body needs the *served* model name `facebook/opt-125m`,
-not the KServe resource name `facebook-opt-125m-simulated`. The resource name is the
-URL path; the served name goes in the JSON body. Getting it wrong returns
-`404 The model ... does not exist`.
+- Limits are counted **per subscription**, not per API key. Issuing a second key
+  does not reset the quota, so a user cannot lift their own ceiling by minting
+  more credentials.
+- Subscription ownership is **enforced**. A request naming a subscription the
+  caller does not own is rejected.
+- Limits are measured in **tokens**, not requests, so the quota reflects actual
+  consumption rather than call count.
 
-**Cold-start 500.** The first request after an idle period can return HTTP 500 —
-`maas-api` logs `database lookup failed: context canceled`, a stale pooled DB
-connection. It retries fine and sustained traffic is stable. `run-demo.sh` retries once
-on a 500, so the demo stays clean; if you demo by hand, just send the request again.
+## Usage note
 
-## Behaviour worth stating accurately
+The URL path carries the KServe resource name (`facebook-opt-125m-simulated`)
+and the request body carries the served model name (`facebook/opt-125m`):
 
-- Rate limits are counted **per subscription**, not per key. Minting a second key does
-  not reset the quota — a fresh key on an exhausted subscription is throttled
-  immediately.
-
-- Subscription ownership is **enforced**. Requesting a subscription you do not own
-  returns `400 {"code":"invalid_subscription"}`.
-
-- A restrictive user tier is **not a ceiling**. If a user also matches a more permissive
-  subscription, they can name it at key-creation time and bypass the restriction. Any
-  subscription granting `system:authenticated` will match your demo users too, so check
-  what else they match before demoing:
-
-  ```bash
-  oc get maassubscription -A \
-    -o custom-columns=NAME:.metadata.name,GROUPS:.spec.owner.groups,USERS:.spec.owner.users,PRIO:.spec.priority
-  ```
+```bash
+curl ... -d '{"model":"facebook/opt-125m", ...}' \
+  https://maas.<domain>/llm/facebook-opt-125m-simulated/v1/chat/completions
+```

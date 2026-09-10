@@ -1,25 +1,26 @@
-# ServiceAccount access to a model
+# Application access with a ServiceAccount
 
-An in-cluster workload calling a MaaS-governed model using its **own
-ServiceAccount token** — no human identity, no external identity provider, and no
-credential to distribute. Kubernetes projects the token into the pod; MaaS
-validates it via TokenReview.
+An application calls a MaaS-governed model using its **own Kubernetes
+ServiceAccount token**. No human identity, no external identity provider, and no
+credential to distribute: Kubernetes projects the token into the pod and rotates
+it, and MaaS validates it through TokenReview.
+
+This is the pattern for anything that runs unattended — batch jobs, pipelines,
+scheduled reports, agents.
 
 Requires MaaS deployed with the `simulator` model — from the repository root,
 `./scripts/setup-maas.sh --model simulator`.
 
 ## How MaaS sees a ServiceAccount
 
-A ServiceAccount token is issued by the Kubernetes API, not an IdP:
+A ServiceAccount token is issued by the Kubernetes API:
 
 ```
 token sub: system:serviceaccount:maas-clients:batch-scorer
 issued by: https://kubernetes.default.svc
 ```
 
-It is validated by the `openshift-identities` method in the Authorino
-`AuthConfig` (Kubernetes TokenReview), rather than the OIDC/JWT path. MaaS then
-sees:
+MaaS validates it with Kubernetes TokenReview and sees:
 
 | Field | Value |
 | --- | --- |
@@ -30,7 +31,8 @@ Both are usable in MaaS objects, which is what makes the design below work.
 
 ## The design
 
-Access is granted **once for the namespace**; the rate limit is **per workload**:
+Access is granted **once for the namespace**; the consumption tier is set **per
+workload**:
 
 | Object | Effect |
 | --- | --- |
@@ -42,6 +44,9 @@ Access is granted **once for the namespace**; the rate limit is **per workload**
 | `batch-scorer` | `sa-batch-scorer-tier` | 120 tokens/min |
 | `report-writer` | `sa-report-writer-tier` | 15 tokens/min |
 
+Deploying a new application into the namespace needs no access change — grant
+access once to the team's namespace, then size each workload individually.
+
 ## Run it
 
 ```bash
@@ -50,7 +55,7 @@ cd demo/service-account-access
 ./run-demo.sh
 ```
 
-Verified output:
+Output:
 
 ```
 === system:serviceaccount:maas-clients:batch-scorer ===
@@ -66,11 +71,13 @@ Verified output:
   burst 18 -> 4 ok / 14 rate-limited / 0 other
 ```
 
+Two workloads, same namespace, same model, different limits.
+
 Tear down with `./cleanup-demo.sh`.
 
 ## The app
 
-`setup-demo.sh` also deploys `model-client`, a small app in the `maas-clients`
+`setup-demo.sh` also deploys `model-client`, an application in the `maas-clients`
 namespace that runs **as the `batch-scorer` ServiceAccount** and calls the model.
 
 ```bash
@@ -78,8 +85,8 @@ oc get route model-client -n maas-clients -o jsonpath='{.spec.host}'
 oc logs -f deployment/model-client -n maas-clients
 ```
 
-The page shows the identity the pod is running as, an *Ask the model* box, and a
-*Burst 20 requests* button that trips the subscription's rate limit:
+The page shows the identity the pod runs as, an *Ask the model* box, and a
+*Burst 20 requests* button that reaches the subscription's rate limit:
 
 ```
 running as     system:serviceaccount:maas-clients:batch-scorer
@@ -97,33 +104,30 @@ spec:
 ```
 
 ```python
-def sa_token():                        # re-read each call - kubelet rotates it
+def sa_token():                        # re-read each call - Kubernetes rotates it
     with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
         return f.read().strip()
 
 headers = {"Authorization": f"Bearer {sa_token()}"}
 ```
 
-No API key, no client secret, nothing in a Secret, nothing to rotate. Change
-`serviceAccountName` and the app lands in a different subscription with a
-different rate limit — entitlement is a deployment-time decision, not a code one.
+No API key, no client secret, nothing in a Secret, nothing to rotate, nothing to
+leak in a build log. Change `serviceAccountName` and the application lands in a
+different subscription with a different limit — entitlement becomes a
+deployment-time decision rather than a code change.
 
-The code is delivered as a ConfigMap, so the demo needs no image build or
+The application is delivered as a ConfigMap, so the demo needs no image build or
 registry push. `setup-demo.sh --no-app` skips it.
-
-> **Note:** the app skips TLS verification when calling MaaS, because the cluster
-> ingress certificate is not in the base image's trust store. A production
-> deployment would mount the CA bundle; the code marks the spot.
 
 ## Two ways a workload can call the model
 
-Both work, and the choice matters for how you build the client:
+Both work, and the choice shapes how you build the client:
 
-1. **Straight with the ServiceAccount token** — no API key at all. Usually what you
-   want in-cluster: the token is already mounted at
-   `/var/run/secrets/kubernetes.io/serviceaccount/token`, rotated by Kubernetes,
-   and there is nothing to store or revoke.
-2. **Exchange it for a MaaS API key** — useful when the caller is outside the
+1. **Directly with the ServiceAccount token** — no API key at all. Usually what
+   you want in-cluster: the token is already mounted at
+   `/var/run/secrets/kubernetes.io/serviceaccount/token`, Kubernetes rotates it,
+   and there is nothing to store, distribute or revoke.
+2. **Exchanged for a MaaS API key** — useful when the caller sits outside the
    cluster, or when you want a credential with its own lifetime and revocation.
 
 ```bash
@@ -134,39 +138,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   https://maas.<cluster-domain>/llm/facebook-opt-125m-simulated/v1/chat/completions
 ```
 
-## Why each SA has its own subscription
-
-The obvious design — one namespace-wide subscription plus higher-priority
-per-SA overrides — hits a bug. **If an identity matches more than one
-`MaaSSubscription`, the two call paths disagree:**
-
-| Path | With overlapping subscriptions |
-| --- | --- |
-| token → API key → inference | works; resolves the higher priority correctly |
-| ServiceAccount token used **directly** | **HTTP 403** |
-
-Reproduced deliberately while building this demo: with both a namespace tier
-(priority 20) and a per-SA tier (priority 70) matching `batch-scorer`, key
-issuance returned `sa-batch-scorer-tier` correctly every time, but a direct token
-call returned 403 consistently. Deleting the per-SA subscription — changing
-nothing else — restored 200.
-
-It is not the auth policies (removing the overlapping one did not help), not rate
-limiting (403 rather than 429, and reproduced after the window reset), and not
-specific to ServiceAccounts.
-
-Keeping every identity matched to exactly one subscription avoids it entirely,
-which is why the tiers here are per-SA rather than namespace-plus-override.
-
-> **Note:** the same overlap exists for human users in the `user-level-rate-limiting`
-> demo, where `alice` and `bob` match both a team tier and a per-user tier. Those
-> demos only use the API-key path, so the problem stays latent there.
-
 ## Notes
 
-- The inference body needs the *served* model name `facebook/opt-125m`, not the
-  KServe resource name `facebook-opt-125m-simulated` (that is the URL path).
-- Deleting a ServiceAccount does **not** revoke API keys already issued to it —
-  those live in the MaaS database until they expire.
-- `oc create token` mints a short-lived token for testing. A real workload uses
-  the projected token in its pod, which Kubernetes rotates automatically.
+- The URL path carries the KServe resource name
+  (`facebook-opt-125m-simulated`); the request body carries the served model
+  name (`facebook/opt-125m`).
+- `oc create token` mints a short-lived token, which is how `run-demo.sh` tests
+  each ServiceAccount from outside. A real workload uses the token projected
+  into its pod, which Kubernetes rotates automatically.
