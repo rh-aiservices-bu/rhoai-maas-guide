@@ -140,10 +140,18 @@ and the realm itself are left alone.
    names them directly at priority 50, so they get 5000 — less than either group
    tier. This is how you cap one person without touching their team's entitlement.
 
+Expect one follow-up question: *what if two subscriptions have the same
+priority?* The largest limit wins, so a tie resolves to the most permissive
+tier — see [Designing priorities](#designing-priorities) for why a cap therefore
+needs a strictly higher number.
+
 ## How resolution works
 
 - **Highest `priority` wins.** The winning subscription becomes the entitlement in
   full; the others contribute nothing.
+- **At equal priority, the largest limit wins.** A tie resolves toward the most
+  permissive subscription, so priority is what restricts an identity — an equal
+  number does not.
 - **Group and user subscriptions rank in the same list.** A user subscription
   does not automatically beat a group one — it wins here because its priority is
   higher. Priority is the whole mechanism.
@@ -162,5 +170,13 @@ A workable convention, and the one used here:
 | 30–49 | narrower group tiers that should beat the defaults |
 | 50+ | individual users — exceptions, caps, and pilots |
 
-Leave gaps. Inserting a tier between two existing ones is a one-line change if
+Two rules make this work:
+
+**Give a restriction a strictly higher number.** Because a tie resolves to the
+largest limit, an equal priority will not hold someone down. This demo depends on
+it: `quota-individual-tier` caps `capped-user` at 5000 because it sits at priority
+50, above both group tiers. Set it to 30 — tying with `quota-standard-tier` — and
+the cap is ignored, because 10000 is the more permissive of the two.
+
+**Leave gaps.** Inserting a tier between two existing ones is a one-line change if
 the numbers are spaced, and a renumbering exercise if they are not.
