@@ -1192,10 +1192,35 @@ if should_run 7 && { [ "$WITH_OBSERVABILITY" = true ] || [ "$WITH_REDIS" = true 
     fi
     log_info "DSCI monitoring configured"
 
-    # Telemetry
-    log_step "Applying Gateway telemetry..."
-    run_cmd oc apply -k "$MANIFESTS_DIR/07-observability/telemetry/"
-    log_info "Gateway telemetry applied"
+    # Telemetry (auto-created by operator when enabled on MaasTenantConfig/Tenant)
+    log_step "Enabling Gateway telemetry..."
+    if [ "$IS_35_PLUS" = true ]; then
+        run_cmd oc patch maastenantconfig default-tenant -n models-as-a-service \
+            --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
+    else
+        run_cmd oc patch tenant default-tenant -n models-as-a-service \
+            --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
+    fi
+    if [ "$DRY_RUN" = false ]; then
+        TIMEOUT=120
+        ELAPSED=0
+        while [ $ELAPSED -lt $TIMEOUT ]; do
+            TP_COUNT=$(oc get telemetrypolicies.extensions.kuadrant.io -n openshift-ingress --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            IT_COUNT=$(oc get telemetry.telemetry.istio.io -n openshift-ingress --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$TP_COUNT" -gt 0 ] && [ "$IT_COUNT" -gt 0 ]; then
+                break
+            fi
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+        done
+        if [ "$TP_COUNT" -gt 0 ] && [ "$IT_COUNT" -gt 0 ]; then
+            log_info "Gateway telemetry auto-created (TelemetryPolicy: $TP_COUNT, Istio Telemetry: $IT_COUNT)"
+        else
+            log_warn "Gateway telemetry not found after ${TIMEOUT}s - applying manually as fallback"
+            oc apply -k "$MANIFESTS_DIR/07-observability/telemetry/"
+            log_info "Gateway telemetry applied (manual fallback)"
+        fi
+    fi
 
     # Usage Dashboards with Loki (3.5+ only)
     if [ "$IS_35_PLUS" = true ]; then

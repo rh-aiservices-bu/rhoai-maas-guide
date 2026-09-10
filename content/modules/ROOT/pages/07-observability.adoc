@@ -10,7 +10,7 @@ This phase adds *optional* observability enhancements on top of UWM:
 
 . *Cluster Observability Operator (COO)* - required for the Observability Dashboard tab in the {rhoai} UI. COO provides the Perses CRDs (`Perses`, `PersesDatasource`, `PersesDashboard`) that the RHOAI operator uses to deploy the dashboard backend.
 
-. *Gateway Telemetry* - per-model, per-user, per-subscription usage metrics on the MaaS gateway. Adds fine-grained labels (`model`, `user`, `subscription`, `organization_id`, `cost_center`) to gateway metrics for usage attribution and billing.
+. *Gateway Telemetry* (auto-created) - the RHOAI operator auto-creates a TelemetryPolicy and Istio Telemetry CR when telemetry is enabled on the MaasTenantConfig (3.5) or Tenant (3.4). These add per-model, per-subscription, and per-organization labels to gateway metrics for usage attribution.
 
 . *Loki Operator + Usage Dashboards* (RHOAI 3.5+ only) - log-based per-request usage tracking. The gateway emits structured OTLP access logs with token counts, user identity, and subscription info. Logs are shipped to a LokiStack via an OpenTelemetry Collector. The RHOAI console shows admin and user-scoped usage dashboards under *Observe & monitor*.
 
@@ -104,14 +104,62 @@ Wait for the DSCI to reconcile:
 oc wait --for=jsonpath='{.status.phase}'=Ready dsci/default-dsci --timeout=300s
 ----
 
-== Step 5: Apply Gateway Telemetry
+== Step 5: Enable Gateway Telemetry
 
-Once COO is installed and the MaaS gateway is running:
+The RHOAI operator auto-creates a TelemetryPolicy and an Istio Telemetry CR when telemetry is enabled on the MaaS tenant configuration. These add per-model, per-subscription, and per-organization labels to gateway Prometheus metrics. No manual YAML application is needed.
+
+[tabs]
+====
+RHOAI 3.5+ (MaasTenantConfig)::
++
+--
+Patch the `MaasTenantConfig` to enable telemetry:
 
 [source,bash]
 ----
-oc apply -k manifests/07-observability/telemetry/
+oc patch maastenantconfig default-tenant -n models-as-a-service \
+  --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
 ----
+
+The operator creates a TelemetryPolicy with `model`, `subscription`, `organization_id`, and `cost_center` labels, plus an Istio Telemetry CR for `REQUEST_DURATION` per subscription. Verify they exist:
+
+[source,bash]
+----
+oc get telemetrypolicies.extensions.kuadrant.io -n openshift-ingress
+oc get telemetry.telemetry.istio.io -n openshift-ingress
+----
+
+Optional - enable per-user metrics (disabled by default for GDPR compliance):
+
+[source,bash]
+----
+oc patch maastenantconfig default-tenant -n models-as-a-service \
+  --type=merge -p '{"spec":{"telemetry":{"metrics":{"captureUser":true}}}}'
+----
+--
+
+RHOAI 3.4 (Tenant)::
++
+--
+Patch the `Tenant` CR to enable telemetry:
+
+[source,bash]
+----
+oc patch tenant default-tenant -n models-as-a-service \
+  --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
+----
+
+Verify the auto-created resources:
+
+[source,bash]
+----
+oc get telemetrypolicies.extensions.kuadrant.io -n openshift-ingress
+oc get telemetry.telemetry.istio.io -n openshift-ingress
+----
+--
+====
+
+NOTE: The manifests in `manifests/07-observability/telemetry/` are kept as reference for what the operator creates. You do not need to apply them manually.
 
 == Step 6: Usage Dashboards with Loki (RHOAI 3.5+ Only)
 
@@ -306,19 +354,21 @@ oc get crd perses.perses.dev
 oc get crd lokistacks.loki.grafana.com
 ----
 
-Check the TelemetryPolicy exists:
+Check the TelemetryPolicy exists (auto-created by the operator):
 
 [source,bash]
 ----
-oc get telemetrypolicies.extensions.kuadrant.io maas-telemetry -n openshift-ingress
+oc get telemetrypolicies.extensions.kuadrant.io -n openshift-ingress
 ----
 
-Check the Istio Telemetry exists:
+Check the Istio Telemetry exists (auto-created by the operator):
 
 [source,bash]
 ----
-oc get telemetry.telemetry.istio.io latency-per-subscription -n openshift-ingress
+oc get telemetry.telemetry.istio.io -n openshift-ingress
 ----
+
+NOTE: If these resources are missing, verify that `spec.telemetry.enabled: true` is set on the MaasTenantConfig (3.5) or Tenant (3.4) CR.
 
 Check Redis is running (if deployed):
 
@@ -365,8 +415,8 @@ manifests/07-observability/
     operatorgroup.yaml               # Loki OperatorGroup
     subscription.yaml                # Loki Subscription
   telemetry/
-    gateway-telemetry-policy.yaml    # Kuadrant TelemetryPolicy
-    istio-gateway-telemetry.yaml     # Istio Telemetry CR
+    gateway-telemetry-policy.yaml    # Kuadrant TelemetryPolicy (reference - auto-created by operator)
+    istio-gateway-telemetry.yaml     # Istio Telemetry CR (reference - auto-created by operator)
     kustomization.yaml
   usage-logging/
     kustomization.yaml               # MinIO + LokiStack
