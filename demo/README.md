@@ -12,6 +12,7 @@ runbook and a talk track, and a teardown script.
 | Demo | Shows |
 | --- | --- |
 | [user-level-rate-limiting](user-level-rate-limiting/) | Assigning a `MaaSSubscription` to a group or to an individual user, and using `priority` to give a named user a different tier from the rest of their team. |
+| [subscription-priority](subscription-priority/) | That entitlement is selected rather than accumulated: a user in two groups worth 10000 and 20000 tokens/hour gets one of those tiers, not 30000 — and a subscription naming them individually can cap them below both. |
 | [oidc-authentication](oidc-authentication/) | Authenticating with an identity from your own identity provider — no OpenShift account required — with the token's `groups` claim selecting the subscription. Includes a click-through UI and a CLI sample client. |
 | [service-account-access](service-account-access/) | An application calling a model with its own Kubernetes ServiceAccount token. No API key to distribute, no credential to rotate. Access granted per namespace, rate limits set per workload. |
 | [jwks-cache](jwks-cache/) | That JWT signatures are genuinely verified, and that verification happens locally against a cached copy of the issuer's public keys rather than a call to the identity provider on every request. |
