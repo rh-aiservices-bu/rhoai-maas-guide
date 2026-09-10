@@ -733,6 +733,55 @@ If the second command returns results, you have duplicate rule names causing rou
 
 No workaround exists. The upstream fix is tracked in link:https://github.com/istio/istio/pull/61601[istio#61601^], which resolves InferencePool endpoint pickers per backendRef instead of per rule name. The LLMInferenceService routing may also add suffixes to sectionNames to avoid collisions at the HTTPRoute level.
 
+[[issue-13]]
+== Issue 13: Stale DNSRecord After Gateway Service Type Change
+
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-93962[RHOAIENG-93962^]
+
+When a {maas} gateway is initially deployed with a LoadBalancer service type and then switched to ClusterIP (via ConfigMap `parametersRef`), the DNS operator does not clean up the `dnsrecord` object created for the original LoadBalancer. The stale record has a CNAME pointing to a defunct AWS ELB hostname, which breaks DNS resolution for the gateway hostname from both inside and outside the cluster.
+
+The root cause is that the `dnsrecord` is owned by the Service via `ownerReferences`. When the service type changes from LoadBalancer to ClusterIP, the service is patched in place - not deleted and recreated - so the ownerReference stays valid and Kubernetes garbage collection does not remove the `dnsrecord`. The DNS operator does not watch for service type changes.
+
+=== Symptoms
+
+* Dashboard shows "Error loading API keys" with `dial tcp: lookup maas.apps.<cluster> on 172.30.0.10:53: no such host`
+* The {maas} URL resolves from outside the cluster but not from inside (or fails from both sides depending on timing)
+* Gateway and Route are correctly configured, service is ClusterIP with no external IP
+
+=== Diagnosis
+
+[source,bash]
+----
+# Check for stale dnsrecord objects in openshift-ingress
+oc get dnsrecord -n openshift-ingress
+
+# If a dnsrecord exists, check its target
+oc get dnsrecord -n openshift-ingress -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.dnsName} -> {.spec.targets}{"\n"}{end}'
+
+# Check the gateway service type
+oc get svc -n openshift-ingress -l gateway.networking.k8s.io/gateway-name=maas-default-gateway \
+  -o jsonpath='{.items[0].spec.type}'
+
+# Verify the ELB target is dead
+nslookup $(oc get dnsrecord -n openshift-ingress -o jsonpath='{.items[0].spec.targets[0]}')
+----
+
+If the service type is ClusterIP but a `dnsrecord` exists with a CNAME target that returns NXDOMAIN, this issue is confirmed.
+
+=== Workaround
+
+Delete the stale `dnsrecord`:
+
+[source,bash]
+----
+oc delete dnsrecord -n openshift-ingress \
+  $(oc get dnsrecord -n openshift-ingress -o name)
+----
+
+After deletion, internal DNS resolves immediately via the wildcard `*.apps.*` record (pointing to the OpenShift Router). External DNS may take longer due to negative caching of the stale CNAME.
+
+NOTE: This only affects clusters where the gateway service type was changed from LoadBalancer to ClusterIP. Fresh ClusterIP deployments (where LoadBalancer was never used) are not affected.
+
 == Quick Reference: Triage Order
 
 When you hit problems after upgrading from 3.4 to 3.5, check in this order:
@@ -788,6 +837,10 @@ When you hit problems after upgrading from 3.4 to 3.5, check in this order:
 | 12
 | Multiple models on same gateway and traffic goes to wrong model?
 | No workaround yet, track RHOAIENG-93709 (<<issue-12,Issue 12>>)
+
+| 13
+| Changed gateway from LoadBalancer to ClusterIP and DNS broken? (`oc get dnsrecord -n openshift-ingress`)
+| Delete stale dnsrecord (<<issue-13,Issue 13>>)
 |===
 
 == References
@@ -805,4 +858,5 @@ When you hit problems after upgrading from 3.4 to 3.5, check in this order:
 * link:https://redhat.atlassian.net/browse/RHOAIENG-89786[RHOAIENG-89786 - Duplicate Playground endpoints from leftover LlamaStackDistribution]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-91640[RHOAIENG-91640 - OTEL collector proxy interception breaks observability]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-93709[RHOAIENG-93709 - HTTPRoute rule name collision in multi-model gateway]
+* link:https://redhat.atlassian.net/browse/RHOAIENG-93962[RHOAIENG-93962 - Stale DNSRecord after gateway service type change]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-80360[RHOAIENG-80360 - Gateway route hijacking security fix]
