@@ -1,0 +1,89 @@
+# model-client - an in-cluster app that calls a MaaS model as its ServiceAccount.
+#
+# Runs as `batch-scorer`, so it inherits that ServiceAccount's subscription and
+# rate limit. No API key, no secret, no credential in the manifest: the only
+# thing it needs is the token Kubernetes projects into the pod automatically.
+#
+# The code is delivered via a ConfigMap so the demo needs no image build or
+# registry push. setup-demo.sh creates it from app/app.py.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-client
+  namespace: maas-clients
+  labels: {app: model-client}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: model-client}
+  template:
+    metadata:
+      labels: {app: model-client}
+    spec:
+      # This is the line that decides the app's MaaS identity.
+      serviceAccountName: batch-scorer
+      containers:
+        - name: app
+          image: registry.access.redhat.com/ubi9/python-311:latest
+          command: ["python3", "/opt/app/app.py"]
+          env:
+            - name: MAAS_URL
+              value: "REPLACED_BY_SETUP"
+            - name: MODEL_PATH
+              value: facebook-opt-125m-simulated
+            - name: MODEL_SERVED
+              value: facebook/opt-125m
+            - name: PORT
+              value: "8080"
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: app-code
+              mountPath: /opt/app
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
+      volumes:
+        - name: app-code
+          configMap:
+            name: model-client-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-client
+  namespace: maas-clients
+  labels: {app: model-client}
+spec:
+  selector: {app: model-client}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: model-client
+  namespace: maas-clients
+  labels: {app: model-client}
+spec:
+  to:
+    kind: Service
+    name: model-client
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
