@@ -995,7 +995,7 @@ if should_run 5 && [ "$SKIP_MODELS" = false ]; then
             fi
         fi
 
-        VALID_MODELS="simulator simulator-disconnected granite-tiny-gpu gpt-oss-20b gemma"
+        VALID_MODELS="simulator simulator-disconnected granite-tiny-gpu gpt-oss-20b gemma qwen3-06b"
         if ! echo "$VALID_MODELS" | grep -qw "$MODEL"; then
             log_error "Unknown model: $MODEL (valid: $VALID_MODELS)"
             exit 1
@@ -1436,10 +1436,10 @@ if should_run 8 && [ "$WITH_EXTERNAL_MODELS" = true ]; then
                             log_info "Ephemeral API key created"
 
                             INFERENCE_RESPONSE=$(curl -sk -X POST \
-                                "${MAAS_GW}/external-models/${EXTMODEL_NAME}/v1/chat/completions" \
+                                "${MAAS_GW}/v1/chat/completions" \
                                 -H "Authorization: Bearer ${TEST_API_KEY}" \
                                 -H "Content-Type: application/json" \
-                                -d "{\"model\": \"${EXTMODEL_TARGET_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in exactly 3 words.\"}], \"max_tokens\": 20}" \
+                                -d "{\"model\": \"${EXTMODEL_NAME}\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in exactly 3 words.\"}], \"max_tokens\": 20}" \
                                 --max-time 30 2>/dev/null || echo "")
 
                             if echo "$INFERENCE_RESPONSE" | grep -q '"choices"'; then
@@ -1447,10 +1447,10 @@ if should_run 8 && [ "$WITH_EXTERNAL_MODELS" = true ]; then
                                 log_info "${EXTERNAL_MODEL_PROVIDER} inference SUCCESS: ${REPLY_TEXT}"
                             else
                                 HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' -X POST \
-                                    "${MAAS_GW}/external-models/${EXTMODEL_NAME}/v1/chat/completions" \
+                                    "${MAAS_GW}/v1/chat/completions" \
                                     -H "Authorization: Bearer ${TEST_API_KEY}" \
                                     -H "Content-Type: application/json" \
-                                    -d "{\"model\": \"${EXTMODEL_TARGET_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hi\"}], \"max_tokens\": 5}" \
+                                    -d "{\"model\": \"${EXTMODEL_NAME}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hi\"}], \"max_tokens\": 5}" \
                                     --max-time 15 2>/dev/null || echo "000")
                                 log_warn "${EXTERNAL_MODEL_PROVIDER} inference returned HTTP ${HTTP_CODE} - model is registered and governed but inference routing may need BBR ext-proc propagation"
                             fi

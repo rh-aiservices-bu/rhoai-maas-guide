@@ -216,14 +216,16 @@ API_KEY=$(curl -sk -X POST "${MAAS_GW}/maas-api/v1/api-keys" \
     -d '{"name": "openai-test", "subscription": "openai-free", "expiresIn": "1h"}' \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
 
-# Test inference
-curl -sk "${MAAS_GW}/external-models/gpt-4o-mini/v1/chat/completions" \
+# Test inference (body-based routing)
+curl -sk "${MAAS_GW}/v1/chat/completions" \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
     -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Say hello in 3 words."}], "max_tokens": 20}'
 ----
 
 A successful response contains a `choices` array with the model's reply.
+
+NOTE: External models use the plain model name (e.g., `gpt-4o-mini`) as the `model` field, unlike local models which require the canonical `publishers/{namespace}/models/{model-name}` format. You can always check the correct model ID with the `/v1/models` endpoint.
 
 == Automated Setup
 
@@ -430,10 +432,10 @@ API_KEY=$(curl -sk -X POST "${MAAS_GW}/maas-api/v1/api-keys" \
     -d '{"name": "bedrock-test", "subscription": "bedrock-free", "expiresIn": "1h"}' \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
 
-curl -sk "${MAAS_GW}/external-models/aws-gpt-oss-20b/v1/chat/completions" \
+curl -sk "${MAAS_GW}/v1/chat/completions" \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
-    -d '{"model": "openai.gpt-oss-20b", "messages": [{"role": "user", "content": "Say hello in 3 words."}], "max_tokens": 20}'
+    -d '{"model": "aws-gpt-oss-20b", "messages": [{"role": "user", "content": "Say hello in 3 words."}], "max_tokens": 20}'
 ----
 
 ==== Automated Deployment

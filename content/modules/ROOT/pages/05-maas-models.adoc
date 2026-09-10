@@ -239,21 +239,21 @@ API_KEY=$(curl -sk -X POST "https://${MAAS_URL}/maas-api/v1/api-keys" \
 curl -sk "https://${MAAS_URL}/v1/models" \
   -H "Authorization: Bearer ${API_KEY}"
 
-# Get the model endpoint URL from the listing
-MODEL_URL=$(curl -sk "https://${MAAS_URL}/v1/models" \
-  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].url')
+# Get the model ID from the listing
+MODEL_ID=$(curl -sk "https://${MAAS_URL}/v1/models" \
+  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].id')
 
-# Send a chat completion request (uses the model-specific URL path)
-curl -sk "${MODEL_URL}/v1/chat/completions" \
+# Send a chat completion request (body-based routing)
+curl -sk "https://${MAAS_URL}/v1/chat/completions" \
   -H "Authorization: Bearer ${API_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "facebook/opt-125m",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+  -d "{
+    \"model\": \"${MODEL_ID}\",
+    \"messages\": [{\"role\": \"user\", \"content\": \"Hello!\"}]
+  }"
 ----
 
-For GPU models, replace the model name with `granite-4-tiny` or `gpt-oss-20b` as appropriate.
+IMPORTANT: The `model` field in the request body must match the `id` returned by `/v1/models`. For local models (LLMInferenceService), this is the canonical form `publishers/{namespace}/models/{model-name}` (e.g., `publishers/llm/models/facebook/opt-125m`). For external models (ExternalModel), it is just the model name (e.g., `gpt-4o-mini`). Using a short name like `facebook/opt-125m` for local models will return 404.
 
 == Removing a Model
 

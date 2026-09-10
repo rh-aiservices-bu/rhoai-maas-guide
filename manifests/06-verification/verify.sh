@@ -599,26 +599,24 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ]; then
 
     if [ "$MODEL_COUNT" -gt 0 ] 2>/dev/null; then
         FIRST_MODEL_ID=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null || echo "")
-        MODEL_URL=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].url // empty' 2>/dev/null || echo "")
         log_pass "Models available ($MODEL_COUNT total, first: $FIRST_MODEL_ID)"
         INFERENCE_MODEL="$FIRST_MODEL_ID"
     else
         log_warn "No models found in listing (may be timing or API version difference)"
         log_warn "Response: ${MODELS_RESPONSE:0:200}"
-        INFERENCE_MODEL="facebook/opt-125m"
-        MODEL_URL="${HOST}/llm/${MODEL_NAME}"
+        INFERENCE_MODEL="publishers/llm/models/facebook/opt-125m"
     fi
 fi
 
 # Test inference
-if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${MODEL_URL:-}" ]; then
+if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${INFERENCE_MODEL:-}" ]; then
     log_info "Testing inference..."
     INFERENCE_RESPONSE=$(maas_curl \
         -H "Authorization: Bearer ${API_KEY}" \
         -H "Content-Type: application/json" \
         -w "\n%{http_code}" \
-        -d "{\"model\": \"${INFERENCE_MODEL:-$MODEL_NAME}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 50}" \
-        "${MODEL_URL}/v1/chat/completions" 2>/dev/null || echo -e "\n000")
+        -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 50}" \
+        "${HOST}/v1/chat/completions" 2>/dev/null || echo -e "\n000")
 
     INFERENCE_CODE=$(echo "$INFERENCE_RESPONSE" | tail -1)
     INFERENCE_BODY=$(echo "$INFERENCE_RESPONSE" | sed '$d')
@@ -640,13 +638,13 @@ fi
 # =============================================================================
 log_step "Phase 4: Auth enforcement"
 
-if [ -n "${MODEL_URL:-}" ]; then
+if [ -n "${INFERENCE_MODEL:-}" ]; then
     # No token
     NO_AUTH_CODE=$(maas_curl \
         -o /dev/null -w '%{http_code}' \
         -H "Content-Type: application/json" \
-        -d "{\"model\": \"${INFERENCE_MODEL:-$MODEL_NAME}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
-        "${MODEL_URL}/v1/chat/completions" 2>/dev/null || echo "000")
+        -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
+        "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
 
     if [ "$NO_AUTH_CODE" = "401" ] || [ "$NO_AUTH_CODE" = "403" ]; then
         log_pass "Unauthenticated request rejected (HTTP $NO_AUTH_CODE)"
@@ -659,8 +657,8 @@ if [ -n "${MODEL_URL:-}" ]; then
         -o /dev/null -w '%{http_code}' \
         -H "Authorization: Bearer invalid-token-12345" \
         -H "Content-Type: application/json" \
-        -d "{\"model\": \"${INFERENCE_MODEL:-$MODEL_NAME}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
-        "${MODEL_URL}/v1/chat/completions" 2>/dev/null || echo "000")
+        -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
+        "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
 
     if [ "$INVALID_CODE" = "401" ] || [ "$INVALID_CODE" = "403" ]; then
         log_pass "Invalid token rejected (HTTP $INVALID_CODE)"
@@ -668,7 +666,7 @@ if [ -n "${MODEL_URL:-}" ]; then
         log_fail "Invalid token returned HTTP $INVALID_CODE (expected 401/403)"
     fi
 else
-    log_fail "Skipping auth tests (no model URL)"
+    log_fail "Skipping auth tests (no model ID)"
 fi
 
 # =============================================================================
@@ -676,7 +674,7 @@ fi
 # =============================================================================
 log_step "Phase 5: Rate limiting"
 
-if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${MODEL_URL:-}" ]; then
+if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${INFERENCE_MODEL:-}" ]; then
     log_info "Sending 16 rapid requests to trigger rate limit..."
     RATE_LIMITED=0
     SUCCESSES=0
@@ -685,8 +683,8 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${MODEL_URL:-}" ]; the
             -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"${INFERENCE_MODEL:-$MODEL_NAME}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello, write me a very long essay about the history of computing\"}], \"max_tokens\": 50}" \
-            "${MODEL_URL}/v1/chat/completions" 2>/dev/null || echo "000")
+            -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello, write me a very long essay about the history of computing\"}], \"max_tokens\": 50}" \
+            "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
         if [ "$CODE" = "429" ]; then
             RATE_LIMITED=$((RATE_LIMITED + 1))
         elif [ "$CODE" = "200" ]; then
