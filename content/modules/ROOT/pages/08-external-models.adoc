@@ -4,6 +4,8 @@ NOTE: This phase requires a completed MaaS installation (through xref:04-rhoai-c
 
 WARNING: This phase is NOT compatible with disconnected/air-gapped environments. External models require internet access to reach third-party APIs (OpenAI, Bedrock, Gemini). If you are running in disconnected mode, skip this phase entirely.
 
+NOTE: The RHOAI Dashboard also provides a *Technology Preview* UI for browsing deployed models (local and external) under *Gen AI studio > AI asset endpoints*. The CLI workflow documented below (Steps 1-3) is the fully supported (GA) method. See <<dashboard-ui>> for the Dashboard UI walkthrough.
+
 The `ExternalModel` CRD lets you expose third-party LLM APIs (OpenAI, AWS Bedrock, Google Gemini, Azure OpenAI, etc.) through the MaaS gateway. External models get the same API key management, authentication, rate limiting, and usage tracking as locally-served models - your consumers use a single gateway endpoint regardless of where the model runs.
 
 TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
@@ -240,6 +242,39 @@ The setup script handles all of the above in a single command:
 ----
 
 The `--external-model-provider` flag selects which provider manifests to deploy (`openai`, `gemini`, or `bedrock`; default: `openai`).
+
+[[dashboard-ui]]
+== Dashboard UI (Technology Preview)
+
+IMPORTANT: The *AI asset endpoints* tab in the RHOAI Dashboard is a *Technology Preview* feature in RHOAI 3.5. Technology Preview features are not supported with Red Hat production service level agreements (SLAs) and might not be functionally complete. The CLI workflow documented above (Steps 1-3) is the fully supported (GA) method for managing external models.
+
+The Dashboard provides a graphical interface for browsing deployed models (both local and external) and generating API keys. This tab is enabled by the `externalModels: true` flag in the OdhDashboardConfig (see xref:04-rhoai-config.adoc#_check_odhdashboardconfig_flags[Phase 4: Check OdhDashboardConfig flags]).
+
+=== Browsing Models
+
+Navigate to *Gen AI studio > AI asset endpoints* in the Dashboard sidebar. The page lists all deployed models with their model ID, use case, status, and links to view endpoints or open the Playground:
+
+image::external-models-ai-asset-endpoints.png[AI asset endpoints page showing deployed models,width=100%]
+
+Both local models (LLMInferenceService) and external models (ExternalModel) appear in this table. All deployed models show up here regardless of whether they were created via CLI or the Dashboard.
+
+=== Viewing Endpoints and Generating API Keys
+
+Click *View* on any model row to open the Endpoints dialog. This shows the external API endpoint URL, lets you select a subscription, and generate a temporary API key directly from the UI:
+
+image::external-models-endpoint-detail.png[Endpoint detail dialog with API URL and key generation,width=100%]
+
+The dialog provides:
+
+* *External API endpoint* - the gateway URL to use in your application
+* *Subscription* - select which subscription tier to bind the key to
+* *Generate API key* - creates a temporary key for quick testing (for permanent keys, use the *API keys* page)
+
+=== Registering New External Models
+
+The AI asset endpoints page does not have a registration form for new external models. MaaS models are managed by the cluster administrator through CLI (Steps 1-3 above). The *Don't see the model you're looking for?* link on the page confirms this - it points to the Model deployments page for non-MaaS model serving.
+
+NOTE: The Dashboard provides a read-only view of the same Kubernetes CRDs created by the CLI workflow (`ExternalProvider`, `ExternalModel`, `MaaSModelRef`, `MaaSAuthPolicy`, `MaaSSubscription`). Models created via `oc apply` appear in the Dashboard and can be inspected with `oc get`.
 
 == Other Providers
 
