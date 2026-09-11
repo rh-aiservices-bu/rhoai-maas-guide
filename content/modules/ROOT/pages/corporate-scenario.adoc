@@ -1,0 +1,391 @@
+= Corporate Scenario: Division-Level Model Governance
+
+A realistic enterprise demo showing how a CIO rolls out {maas} across an organization. Three divisions get differentiated access to on-prem and cloud models, each with appropriate token budgets - all enforced by the platform through policy, not code.
+
+This is the recommended starting point when you want to show {maas} to stakeholders who care about governance, cost control, and multi-team model access.
+
+TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
+
+== The scenario
+
+A CIO at a mid-size company assigns three divisions access to AI models. Each division has different needs and different budgets:
+
+[cols="2,1,1,1", options="header"]
+|===
+| Division | General Purpose (on-prem) | Code Model - DeepSeek R2 (on-prem) | Multimodal - Gemini Flash (cloud)
+
+| **Sales**
+| Yes (500 tok/min)
+| No
+| No
+
+| **Engineering**
+| Yes (500 tok/min)
+| Yes (1000 tok/min)
+| Yes (20 tok/min)
+
+| **Products**
+| Yes (500 tok/min)
+| Yes (500 tok/min)
+| No
+|===
+
+The cloud model is expensive, so only Engineering gets access - and with a tight cap. Engineering gets higher limits on the code model because they use it more heavily. Sales only needs the general purpose chatbot.
+
+Each division gets ONE subscription covering all their allowed models. One API key per user, full access to everything their division is entitled to.
+
+== Prerequisites
+
+* Complete the guide through xref:05-maas-models.adoc[Phase 5] with at least the simulator model deployed
+* `oc` logged into the cluster as cluster-admin
+* `htpasswd`, `curl`, `jq` available on PATH
+
+Deploy the simulator if not already done:
+
+[source,bash]
+----
+./scripts/setup-maas.sh --model simulator
+----
+
+== Architecture
+
+=== Models
+
+All three models are backed by the CPU-only simulator (`llm-d-inference-sim`) - no GPU required. The namespace appears in the URL path, which is how you visually distinguish on-prem from cloud.
+
+[cols="2,2,1,2", options="header"]
+|===
+| Model | Namespace | Type | Served name
+
+| facebook-opt-125m-simulated
+| `llm`
+| On-prem (existing)
+| `facebook/opt-125m`
+
+| deepseek-r2-llmd
+| `llm`
+| On-prem (new)
+| `deepseek/deepseek-r2`
+
+| gemini-flash-cloud
+| `cloud-models`
+| Cloud (new)
+| `google/gemini-flash`
+|===
+
+URL examples:
+
+* On-prem: `\https://maas.<domain>/llm/deepseek-r2-llmd/v1/chat/completions`
+* Cloud: `\https://maas.<domain>/cloud-models/gemini-flash-cloud/v1/chat/completions`
+
+=== Users and groups
+
+Six users across three groups, created via htpasswd identity provider (`corp-demo`):
+
+[cols="2,3,2", options="header"]
+|===
+| Group | Users | Division
+
+| `corp-sales`
+| `sales-1`, `sales-2`
+| Sales
+
+| `corp-engineering`
+| `eng-1`, `eng-2`
+| Engineering
+
+| `corp-products`
+| `prod-1`, `prod-2`
+| Products
+|===
+
+=== MaaS CRDs
+
+The governance is expressed through three CRD types:
+
+**MaaSAuthPolicy** controls _who can see which models_:
+
+* `corp-deepseek-access` - grants `corp-engineering` + `corp-products` access to `deepseek-r2-llmd`
+* `corp-cloud-access` - grants `corp-engineering` ONLY access to `gemini-flash-cloud`
+* The existing `simulator-access` already grants `system:authenticated` access to the general model
+
+**MaaSSubscription** controls _how much each division can consume_:
+
+[cols="2,3,3", options="header"]
+|===
+| Subscription | Division | Models and limits
+
+| `corp-sales`
+| Sales
+| general: 500 tok/min
+
+| `corp-engineering`
+| Engineering
+| general: 500 tok/min, deepseek: 1000 tok/min, gemini: 20 tok/min
+
+| `corp-products`
+| Products
+| general: 500 tok/min, deepseek: 500 tok/min
+|===
+
+All subscriptions use priority 30 to outrank the shipped `simulator-premium` (priority 20) which targets `system:authenticated`.
+
+**MaaSModelRef** registers each model with the MaaS control plane. Must be in the same namespace as its `LLMInferenceService`.
+
+== Step 1: Setup
+
+The setup script creates everything: users, groups, models, and governance CRDs.
+
+[source,bash]
+----
+cd demo/corporate-scenario
+./setup-demo.sh
+----
+
+Set `DEMO_PASSWORD` to skip the interactive prompt:
+
+[source,bash]
+----
+DEMO_PASSWORD='redhat123' ./setup-demo.sh
+----
+
+The script:
+
+. Checks that the general-purpose model (`facebook-opt-125m-simulated`) is deployed and Ready
+. Creates 6 htpasswd users and adds the `corp-demo` identity provider (additive, does not touch existing providers)
+. Creates 3 OpenShift groups (`corp-sales`, `corp-engineering`, `corp-products`)
+. Deploys the `cloud-models` namespace with gateway labels
+. Deploys 2 new LLMInferenceService resources (simulator-backed, CPU-only)
+. Waits for simulator pods to start Running
+. Applies MaaSModelRef, MaaSAuthPolicy, and MaaSSubscription resources
+. Waits for both MaaSModelRefs to reach Ready
+. Prints a summary of all resources
+
+NOTE: The oauth pods restart after adding the identity provider. Wait about a minute before trying to log in as the demo users.
+
+=== What gets created
+
+After setup completes, verify the state:
+
+[source,bash]
+----
+# Models registered with MaaS
+oc get maasmodelref -A
+
+# Subscriptions
+oc get maassubscription -n models-as-a-service
+
+# Auth policies
+oc get maasauthpolicy -n models-as-a-service
+
+# Simulator pods
+oc get pods -n llm -l app.kubernetes.io/part-of=llminferenceservice
+oc get pods -n cloud-models -l app.kubernetes.io/part-of=llminferenceservice
+----
+
+== Step 2: Run the demo
+
+[source,bash]
+----
+DEMO_PASSWORD='redhat123' ./run-demo.sh
+----
+
+The script logs in as one user per division (`sales-1`, `eng-1`, `prod-1`), mints an API key, and tests:
+
+* **Model visibility** - which models each user can see in the catalog
+* **Inference on allowed models** - sends 8 requests per model, shows tokens consumed
+* **Denied model access** - proves 403 for unauthorized models
+* **Rate limiting** - eng-1's 20 tok/min cloud limit triggers within the burst
+
+=== Expected output
+
+[source]
+----
+=== sales-1 (corp-sales) ===
+  Visible models:
+    publishers/llm/models/facebook/opt-125m
+  Resolved subscription: corp-sales
+  General purpose (on-prem):
+    8 requests -> 8 ok / 0 rate-limited / 0 other  (22 tokens)
+  DeepSeek R2 (on-prem):
+    deepseek-r2-llmd: 403 Forbidden (expected)
+  Gemini Flash (cloud):
+    gemini-flash-cloud: 403 Forbidden (expected)
+
+=== eng-1 (corp-engineering) ===
+  Visible models:
+    publishers/cloud-models/models/google/gemini-flash
+    publishers/llm/models/deepseek/deepseek-r2
+    publishers/llm/models/facebook/opt-125m
+  Resolved subscription: corp-engineering
+  General purpose (on-prem):
+    8 requests -> 8 ok / 0 rate-limited / 0 other  (21 tokens)
+  DeepSeek R2 (on-prem):
+    8 requests -> 8 ok / 0 rate-limited / 0 other  (27 tokens)
+  Gemini Flash (cloud) - expect rate limiting at ~20 tokens/min:
+    8 requests -> 6 ok / 2 rate-limited / 0 other  (20 tokens)
+
+=== prod-1 (corp-products) ===
+  Visible models:
+    publishers/llm/models/deepseek/deepseek-r2
+    publishers/llm/models/facebook/opt-125m
+  Resolved subscription: corp-products
+  General purpose (on-prem):
+    8 requests -> 8 ok / 0 rate-limited / 0 other  (29 tokens)
+  DeepSeek R2 (on-prem):
+    8 requests -> 8 ok / 0 rate-limited / 0 other  (32 tokens)
+  Gemini Flash (cloud):
+    gemini-flash-cloud: 403 Forbidden (expected)
+----
+
+Key observations:
+
+* **sales-1** sees only one model, gets 403 on the other two - Sales has no code model or cloud access
+* **eng-1** sees all three models, on-prem requests sail through, cloud model hits rate limiting at ~20 tokens - the CIO's cost control in action
+* **prod-1** sees two models (no cloud), both on-prem models work fine
+
+== Step 3: Verify
+
+The automated verification script runs 15 tests covering access control, rate limiting, key multiplication, and config drift.
+
+[source,bash]
+----
+DEMO_PASSWORD='redhat123' ./verify-scenario.sh
+----
+
+=== What it tests
+
+[cols="2,4", options="header"]
+|===
+| Test suite | What it proves
+
+| Access control (9 tests)
+| Full 3x3 matrix of users x models: 6 should allow (200), 3 should deny (403)
+
+| Rate limiting (1 test)
+| eng-1 hits 429 on the cloud model within 15 requests
+
+| Key multiplication (1 test)
+| eng-2 mints two keys, exhausts quota with key-1, verifies key-2 is also rate-limited immediately. Proves rate limits are per subscription, not per credential.
+
+| Config drift (4 tests)
+| Subscription token limits match expected values (catches manual edits or drift)
+|===
+
+Expected result:
+
+[source]
+----
+Results: 15 passed / 0 failed / 0 skipped (of 15)
+----
+
+== Step 4: Cleanup
+
+[source,bash]
+----
+./cleanup-demo.sh
+----
+
+Removes all demo resources (subscriptions, auth policies, MaaSModelRefs, LLMInferenceServices, namespace, groups, users, IDP). The existing general-purpose model is not touched.
+
+== Talk track
+
+Use this flow when presenting the scenario to stakeholders.
+
+=== 1. Start with the CIO's problem
+
+Three divisions, each with different needs. Sales wants a chatbot. Engineering wants code assistance plus cloud model access. Products needs the code model for sprint reviews. How do you give each team exactly what they need - no more, no less?
+
+=== 2. Show the manifests
+
+Open `auth-policies.yaml` and `subscriptions.yaml`. Point out how `MaaSAuthPolicy` controls visibility (who can see which models) and `MaaSSubscription` controls consumption (how much each group can use). The combination is the full governance picture.
+
+One subscription per division, covering all their models with per-model limits. One key, full access.
+
+=== 3. Show the model catalog per user
+
+Log in to the {rhoai} Dashboard as each division user:
+
+* **sales-1** sees one model
+* **prod-1** sees two models
+* **eng-1** sees all three models
+
+The platform hides what you cannot access. There is no "request access" button for models outside your policy.
+
+=== 4. Run the burst
+
+Point out that Engineering hits rate limiting on the cloud model (20 tokens/min) but not on the on-prem models. That is the CIO's intent: cloud is expensive, keep it tight. On-prem is cheaper, give them room.
+
+=== 5. Try denied access
+
+Sales calling the DeepSeek model gets a clean 403. Not a 500, not a timeout - the platform knows the policy and enforces it before the request reaches the model.
+
+=== 6. Key multiplication does not help
+
+Run `verify-scenario.sh` and point at the key multiplication test. Minting a second API key does not reset the quota. The rate limit is per subscription, not per credential.
+
+=== 7. Change a limit live
+
+Patch a subscription to show that governance is policy, not deployment:
+
+[source,bash]
+----
+oc patch maassubscription corp-engineering -n models-as-a-service --type=json \
+  -p '[{"op":"replace","path":"/spec/modelRefs/2/tokenRateLimits/0/limit","value":5000}]'
+----
+
+Re-run `./run-demo.sh` - Engineering no longer hits rate limiting on the cloud model. No redeployment, no restart, instant policy change.
+
+Restore the original limit:
+
+[source,bash]
+----
+oc patch maassubscription corp-engineering -n models-as-a-service --type=json \
+  -p '[{"op":"replace","path":"/spec/modelRefs/2/tokenRateLimits/0/limit","value":20}]'
+----
+
+== How the governance works
+
+=== MaaSAuthPolicy - who can see what
+
+Each `MaaSAuthPolicy` grants access to one or more models for specific groups or users. If a user is not covered by any auth policy for a model, the model does not appear in their catalog and API calls return 403.
+
+The existing `simulator-access` policy grants `system:authenticated` access to the general purpose model. The corporate policies add group-specific access to the two new models without touching the existing setup.
+
+=== MaaSSubscription - how much they can use
+
+Each division gets ONE subscription covering all their allowed models, with per-model token rate limits. When a user mints an API key, the platform resolves the highest-priority subscription they match and attaches it.
+
+All corporate subscriptions use priority 30 to outrank the shipped `simulator-premium` (priority 20, targeting `system:authenticated`). Without this, the shipped tier would win and the corporate limits would not apply.
+
+=== Priority resolution
+
+* Subscriptions are **selected**, not accumulated. A user gets ONE subscription - the highest priority match.
+* A single subscription can cover multiple models with different limits per model.
+* Minting multiple API keys does not multiply the quota. Rate limits are per subscription, not per credential.
+* Priority 30 for all corporate subscriptions means they win over shipped defaults (priority 10 and 20).
+
+=== MaaSModelRef governance pairing
+
+A `MaaSModelRef` reaches Ready only when BOTH a `MaaSSubscription` AND a `MaaSAuthPolicy` reference it. This is the governance pairing - without both, the model is not accessible through the MaaS control plane.
+
+== Files
+
+[source]
+----
+demo/corporate-scenario/
+  README.md              # quick reference
+  setup-demo.sh          # create users, groups, models, MaaS CRDs
+  run-demo.sh            # interactive demo - access + rate limits per division
+  verify-scenario.sh     # automated verification (15 tests)
+  cleanup-demo.sh        # tear down all demo resources
+  manifests/
+    namespace-cloud-models.yaml
+    model-deepseek-r2.yaml
+    model-gemini-flash.yaml
+    maas-model-deepseek-r2.yaml
+    maas-model-gemini-flash.yaml
+    auth-policies.yaml
+    subscriptions.yaml
+  screenshots/           # captured after setup on a live cluster
+----

@@ -35,6 +35,7 @@
 
 .Demos
 * xref:demos.adoc[Demos]
+* xref:corporate-scenario.adoc[Corporate Scenario]
 
 .Cleanup
 * xref:09-cleanup.adoc[Cleanup & Teardown]

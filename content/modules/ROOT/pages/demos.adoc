@@ -42,6 +42,10 @@ Expected result: 16 passed, 0 failed. The script also warms up `maas-api` to abs
 | Service Account Access
 | In-cluster workload calls a model with its ServiceAccount token via TokenReview. No API key or secret needed. Access per namespace, rate limits per workload.
 | link:{repo-url}/tree/main/demo/service-account-access[README]
+
+| Corporate Scenario
+| Division-level model governance: three divisions (Sales, Engineering, Products), on-prem + cloud models, differentiated access and rate limits. Demonstrates the full CIO-to-deployment policy lifecycle. *Recommended starting point for enterprise demos.*
+| xref:corporate-scenario.adoc[Full Guide] / link:{repo-url}/tree/main/demo/corporate-scenario[Scripts]
 |===
 
 == OIDC & Token Validation (xref:09-external-oidc.adoc[Phase 9])
