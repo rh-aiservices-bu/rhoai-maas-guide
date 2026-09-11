@@ -1,0 +1,101 @@
+# Subscription priority: entitlement is selected, not accumulated.
+#
+# Two users, identical group membership - both belong to `quota-standard` AND
+# `quota-bulk`. Neither receives 30000 tokens/hour.
+#
+#   quota-standard-tier    group quota-standard   10000 tokens/hour  priority 30
+#   quota-bulk-tier        group quota-bulk       20000 tokens/hour  priority 20
+#   quota-individual-tier  user  capped-user       5000 tokens/hour  priority 50
+#
+# Resolution:
+#   dual-user    matches both group tiers   -> quota-standard-tier   (10000/hour)
+#   capped-user  matches both + the user tier -> quota-individual-tier (5000/hour)
+#
+# Priority is highest-wins. The winning subscription becomes the entitlement in
+# full; the others contribute nothing, so quotas never add up.
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: quota-groups-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Quota demo groups"
+    openshift.io/description: "Grants both quota demo groups access to the simulator model"
+spec:
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+  subjects:
+    groups:
+      - name: quota-standard
+      - name: quota-bulk
+    users: []
+---
+# The higher priority of the two group tiers, and deliberately the SMALLER quota.
+# This is what makes the point: adding a group with a bigger allowance does not
+# raise the ceiling.
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: quota-standard-tier
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Standard quota"
+    openshift.io/description: "10000 tokens/hour for the quota-standard group"
+spec:
+  owner:
+    groups:
+      - name: quota-standard
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 10000
+          window: 1h
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: quota-bulk-tier
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Bulk quota"
+    openshift.io/description: "20000 tokens/hour for the quota-bulk group"
+spec:
+  owner:
+    groups:
+      - name: quota-bulk
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 20000
+          window: 1h
+  priority: 20
+---
+# Named user, highest priority: overrides every group tier the user holds, and
+# can set a ceiling BELOW all of them.
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: quota-individual-tier
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Individual cap"
+    openshift.io/description: "5000 tokens/hour for one named user, overriding their group tiers"
+spec:
+  owner:
+    groups: []
+    users:
+      - capped-user
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 5000
+          window: 1h
+  priority: 50

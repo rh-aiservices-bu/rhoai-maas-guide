@@ -1,0 +1,89 @@
+# MaaS demo: group baseline + per-user overrides
+# ==============================================
+#
+# Demonstrates the two ways a MaaSSubscription can be assigned, and how
+# `priority` resolves the overlap when a user matches more than one.
+#
+#   spec.owner.groups  []Object  - each entry needs a `name` key
+#   spec.owner.users   []string  - PLAIN usernames, no `name` key (easy to get wrong)
+#
+# Cast:
+#   carol  -> only matches the group tier          -> 200 tokens/min  (baseline)
+#   alice  -> group tier + gold override           -> 5000 tokens/min (upgraded)
+#   bob    -> group tier + throttled override      -> 20 tokens/min   (downgraded)
+#
+# The overrides win because priority 30 > 10. That is the point of the demo:
+# a per-user subscription overrides the group tier in BOTH directions.
+#
+# Rate limits are counted per SUBSCRIPTION, not per key - minting a second key
+# does not reset the quota.
+#
+# Apply:   oc apply -f maas-demo-subscriptions.yaml
+# Revert:  oc delete -f maas-demo-subscriptions.yaml
+---
+# Baseline everyone on the team gets. carol has no override, so this is her tier.
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: demo-team-standard
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Demo Team - Standard"
+    openshift.io/description: "Baseline tier for everyone in maas-demo-users"
+spec:
+  owner:
+    groups:
+      - name: maas-demo-users
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 200
+          window: 1m
+  priority: 10
+---
+# alice is upgraded. Higher priority than the group tier, so this one applies.
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: demo-alice-gold
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Demo - alice (Gold)"
+    openshift.io/description: "Per-user upgrade: overrides the team baseline"
+spec:
+  owner:
+    groups: []
+    users:
+      - alice
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 5000
+          window: 1m
+  priority: 30
+---
+# bob is throttled. Same mechanism as alice, opposite direction - this is the
+# one to demo live, because 20 tokens/min trips within a handful of requests.
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: demo-bob-throttled
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Demo - bob (Throttled)"
+    openshift.io/description: "Per-user downgrade: overrides the team baseline"
+spec:
+  owner:
+    groups: []
+    users:
+      - bob
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 20
+          window: 1m
+  priority: 30
