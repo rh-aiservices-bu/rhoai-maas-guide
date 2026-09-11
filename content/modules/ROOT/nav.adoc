@@ -33,6 +33,9 @@
 * xref:08c-api-key-security.adoc[API Key Security]
 * xref:11-model-swap.adoc[Model Swap]
 
+.Demos
+* xref:demos.adoc[Demos]
+
 .Cleanup
 * xref:09-cleanup.adoc[Cleanup & Teardown]
 

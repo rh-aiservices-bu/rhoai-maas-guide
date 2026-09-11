@@ -14,6 +14,8 @@ Each entry links to its pull request for full details.
 
 * *Platform Upgrade Guide (3.4 -> 3.5)* - End-to-end 10-step MaaS migration guide covering DSC fields, namespace migration, ExternalModel API changes, and dashboard config. (link:{repo-url}/pull/119[#119])
 
+* *Demos Page* - 5 presenter-ready demos for subscription tiering, priority resolution, OIDC authentication, service account access, and JWKS cache validation. Grouped by parent phase with inline TIP pointers from Phase 5 and Phase 9. (link:{repo-url}/pull/152[#152], link:{repo-url}/pull/153[#153])
+
 === Features
 
 * *Phase 9: External OIDC Authentication* - Full Keycloak integration with PostgreSQL backend, realm import, automation script, and 6-check test suite. Supports corporate SSO with JWT claim-based authorization. (link:{repo-url}/pull/98[#98])
