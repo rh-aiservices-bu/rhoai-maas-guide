@@ -105,6 +105,8 @@ Defines rate-limiting tiers for model access. Each model ships with two tiers:
 
 Higher-priority subscriptions take precedence. You can adjust limits, windows, and subject groups to match your usage policies.
 
+TIP: See the link:{repo-url}/tree/main/demo/user-level-rate-limiting[User-Level Rate Limiting demo] and link:{repo-url}/tree/main/demo/subscription-priority[Subscription Priority demo] for hands-on walkthroughs of tiering and priority resolution. All demos are listed on the xref:demos.adoc[Demos] page.
+
 [[governance-pairing]]
 === Governance Pairing: Why Both Are Required
 
@@ -386,6 +388,8 @@ curl -sk "https://${MAAS_URL}/v1/chat/completions" \
 ----
 
 A regular user trying to create an API key with `"subscription": "simulator-pipeline"` gets `invalid_subscription` - the maas-api checks the caller's identity against `spec.owner.users` and rejects anyone not listed.
+
+TIP: See the link:{repo-url}/tree/main/demo/service-account-access[Service Account Access demo] for a full walkthrough deploying an in-cluster app that calls a model with its SA token. Listed on the xref:demos.adoc[Demos] page.
 
 == Appendix
 

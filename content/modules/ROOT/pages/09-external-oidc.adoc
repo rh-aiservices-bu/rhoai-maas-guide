@@ -357,6 +357,8 @@ curl -sSk -X POST \
     "https://maas.${CLUSTER_DOMAIN}/v1/chat/completions" | jq .
 ----
 
+TIP: See the link:{repo-url}/tree/main/demo/oidc-authentication[OIDC Authentication demo] for a presenter-ready walkthrough with a click-through UI and CLI client. The link:{repo-url}/tree/main/demo/jwks-cache[JWKS Cache demo] proves that JWT signatures are verified locally from cached keys. All demos are listed on the xref:demos.adoc[Demos] page.
+
 == Cleanup
 
 To remove the OIDC configuration and Keycloak:
