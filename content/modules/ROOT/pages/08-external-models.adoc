@@ -4,7 +4,7 @@ NOTE: This phase requires a completed MaaS installation (through xref:04-rhoai-c
 
 WARNING: This phase is NOT compatible with disconnected/air-gapped environments. External models require internet access to reach third-party APIs (OpenAI, Bedrock, Gemini). If you are running in disconnected mode, skip this phase entirely.
 
-NOTE: The RHOAI Dashboard also provides a *Technology Preview* UI for browsing external models under *Gen AI studio > AI asset endpoints*. The CLI workflow documented below (Steps 1-3) is the fully supported (GA) method. See <<dashboard-ui>> for the Dashboard UI walkthrough.
+NOTE: The RHOAI Dashboard also provides a *Technology Preview* UI for browsing deployed models (local and external) under *Gen AI studio > AI asset endpoints*. The CLI workflow documented below (Steps 1-3) is the fully supported (GA) method. See <<dashboard-ui>> for the Dashboard UI walkthrough.
 
 The `ExternalModel` CRD lets you expose third-party LLM APIs (OpenAI, AWS Bedrock, Google Gemini, Azure OpenAI, etc.) through the MaaS gateway. External models get the same API key management, authentication, rate limiting, and usage tracking as locally-served models - your consumers use a single gateway endpoint regardless of where the model runs.
 
@@ -256,7 +256,7 @@ Navigate to *Gen AI studio > AI asset endpoints* in the Dashboard sidebar. The p
 
 image::external-models-ai-asset-endpoints.png[AI asset endpoints page showing deployed models,width=100%]
 
-Both local models (LLMInferenceService) and external models (ExternalModel) appear in this table. Models registered via CLI (`oc apply`) and models registered via the Dashboard both show up here.
+Both local models (LLMInferenceService) and external models (ExternalModel) appear in this table. All deployed models show up here regardless of whether they were created via CLI or the Dashboard.
 
 === Viewing Endpoints and Generating API Keys
 
@@ -274,7 +274,7 @@ The dialog provides:
 
 The AI asset endpoints page does not have a registration form for new external models. MaaS models are managed by the cluster administrator through CLI (Steps 1-3 above). The *Don't see the model you're looking for?* link on the page confirms this - it points to the Model deployments page for non-MaaS model serving.
 
-NOTE: Whether you manage external models via the Dashboard or via CLI, the same Kubernetes CRDs are created (`ExternalProvider`, `ExternalModel`, `MaaSModelRef`, `MaaSAuthPolicy`, `MaaSSubscription`). Models created via CLI appear in the Dashboard, and models visible in the Dashboard can be inspected with `oc get`.
+NOTE: The Dashboard provides a read-only view of the same Kubernetes CRDs created by the CLI workflow (`ExternalProvider`, `ExternalModel`, `MaaSModelRef`, `MaaSAuthPolicy`, `MaaSSubscription`). Models created via `oc apply` appear in the Dashboard and can be inspected with `oc get`.
 
 == Other Providers
 
