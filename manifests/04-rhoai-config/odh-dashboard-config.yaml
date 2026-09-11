@@ -16,7 +16,7 @@ spec:
     genAiStudio: true
     modelAsService: true
     observabilityDashboard: true
-    externalModels: true  # Technology Preview - enables AI asset endpoints tab in Dashboard UI
+    externalModels: true  # Technology Preview - enables External models tab under Deployments
   hardwareProfileOrder: []
   notebookController:
     enabled: true

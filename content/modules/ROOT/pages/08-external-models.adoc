@@ -244,35 +244,17 @@ The `--external-model-provider` flag selects which provider manifests to deploy 
 [[dashboard-ui]]
 == Dashboard UI (Technology Preview)
 
-IMPORTANT: The *AI asset endpoints* tab in the RHOAI Dashboard is a *Technology Preview* feature in RHOAI 3.5. Technology Preview features are not supported with Red Hat production service level agreements (SLAs) and might not be functionally complete. The CLI workflow documented above (Steps 1-3) is the fully supported (GA) method for managing external models.
+IMPORTANT: The *External models* tab in the RHOAI Dashboard is a *Technology Preview* feature in RHOAI 3.5. Technology Preview features are not supported with Red Hat production service level agreements (SLAs) and might not be functionally complete. The CLI workflow documented above (Steps 1-3) is the fully supported (GA) method for managing external models.
 
-The Dashboard provides a graphical interface for browsing deployed models (both local and external) and generating API keys. This tab is enabled by the `externalModels: true` flag in the OdhDashboardConfig (see xref:04-rhoai-config.adoc#_check_odhdashboardconfig_flags[Phase 4: Check OdhDashboardConfig flags]).
+The Dashboard provides an admin-only view of external models deployed through the CLI. This tab is enabled by the `externalModels: true` flag in the OdhDashboardConfig (see xref:04-rhoai-config.adoc#_check_odhdashboardconfig_flags[Phase 4: Check OdhDashboardConfig flags]).
 
-=== Browsing Models
+Navigate to *AI hub > Models > Deployments* and select the *External models* tab:
 
-Navigate to *Gen AI studio > AI asset endpoints* in the Dashboard sidebar. The page lists all deployed models with their model ID, use case, status, and links to view endpoints or open the Playground:
+image::external-models-deployments-tab.png[External models tab under Deployments showing gpt-4o-mini with provider details,width=100%]
 
-image::external-models-ai-asset-endpoints.png[AI asset endpoints page showing deployed models,width=100%]
+The tab lists each external model with its provider badge and status. Expanding a model row shows the full provider configuration: external provider name, provider URL, path, authentication type, credential secret, API format, target model ID, and weight.
 
-Both local models (LLMInferenceService) and external models (ExternalModel) appear in this table. All deployed models show up here regardless of whether they were created via CLI or the Dashboard.
-
-=== Viewing Endpoints and Generating API Keys
-
-Click *View* on any model row to open the Endpoints dialog. This shows the external API endpoint URL, lets you select a subscription, and generate a temporary API key directly from the UI:
-
-image::external-models-endpoint-detail.png[Endpoint detail dialog with API URL and key generation,width=100%]
-
-The dialog provides:
-
-* *External API endpoint* - the gateway URL to use in your application
-* *Subscription* - select which subscription tier to bind the key to
-* *Generate API key* - creates a temporary key for quick testing (for permanent keys, use the *API keys* page)
-
-=== Registering New External Models
-
-The AI asset endpoints page does not have a registration form for new external models. MaaS models are managed by the cluster administrator through CLI (Steps 1-3 above). The *Don't see the model you're looking for?* link on the page confirms this - it points to the Model deployments page for non-MaaS model serving.
-
-NOTE: The Dashboard provides a read-only view of the same Kubernetes CRDs created by the CLI workflow (`ExternalProvider`, `ExternalModel`, `MaaSModelRef`, `MaaSAuthPolicy`, `MaaSSubscription`). Models created via `oc apply` appear in the Dashboard and can be inspected with `oc get`.
+NOTE: The Dashboard provides a read-only view of the same Kubernetes CRDs created by the CLI workflow (`ExternalProvider`, `ExternalModel`). To create or modify external models, use the CLI steps documented above. Models created via `oc apply` appear in the Dashboard automatically.
 
 == Other Providers
 

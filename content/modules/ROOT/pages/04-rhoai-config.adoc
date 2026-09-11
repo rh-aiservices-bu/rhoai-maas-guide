@@ -206,9 +206,9 @@ Verify the following flags are set:
 * `modelAsService: true` - enables the Models as a Service tab
 * `genAiStudio: true` - enables the GenAI Studio tab (requires `ogx` Managed on 3.5+ or `llamastackoperator` Managed on 3.4)
 * `observabilityDashboard: true` - enables the Observability tab (requires COO + monitoring configured)
-* `externalModels: true` - enables the *AI asset endpoints* tab under *Gen AI studio* in the Dashboard, where users can browse deployed models, view endpoint URLs, select subscriptions, and generate temporary API keys
+* `externalModels: true` - enables the *External models* tab under *AI hub > Models > Deployments* in the Dashboard, where administrators can view deployed external models, their providers, and connection details
 
-IMPORTANT: The *AI asset endpoints* tab is a *Technology Preview* feature in RHOAI 3.5. Technology Preview features are not supported with Red Hat production service level agreements (SLAs) and might not be functionally complete. The external models functionality itself (CRDs, CLI, gateway routing) is fully supported (GA). For CLI-based external model management, see xref:08-external-models.adoc[Phase 8: External Models].
+IMPORTANT: The *External models* tab is a *Technology Preview* feature in RHOAI 3.5. Technology Preview features are not supported with Red Hat production service level agreements (SLAs) and might not be functionally complete. The external models functionality itself (CRDs, CLI, gateway routing) is fully supported (GA). For CLI-based external model management, see xref:08-external-models.adoc[Phase 8: External Models].
 
 NOTE: The `maasAuthPolicies` flag was removed from the OdhDashboardConfig CRD in RHOAI 3.5. Do not include it in the manifest - the admission webhook will reject it.
 
