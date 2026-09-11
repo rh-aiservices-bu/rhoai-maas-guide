@@ -1,6 +1,6 @@
 # MaaS demos
 
-Four demos showing how Models as a Service governs access to a model: **who may
+Five demos showing how Models as a Service governs access to a model: **who may
 call it**, and **how much they may consume**.
 
 Each demo runs against a cluster with MaaS deployed (`./scripts/setup-maas.sh`

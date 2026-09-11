@@ -10,11 +10,11 @@ Each entry links to its pull request for full details.
 
 * *API Key Security Reference* - Deep dive into MaaS API key internals: key anatomy, hash derivation, ValidateAPIKey flow, IDOR protection, lifecycle management, and 8-threat model. (link:{repo-url}/pull/129[#129])
 
-* *Model Swap Reference* - How to swap a model backend without customer-facing changes. Covers MaaSModelRef hierarchy, 6-step migration procedure, BBR endpoint routing, and concrete Qwen 3.6->3.8 swap templates. (link:{repo-url}/pull/113[#113], link:{repo-url}/pull/134[#134])
+* *Model Swap Reference* - How to swap a model backend without customer-facing changes. Covers MaaSModelRef hierarchy, 6-step migration procedure, BBR endpoint routing, and concrete Qwen 3.6→3.8 swap templates. (link:{repo-url}/pull/113[#113], link:{repo-url}/pull/134[#134])
 
-* *Platform Upgrade Guide (3.4 -> 3.5)* - End-to-end 10-step MaaS migration guide covering DSC fields, namespace migration, ExternalModel API changes, and dashboard config. (link:{repo-url}/pull/119[#119])
+* *Platform Upgrade Guide (3.4 → 3.5)* - End-to-end 10-step MaaS migration guide covering DSC fields, namespace migration, ExternalModel API changes, and dashboard config. (link:{repo-url}/pull/119[#119])
 
-* *Demos Page* - 5 presenter-ready demos for subscription tiering, priority resolution, OIDC authentication, service account access, and JWKS cache validation. Grouped by parent phase with inline TIP pointers from Phase 5 and Phase 9. (link:{repo-url}/pull/152[#152], link:{repo-url}/pull/153[#153])
+* *Demos Page* - 5 presenter-ready demos for subscription tiering, priority resolution, OIDC authentication, service account access, and JWKS cache validation. Contributed by deewhyweb. Grouped by parent phase with inline TIP pointers from Phase 5 and Phase 9. (link:{repo-url}/pull/152[#152], link:{repo-url}/pull/153[#153])
 
 === Features
 
@@ -66,7 +66,7 @@ Each entry links to its pull request for full details.
 
 === New Pages
 
-* *Post-Upgrade Troubleshooting* - 10 most common 3.4->3.5 upgrade issues with symptoms, diagnosis commands, and workarounds. Covers MCP OOM, ExternalModel migration, gateway label mismatch, hostname discovery, and more. All issues linked to Jira. (link:{repo-url}/pull/79[#79])
+* *Post-Upgrade Troubleshooting* - 10 most common 3.4→3.5 upgrade issues with symptoms, diagnosis commands, and workarounds. Covers MCP OOM, ExternalModel migration, gateway label mismatch, hostname discovery, and more. All issues linked to Jira. (link:{repo-url}/pull/79[#79])
 
 * *Cleanup and Teardown Guide* - New Phase 9 cleanup page with `cleanup-maas.sh` script. Reverses setup in 7 phases, supports `--dry-run`, `--keep-operators`, `--from-phase`, `--yes`. (link:{repo-url}/pull/56[#56])
 
@@ -89,6 +89,8 @@ Each entry links to its pull request for full details.
 * *RHCL Pin Removed* - Removed v1.3.4 pin since RHCL v1.4.2 fixes the WASM bugs. (link:{repo-url}/pull/56[#56])
 
 * *Skip ModelControllerReady on RHOAI 3.5+* - DSC condition was removed in 3.5, causing setup script to wait 300s for nothing on every fresh install. (link:{repo-url}/pull/78[#78])
+
+* *GPU Driver DTK Kernel Check* - Made the kernel check the gate for GPU driver builds on disconnected clusters. Driver builds only needed when DTK image kernel does not match the node. Contributed by deewhyweb. (link:{repo-url}/pull/69[#69])
 
 == July 2026
 
@@ -145,7 +147,7 @@ Each entry links to its pull request for full details.
 | Alpha testing review and documentation feedback
 
 | deewhyweb
-| GPU driver DTK kernel check improvements
+| MaaS entitlement and authentication demos, GPU driver DTK kernel check
 
 | nueda-rh
 | Platform configuration fixes
