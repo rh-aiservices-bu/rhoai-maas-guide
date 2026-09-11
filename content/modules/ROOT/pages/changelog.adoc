@@ -36,7 +36,7 @@ Each entry links to its pull request for full details.
 
 * *ServiceAccount-Scoped Subscriptions* - New section in Phase 5 showing how to scope a MaaSSubscription to a specific ServiceAccount via `spec.owner.users`. Useful for CI/CD pipelines and batch jobs that need their own rate limits. (link:{repo-url}/pull/150[#150])
 
-* *AI Asset Endpoints Dashboard Documentation* - Added Technology Preview callout for the AI asset endpoints tab in the RHOAI Dashboard (Gen AI studio). New section in Phase 8 with screenshots showing the model listing and endpoint detail dialog. (link:{repo-url}/pull/156[#156])
+* *External Models Dashboard Documentation* - Added Technology Preview callout for the External models tab in the RHOAI Dashboard (AI hub > Models > Deployments). New section in Phase 8 with screenshot showing the model listing and provider details. (link:{repo-url}/pull/156[#156])
 
 === Fixes
 
