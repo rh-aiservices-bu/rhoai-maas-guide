@@ -1,0 +1,86 @@
+# Corporate scenario: one subscription per division
+#
+# Each division gets a single subscription covering all models they can access,
+# with per-model token rate limits. This means one API key per user gives access
+# to all their models - no need to mint separate keys per model.
+#
+# Priority 30 outranks the shipped simulator-free (10) and simulator-premium (20)
+# subscriptions, both of which target system:authenticated.
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: corp-sales
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Corporate - Sales Division"
+    openshift.io/description: "Sales: general purpose model only, 500 tokens/min"
+spec:
+  owner:
+    groups:
+      - name: corp-sales
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 500
+          window: 1m
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: corp-engineering
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Corporate - Engineering Division"
+    openshift.io/description: "Engineering: all models, highest on-prem limits, capped cloud"
+spec:
+  owner:
+    groups:
+      - name: corp-engineering
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 500
+          window: 1m
+    - name: deepseek-r2-llmd
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000
+          window: 1m
+    - name: gemini-flash-cloud
+      namespace: cloud-models
+      tokenRateLimits:
+        - limit: 20
+          window: 1m
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: corp-products
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Corporate - Products Division"
+    openshift.io/description: "Products: general purpose + code model, 500 tokens/min each"
+spec:
+  owner:
+    groups:
+      - name: corp-products
+    users: []
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 500
+          window: 1m
+    - name: deepseek-r2-llmd
+      namespace: llm
+      tokenRateLimits:
+        - limit: 500
+          window: 1m
+  priority: 30

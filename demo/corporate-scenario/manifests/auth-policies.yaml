@@ -1,0 +1,45 @@
+# Corporate scenario: group-based model access control
+#
+# Access matrix:
+#   facebook-opt-125m-simulated  Sales + Engineering + Products  (existing simulator-access covers this)
+#   deepseek-r2-llmd             Engineering + Products
+#   gemini-flash-cloud           Engineering only
+#
+# The general model (facebook-opt-125m-simulated) already has a MaaSAuthPolicy
+# granting system:authenticated, so corporate users inherit access to it. Only
+# the two new models need explicit policies.
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: corp-deepseek-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Corporate - DeepSeek R2 Access"
+    openshift.io/description: "Engineering and Products divisions may call DeepSeek R2"
+spec:
+  modelRefs:
+    - name: deepseek-r2-llmd
+      namespace: llm
+  subjects:
+    groups:
+      - name: corp-engineering
+      - name: corp-products
+    users: []
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: corp-cloud-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Corporate - Gemini Flash (Cloud) Access"
+    openshift.io/description: "Engineering division only - cloud model access is restricted"
+spec:
+  modelRefs:
+    - name: gemini-flash-cloud
+      namespace: cloud-models
+  subjects:
+    groups:
+      - name: corp-engineering
+    users: []

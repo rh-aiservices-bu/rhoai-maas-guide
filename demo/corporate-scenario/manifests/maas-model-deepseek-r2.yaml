@@ -1,0 +1,12 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: deepseek-r2-llmd
+  namespace: llm
+  annotations:
+    openshift.io/display-name: "DeepSeek R2 (On-Prem)"
+    openshift.io/description: "On-prem code and reasoning model served via llm-d (simulator)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: deepseek-r2-llmd

@@ -1,0 +1,12 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: gemini-flash-cloud
+  namespace: cloud-models
+  annotations:
+    openshift.io/display-name: "Gemini Flash (Cloud)"
+    openshift.io/description: "Cloud-hosted multimodal model (simulator for demo)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: gemini-flash-cloud
