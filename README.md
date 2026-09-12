@@ -119,6 +119,7 @@ See [AI-Assisted Installation](https://rh-aiservices-bu.github.io/rhoai-maas-gui
 
 ## Documentation
 
+- [Install & Configuration Visualizer](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/_attachments/install-flow.html) — animated walkthrough of the phase sequence, the most common ordering mistake, governance pairing, and tiers/priority
 - [RHOAI 3.5 MaaS Official Docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index)
 - [RHOAI 3.4 MaaS Official Docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index)
 - [Upstream MaaS Documentation](https://opendatahub-io.github.io/models-as-a-service/latest/)

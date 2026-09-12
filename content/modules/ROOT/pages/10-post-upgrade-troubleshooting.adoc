@@ -782,6 +782,55 @@ After deletion, internal DNS resolves immediately via the wildcard `*.apps.*` re
 
 NOTE: This only affects clusters where the gateway service type was changed from LoadBalancer to ClusterIP. Fresh ClusterIP deployments (where LoadBalancer was never used) are not affected.
 
+[[issue-14]]
+== Issue 14: LlamaStackOperator/OGX Conflict Blocks the Entire AIGateway Module
+
+Reproduced live on a RHOAI 3.5.0 cluster (`stable-3.x` channel) during a fresh {maas} install: `aigateway.modelsAsAService` showed `Managed` in the DSC spec, but `maas-api` never deployed, `ModelsAsAServiceReady` stayed `False`, and applying `MaaSModelRef` failed with `no matches for kind "MaaSModelRef" in version "maas.opendatahub.io/v1alpha1"` - even though the health check, gateway, and PostgreSQL all looked fine. `setup-maas.sh` timed out waiting 300s for the `maas-api` deployment to appear.
+
+The root cause has nothing to do with {maas} itself: the DSC also had `llamastackoperator.managementState: Managed` (either left over from a previous state, or defaulted by the CRD schema when the field is omitted). The opendatahub-operator provisions modules in batches by runlevel, and `aigateway`, `mlflowoperator`, and `ogx` are all provisioned together at runlevel 32. Having both `llamastackoperator: Managed` and `ogx: Managed` set makes the operator reject the `ogx` module outright, which aborts that entire batch - so `aigateway`'s CRDs (`maasmodelrefs.maas.opendatahub.io`, `configs.maas.opendatahub.io`, etc.) and `mlflowoperator`'s CRD never get installed either, even though nothing in the DSC spec or status message mentions `llamastackoperator` at all.
+
+=== Symptoms
+
+* `oc get datasciencecluster default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")]}'` shows `"Some modules are not ready: aigateway, mlflowoperator, ogx"`
+* `AIGatewayReady` condition: `Failed to get module status: no matches for kind "AIGateway" in version "components.platform.opendatahub.io/v1alpha1"`
+* `oc get crd | grep maas.opendatahub.io` returns nothing - the MaaS CRDs were never installed
+* `maas-api` deployment does not exist in `redhat-ai-gateway-infra` (or `redhat-ods-applications` on 3.4-style layouts), even 5+ minutes after the DSC was applied
+* `oc apply -f manifests/05-maas-models/.../maas-model.yaml` (or any `MaaSModelRef`) fails with `no matches for kind "MaaSModelRef" ... ensure CRDs are installed first`
+* `rhods-operator` logs (`oc logs -n redhat-ods-operator deployment/rhods-operator`) repeat `"module CRDs not yet available, requesting requeue"` for `aigateway, mlflowoperator, ogx` in an endless loop, interleaved with an ERROR: `"BuildModuleCR failed"` / `error":"LlamaStackOperator is set to Managed; it has been deprecated, set it to Removed before enabling OGX"` and `"provisioning failed: module provisioning failed: ogx"`
+
+=== Diagnosis
+
+[source,bash]
+----
+# Confirm the DSC is not Ready and which modules are stuck
+oc get datasciencecluster default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")]}'
+
+# Check both fields - this is the smoking gun if both show Managed
+oc get datasciencecluster default-dsc -o jsonpath='{.spec.components.llamastackoperator}{"\n"}'
+oc get datasciencecluster default-dsc -o jsonpath='{.spec.components.ogx}{"\n"}'
+
+# Confirm via operator logs
+oc logs -n redhat-ods-operator deployment/rhods-operator --tail=500 \
+  | grep -i "LlamaStackOperator is set to Managed"
+----
+
+=== Workaround
+
+Set `llamastackoperator` to `Removed` explicitly (it is superseded by `ogx` in 3.5 and does not need to stay `Managed` for anything, including 3.4 compatibility):
+
+[source,bash]
+----
+oc patch datasciencecluster default-dsc --type=merge \
+  -p '{"spec":{"components":{"llamastackoperator":{"managementState":"Removed"}}}}'
+
+# Should flip to True within ~60-90s
+oc wait datasciencecluster default-dsc --for=condition=Ready --timeout=180s
+----
+
+Once `Ready=True`, the `aigateway`, `mlflowoperator`, and MaaS CRDs install automatically and `maas-api`/`maas-controller` deploy without any further action. Re-run the phase that timed out (for example `./scripts/setup-maas.sh --from-phase 4`) to finish deploying models and governance resources.
+
+IMPORTANT: `manifests/04-rhoai-config/datasciencecluster.yaml` in this guide now sets `llamastackoperator: Removed` explicitly alongside `ogx: Managed`, so fresh installs following xref:04-rhoai-config.adoc[Phase 4] as written should not hit this. This issue is most likely to surface on clusters where the DSC already existed (e.g. a prior 3.4 install, or a partially-completed 3.5 attempt) before `setup-maas.sh` ran - the script detects `modelsAsAService: Managed` and skips re-applying the DSC, so a pre-existing `llamastackoperator: Managed` value is never corrected. See xref:12-platform-upgrade.adoc[Step 3] for the equivalent guidance during a 3.4 -> 3.5 upgrade.
+
 == Quick Reference: Triage Order
 
 When you hit problems after upgrading from 3.4 to 3.5, check in this order:
@@ -841,6 +890,10 @@ When you hit problems after upgrading from 3.4 to 3.5, check in this order:
 | 13
 | Changed gateway from LoadBalancer to ClusterIP and DNS broken? (`oc get dnsrecord -n openshift-ingress`)
 | Delete stale dnsrecord (<<issue-13,Issue 13>>)
+
+| 14
+| `maas-api` never appears / `MaaSModelRef` CRD missing, but `modelsAsAService: Managed`? (`oc get datasciencecluster default-dsc -o jsonpath='{.spec.components.llamastackoperator}'`)
+| Set `llamastackoperator` to `Removed` (<<issue-14,Issue 14>>)
 |===
 
 == References
@@ -859,4 +912,5 @@ When you hit problems after upgrading from 3.4 to 3.5, check in this order:
 * link:https://redhat.atlassian.net/browse/RHOAIENG-91640[RHOAIENG-91640 - OTEL collector proxy interception breaks observability]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-93709[RHOAIENG-93709 - HTTPRoute rule name collision in multi-model gateway]
 * link:https://redhat.atlassian.net/browse/RHOAIENG-93962[RHOAIENG-93962 - Stale DNSRecord after gateway service type change]
+* Issue 14 (LlamaStackOperator/OGX conflict) - no Jira ticket filed yet; reproduced live and documented in this guide
 * link:https://redhat.atlassian.net/browse/RHOAIENG-80360[RHOAIENG-80360 - Gateway route hijacking security fix]
