@@ -42,7 +42,7 @@ This runs Phases 0-6 automatically. The script detects what's already installed 
 | Option | Description | Default
 
 | `--model <name>`
-| Model to deploy: `simulator` (CPU), `granite-tiny-gpu` (small GPU), `gpt-oss-20b` (large GPU), `auto` (auto-detect by GPU VRAM)
+| Model to deploy: `simulator` (CPU), `granite-tiny-gpu` (small GPU), `gemma` (mid GPU), `gpt-oss-20b` (large GPU), `qwen3-06b` (real CPU, no GPU), `auto` (auto-detect by GPU VRAM)
 | `auto`
 
 | `--rhoai-version <v>`

@@ -19,7 +19,7 @@
 #   ./scripts/setup-maas.sh [OPTIONS]
 #
 # Options:
-#   --model <name>       Model: simulator, granite-tiny-gpu, gpt-oss-20b, auto (default: auto)
+#   --model <name>       Model: simulator, granite-tiny-gpu, gemma, gpt-oss-20b, qwen3-06b, auto (default: auto)
 #   --from-phase <N>     Start from phase N (default: 0)
 #   --skip-models        Skip Phase 5 (model deployment)
 #   --skip-verify        Skip Phase 6 (verification)
@@ -90,7 +90,7 @@ installation through model deployment and verification. Each phase is
 idempotent  - re-running skips what's already done.
 
 Options:
-  --model <name>       Model: simulator, granite-tiny-gpu, gpt-oss-20b, gemma, auto (default: auto)
+  --model <name>       Model: simulator, granite-tiny-gpu, gemma, gpt-oss-20b, qwen3-06b, auto (default: auto)
   --rhoai-version <v>  RHOAI version: 3.4 or 3.5 (default: 3.5). Auto-detects if already installed.
   --from-phase <N>     Start from phase N (0-8, default: 0)
   --maas-hostname <h>  Custom gateway hostname (default: maas.<cluster-domain>, or MAAS_HOSTNAME env var)
@@ -982,6 +982,7 @@ if should_run 5 && [ "$SKIP_MODELS" = false ]; then
                 else
                     MODEL="simulator"
                     log_info "No GPU nodes detected -> simulator"
+                    log_info "Hint: use --model qwen3-06b for real CPU inference (~16Gi RAM, downloads from HuggingFace)"
                 fi
             elif [ "$GPU_MEMORY" -ge 40960 ] 2>/dev/null; then
                 MODEL="gpt-oss-20b"

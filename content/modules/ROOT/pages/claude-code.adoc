@@ -45,7 +45,7 @@ All arguments from `setup-maas.sh` are supported:
 | Option | Description
 
 | `--model <name>`
-| Model to deploy: `simulator` (CPU), `granite-tiny-gpu`, `gpt-oss-20b`, `auto`
+| Model to deploy: `simulator` (CPU), `granite-tiny-gpu`, `gemma`, `gpt-oss-20b`, `qwen3-06b`, `auto`
 
 | `--from-phase <N>`
 | Start from phase N (0-7)

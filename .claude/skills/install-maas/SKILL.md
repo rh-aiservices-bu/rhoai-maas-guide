@@ -1,7 +1,7 @@
 ---
 name: install-maas
 description: Install MaaS (Models as a Service) on a connected RHOAI cluster using this guide's Kustomize manifests and automation scripts.
-argument-hint: "[--model simulator|granite-tiny-gpu|gpt-oss-20b|auto] [--from-phase N] [--skip-models] [--skip-verify] [--with-observability]"
+argument-hint: "[--model simulator|granite-tiny-gpu|gemma|gpt-oss-20b|qwen3-06b|auto] [--from-phase N] [--skip-models] [--skip-verify] [--with-observability]"
 allowed-tools: Bash(oc *), Bash(./*), Bash(envsubst *), Bash(curl *), Bash(jq *), Bash(grep *), Bash(ls *), Bash(cat *), Bash(date *), Bash(mkdir *), Bash(echo *), Bash(bash *), AskUserQuestion
 ---
 
@@ -19,7 +19,7 @@ Install Models as a Service on an OpenShift cluster with RHOAI using this guide'
 
 ## Arguments
 
-- `--model <name>` -- Model to deploy: `simulator` (CPU), `granite-tiny-gpu` (small GPU), `gpt-oss-20b` (large GPU), `auto` (auto-detect). Default: `auto`.
+- `--model <name>` -- Model to deploy: `simulator` (CPU), `granite-tiny-gpu` (small GPU), `gemma` (mid GPU), `gpt-oss-20b` (large GPU), `qwen3-06b` (real CPU, no GPU), `auto` (auto-detect). Default: `auto`.
 - `--from-phase <N>` -- Start from phase N (0-7). Default: 0.
 - `--skip-models` -- Skip Phase 5 (model deployment).
 - `--skip-verify` -- Skip Phase 6 (verification).

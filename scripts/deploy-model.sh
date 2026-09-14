@@ -12,7 +12,7 @@
 #   ./scripts/deploy-model.sh [OPTIONS]
 #
 # Options:
-#   --model <name>  Model to deploy: simulator, granite-tiny-gpu, gemma, gpt-oss-20b, auto (default: auto)
+#   --model <name>  Model to deploy: simulator, granite-tiny-gpu, gemma, gpt-oss-20b, qwen3-06b, auto (default: auto)
 #   --dry-run       Preview without applying
 #   -h, --help      Show this help message
 #
@@ -58,6 +58,7 @@ Options:
                     granite-tiny-gpu         Granite 4.0-h-tiny FP8 (1 GPU, 24Gi RAM)
                     gpt-oss-20b              OpenAI gpt-oss-20b (1 GPU, 60Gi RAM)
                     gemma                    Gemma 2 9B IT FP8 (1 GPU, 24Gi RAM)
+                    qwen3-06b                Qwen3-0.6B CPU (no GPU, 16Gi RAM, HuggingFace)
                     auto                     Auto-detect based on GPU VRAM (default)
   --disconnected  Use disconnected-compatible variants (oci:// URIs)
   --dry-run       Preview without applying
@@ -111,6 +112,7 @@ if [ "$MODEL" = "auto" ]; then
             MODEL="simulator-disconnected"
         else
             log_info "No GPU nodes detected, selecting simulator"
+            log_info "Hint: use --model qwen3-06b for real CPU inference (~16Gi RAM, downloads from HuggingFace)"
             MODEL="simulator"
         fi
     elif [ "$GPU_MEMORY" -ge 40960 ] 2>/dev/null; then
@@ -126,7 +128,7 @@ if [ "$MODEL" = "auto" ]; then
 fi
 
 # Validate selected model
-VALID_MODELS="simulator simulator-disconnected granite-tiny-gpu gpt-oss-20b gemma"
+VALID_MODELS="simulator simulator-disconnected granite-tiny-gpu gpt-oss-20b gemma qwen3-06b"
 if ! echo "$VALID_MODELS" | grep -qw "$MODEL"; then
     log_error "Unknown model: $MODEL"
     log_error "Valid models: $VALID_MODELS"

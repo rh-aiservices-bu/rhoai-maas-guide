@@ -140,6 +140,11 @@ For end-to-end deployment using a single script, see the xref:quick-start.adoc[A
 | Yes
 | >= 40 GiB
 | Large GPU (L40S, A100, H100)
+
+| `qwen3-06b`
+| No
+| None (~16 GiB RAM)
+| Real CPU inference (no GPU needed)
 |===
 
 == Documentation
