@@ -1,0 +1,11 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: claude-haiku-4-5
+  namespace: external-models
+spec:
+  provider: anthropic
+  targetModel: claude-haiku-4-5-20251001
+  endpoint: api.anthropic.com
+  credentialRef:
+    name: anthropic-api-key

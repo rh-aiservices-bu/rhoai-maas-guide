@@ -100,7 +100,7 @@ Options:
   --with-observability Also run Phase 7 (Tempo + OpenTelemetry + COO + telemetry + Loki usage dashboards)
   --with-redis           Deploy dev Redis for Limitador counter persistence (runs in Phase 7, can combine with --with-observability)
   --with-external-models Also run Phase 8 (ExternalModel deployment + test)
-  --external-model-provider <p>   Provider: openai (default), gemini, bedrock (or set EXTERNAL_MODEL_PROVIDER)
+  --external-model-provider <p>   Provider: openai (default), gemini, bedrock, anthropic (or set EXTERNAL_MODEL_PROVIDER)
   --external-model-api-key <key>  API key for external provider (or set EXTERNAL_MODEL_API_KEY)
   --dry-run            Preview without applying
   -h, --help           Show this help message
@@ -1342,8 +1342,14 @@ if should_run 8 && [ "$WITH_EXTERNAL_MODELS" = true ]; then
                 EXTMODEL_SUBSCRIPTION="bedrock-free"
                 EXTMODEL_TARGET_MODEL="openai.gpt-oss-20b"
                 ;;
+            anthropic)
+                EXTMODEL_NAME="claude-haiku-4-5"
+                EXTMODEL_SECRET="anthropic-api-key"
+                EXTMODEL_SUBSCRIPTION="anthropic-free"
+                EXTMODEL_TARGET_MODEL="claude-haiku-4-5-20251001"
+                ;;
             *)
-                log_warn "Unknown provider '${EXTERNAL_MODEL_PROVIDER}' (supported: openai, gemini, bedrock)"
+                log_warn "Unknown provider '${EXTERNAL_MODEL_PROVIDER}' (supported: openai, gemini, bedrock, anthropic)"
                 log_warn "Skipping Phase 8"
                 EXTERNAL_MODEL_API_KEY=""
                 ;;

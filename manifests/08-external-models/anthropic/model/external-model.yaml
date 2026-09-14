@@ -1,0 +1,13 @@
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: claude-haiku-4-5
+  namespace: external-models
+spec:
+  modelName: claude-haiku-4-5
+  externalProviderRefs:
+    - ref:
+        name: anthropic
+      targetModel: claude-haiku-4-5-20251001
+      apiFormat: openai-chat
+      path: /v1/messages

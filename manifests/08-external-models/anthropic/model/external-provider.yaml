@@ -1,0 +1,12 @@
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: anthropic
+  namespace: external-models
+spec:
+  provider: anthropic
+  endpoint: api.anthropic.com
+  auth:
+    type: apikey
+    secretRef:
+      name: anthropic-api-key

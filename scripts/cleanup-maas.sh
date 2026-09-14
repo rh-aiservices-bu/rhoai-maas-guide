@@ -167,7 +167,7 @@ fi
 if should_run 1; then
     log_phase 1 "External Models"
 
-    for provider in openai gemini bedrock; do
+    for provider in openai gemini bedrock anthropic; do
         if oc get namespace external-models &>/dev/null; then
             delete_all_in_ns "externalmodel" "external-models"
         fi
@@ -175,7 +175,7 @@ if should_run 1; then
 
     # MaaS governance CRs for external models
     for cr in maasauthpolicy maassubscription; do
-        for name in $(oc get "$cr" -n models-as-a-service --no-headers -o custom-columns='NAME:.metadata.name' 2>/dev/null | grep -E 'openai|gemini|bedrock' || true); do
+        for name in $(oc get "$cr" -n models-as-a-service --no-headers -o custom-columns='NAME:.metadata.name' 2>/dev/null | grep -E 'openai|gemini|bedrock|anthropic' || true); do
             log_info "  Deleting $cr/$name in models-as-a-service..."
             run_cmd oc delete "$cr" "$name" -n models-as-a-service --ignore-not-found
         done
@@ -187,7 +187,7 @@ if should_run 1; then
     done
 
     # Provider secrets
-    for secret in openai-api-key gemini-api-key bedrock-api-key; do
+    for secret in openai-api-key gemini-api-key bedrock-api-key anthropic-api-key; do
         if oc get secret "$secret" -n external-models &>/dev/null; then
             log_info "  Deleting secret/$secret in external-models..."
             run_cmd oc delete secret "$secret" -n external-models --ignore-not-found

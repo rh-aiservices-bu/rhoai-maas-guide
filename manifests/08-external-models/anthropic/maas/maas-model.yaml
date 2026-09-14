@@ -1,0 +1,12 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: claude-haiku-4-5
+  namespace: external-models
+  annotations:
+    openshift.io/display-name: "Claude Haiku 4.5"
+    openshift.io/description: "Anthropic Claude Haiku 4.5 via Anthropic Messages API"
+spec:
+  modelRef:
+    kind: ExternalModel
+    name: claude-haiku-4-5

@@ -2,9 +2,9 @@
 
 NOTE: This phase requires a completed MaaS installation (through xref:04-rhoai-config.adoc[Phase 4]) and at least one local model deployed (xref:05-maas-models.adoc[Phase 5]) to validate the gateway is functional.
 
-WARNING: This phase is NOT compatible with disconnected/air-gapped environments. External models require internet access to reach third-party APIs (OpenAI, Bedrock, Gemini). If you are running in disconnected mode, skip this phase entirely.
+WARNING: This phase is NOT compatible with disconnected/air-gapped environments. External models require internet access to reach third-party APIs (OpenAI, Bedrock, Gemini, Anthropic). If you are running in disconnected mode, skip this phase entirely.
 
-The `ExternalModel` CRD lets you expose third-party LLM APIs (OpenAI, AWS Bedrock, Google Gemini, Azure OpenAI, etc.) through the MaaS gateway. External models get the same API key management, authentication, rate limiting, and usage tracking as locally-served models - your consumers use a single gateway endpoint regardless of where the model runs.
+The `ExternalModel` CRD lets you expose third-party LLM APIs (OpenAI, AWS Bedrock, Google Gemini, Anthropic, Azure OpenAI, etc.) through the MaaS gateway. External models get the same API key management, authentication, rate limiting, and usage tracking as locally-served models - your consumers use a single gateway endpoint regardless of where the model runs.
 
 TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
 
@@ -239,7 +239,7 @@ The setup script handles all of the above in a single command:
     --external-model-api-key "$OPENAI_API_KEY"
 ----
 
-The `--external-model-provider` flag selects which provider manifests to deploy (`openai`, `gemini`, or `bedrock`; default: `openai`).
+The `--external-model-provider` flag selects which provider manifests to deploy (`openai`, `gemini`, `bedrock`, or `anthropic`; default: `openai`).
 
 [[dashboard-ui]]
 == Dashboard UI (Technology Preview)
@@ -273,6 +273,175 @@ To deploy with Gemini:
     --with-external-models \
     --external-model-provider gemini \
     --external-model-api-key "$GEMINI_API_KEY"
+----
+
+[[anthropic]]
+=== Anthropic
+
+Manifests for Anthropic (`claude-haiku-4-5`) are included under `manifests/08-external-models/anthropic/`. The BBR `anthropic` provider translates OpenAI-format requests to the Anthropic Messages API and injects the API key via the `x-api-key` header - consumers still send standard OpenAI-format requests to the gateway.
+
+NOTE: On RHOAI 3.4, the `anthropic` BBR provider must handle path rewriting internally (there is no `path` field on the ExternalModel CRD). This has not been validated on 3.4 - if inference returns errors, upgrade to RHOAI 3.5+ where the `path` field explicitly sets `/v1/messages`.
+
+WARNING: Clients *must* use the OpenAI-compatible endpoint (`/v1/chat/completions`) when sending requests through the MaaS gateway. The Anthropic-native Messages API endpoint (`/v1/messages`) is not supported for token counting or rate limiting (link:https://redhat.atlassian.net/browse/RHOAIENG-93984[RHOAIENG-93984]). Tools like Claude Code that default to Anthropic's native API format need to be configured for OpenAI-compatible mode. The ExternalModel flow documented below routes through `/v1/chat/completions` and handles this correctly - the BBR translates to Anthropic format upstream.
+
+==== Prerequisites
+
+Get an API key from the link:https://console.anthropic.com/settings/keys[Anthropic Console] (Account Settings > API keys).
+
+TIP: Verify the key works before deploying: `curl -s "https://api.anthropic.com/v1/messages" -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" -d '{"model":"claude-haiku-4-5-20251001","max_tokens":5,"messages":[{"role":"user","content":"Hi"}]}' | python3 -m json.tool`
+
+==== Manual Deployment
+
+Create the namespace if it does not already exist (shared with other external model providers):
+
+[source,bash]
+----
+oc apply -f manifests/08-external-models/anthropic/namespace.yaml
+----
+
+Create the credential Secret (never stored in manifests):
+
+[tabs]
+====
+RHOAI 3.5+::
++
+--
+[source,bash]
+----
+oc create secret generic anthropic-api-key \
+    --from-literal=api-key="$ANTHROPIC_API_KEY" \
+    -n external-models \
+    --dry-run=client -o yaml | oc apply -f -
+
+oc label secret anthropic-api-key -n external-models \
+    inference.llm-d.ai/ipp-managed=true --overwrite
+----
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc create secret generic anthropic-api-key \
+    --from-literal=api-key="$ANTHROPIC_API_KEY" \
+    -n external-models \
+    --dry-run=client -o yaml | oc apply -f -
+
+oc label secret anthropic-api-key -n external-models \
+    inference.networking.k8s.io/bbr-managed=true --overwrite
+----
+--
+====
+
+Apply the external model and MaaS governance resources:
+
+[tabs]
+====
+RHOAI 3.5+::
++
+--
+[source,bash]
+----
+oc apply -k manifests/08-external-models/anthropic/model/
+oc apply -k manifests/08-external-models/anthropic/maas/
+----
+
+The ExternalProvider and ExternalModel CRs:
+
+[source,yaml]
+----
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: anthropic
+  namespace: external-models
+spec:
+  provider: anthropic
+  endpoint: api.anthropic.com
+  auth:
+    type: apikey
+    secretRef:
+      name: anthropic-api-key
+---
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: claude-haiku-4-5
+  namespace: external-models
+spec:
+  modelName: claude-haiku-4-5
+  externalProviderRefs:
+    - ref:
+        name: anthropic
+      targetModel: claude-haiku-4-5-20251001
+      apiFormat: openai-chat
+      path: /v1/messages
+----
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc apply -f manifests/08-external-models/anthropic/model/external-model-34.yaml
+oc apply -k manifests/08-external-models/anthropic/maas/
+----
+
+The ExternalModel CR:
+
+[source,yaml]
+----
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: claude-haiku-4-5
+  namespace: external-models
+spec:
+  provider: anthropic
+  targetModel: claude-haiku-4-5-20251001
+  endpoint: api.anthropic.com
+  credentialRef:
+    name: anthropic-api-key
+----
+--
+====
+
+Verify the model reaches Ready:
+
+[source,bash]
+----
+oc get maasmodelref claude-haiku-4-5 -n external-models
+# Expected: PHASE = Ready
+----
+
+Test inference:
+
+[source,bash]
+----
+MAAS_GW="https://maas.$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')"
+
+API_KEY=$(curl -sk -X POST "${MAAS_GW}/maas-api/v1/api-keys" \
+    -H "Authorization: Bearer $(oc whoami -t)" \
+    -H "Content-Type: application/json" \
+    -d '{"name": "anthropic-test", "subscription": "anthropic-free", "expiresIn": "1h"}' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
+
+curl -sk "${MAAS_GW}/v1/chat/completions" \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"model": "claude-haiku-4-5", "messages": [{"role": "user", "content": "Say hello in 3 words."}], "max_tokens": 20}'
+----
+
+==== Automated Deployment
+
+[source,bash]
+----
+./scripts/setup-maas.sh --from-phase 8 \
+    --with-external-models \
+    --external-model-provider anthropic \
+    --external-model-api-key "$ANTHROPIC_API_KEY"
 ----
 
 [[aws-bedrock]]
@@ -472,6 +641,14 @@ On RHOAI 3.4, the BBR `openai` provider hardcodes the upstream path to `/v1/chat
 
 *Resolved in RHOAI 3.5+*: the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that overrides the upstream path. The Gemini manifest sets `path: /v1beta/openai/chat/completions`, and inference works end-to-end.
 
+=== Anthropic Messages API - no token counting or rate limiting (RHOAIENG-93984)
+
+The MaaS `TokenRateLimitPolicy` only supports the OpenAI-compatible `/v1/chat/completions` endpoint. Requests sent directly to `/v1/messages` (the Anthropic Messages API) bypass token counting and rate limiting entirely - usage is not tracked and rate limits are not enforced. Tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-93984[RHOAIENG-93984].
+
+This affects clients that use Anthropic's native API format (e.g., Claude Code with default settings). To ensure token counting works, clients *must* send requests to `/v1/chat/completions` through the MaaS gateway. The BBR `anthropic` provider handles the translation to the Anthropic Messages API upstream.
+
+The upstream fix is tracked in link:https://github.com/Kuadrant/kuadrant-operator/issues/1654[Kuadrant/kuadrant-operator#1654].
+
 == Appendix
 
 === Directory Structure
@@ -518,6 +695,19 @@ manifests/08-external-models/
       maas-model.yaml
       maas-auth-policy.yaml
       maas-subscription.yaml
+  anthropic/
+    kustomization.yaml
+    namespace.yaml
+    model/
+      kustomization.yaml
+      external-provider.yaml     # ExternalProvider CR (3.5+)
+      external-model.yaml        # ExternalModel CR (3.5+)
+      external-model-34.yaml     # ExternalModel CR (3.4)
+    maas/
+      kustomization.yaml
+      maas-model.yaml
+      maas-auth-policy.yaml
+      maas-subscription.yaml
 ----
 
 === Supported Providers
@@ -525,7 +715,7 @@ manifests/08-external-models/
 The `provider` field in the ExternalModel spec maps to a BBR payload translator. Currently supported values:
 
 * `openai` - OpenAI API (`api.openai.com`)
-* `anthropic` - Anthropic API
+* `anthropic` - Anthropic API (`api.anthropic.com`)
 * `azure-openai` - Azure OpenAI Service
 * `bedrock-openai` - AWS Bedrock (OpenAI-compatible)
 
