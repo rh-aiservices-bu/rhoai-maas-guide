@@ -163,7 +163,17 @@ fi
 # Test 4: Inference with API key (if we have one and a model)
 # =============================================================================
 if [ -n "${API_KEY:-}" ] && [ "$API_KEY" != "null" ] && [ "$MODEL_COUNT" -gt 0 ]; then
-    MODEL_ID=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null || true)
+    SUB_NAME=$(echo "$API_KEY_RESPONSE" | jq -r '.subscription // empty' 2>/dev/null || true)
+    SUB_MODEL=""
+    if [ -n "$SUB_NAME" ]; then
+        SUB_MODEL=$(oc get maassubscription "$SUB_NAME" -n models-as-a-service \
+            -o jsonpath='{.spec.modelRefs[0].name}' 2>/dev/null || true)
+    fi
+    if [ -n "$SUB_MODEL" ]; then
+        MODEL_ID=$(echo "$MODELS_RESPONSE" | jq -r \
+            --arg sub "$SUB_MODEL" '.data[] | select(.owned_by // "" | contains($sub)) | .id' 2>/dev/null | head -1 || true)
+    fi
+    [ -z "${MODEL_ID:-}" ] && MODEL_ID=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null || true)
     if [ -n "$MODEL_ID" ]; then
         log_step "Test 4: Inference with API key (model: $MODEL_ID)"
         INFERENCE_RESPONSE=$(maas_curl -X POST \
