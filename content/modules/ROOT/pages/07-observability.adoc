@@ -314,7 +314,7 @@ oc -n kuadrant-system create secret generic redis-config \
   --dry-run=client -o yaml | oc apply -f -
 ----
 
-For complete production setup steps, see the link:https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1-latest/html/installing_on_openshift_container_platform/rhcl-install-on-ocp#configure-redis_installing-rhcl-on-ocp[Red Hat Connectivity Link - Configure Redis] documentation.
+For complete production setup steps, see the link:https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1.4/html/install_connectivity_link/rhcl-install-on-ocp#configure-redis_install-on-ocp[Red Hat Connectivity Link - Configure Redis] documentation.
 
 TIP: The link:https://developers.redhat.com/articles/2026/07/06/track-model-usage-openshift-ai-usage-dashboard[Track model usage with the OpenShift AI Usage Dashboard] article explains how Limitador counters feed the usage dashboard metrics (`authorized_calls`, `rate_limited`, `authorized_hits`). Without Redis, these metrics reset on pod restart. For accurate long-term usage tracking, RHOAI 3.5 also provides logs-based usage dashboards (Step 6 above) which are independent of Limitador counter persistence.
 
@@ -441,7 +441,7 @@ manifests/07-observability/
 * link:https://docs.kuadrant.io/dev/kuadrant-operator/doc/reference/telemetrypolicy/[Kuadrant TelemetryPolicy]
 * link:https://developers.redhat.com/articles/2026/07/06/track-model-usage-openshift-ai-usage-dashboard[Track model usage with the OpenShift AI Usage Dashboard]
 * link:https://opendatahub-io.github.io/models-as-a-service/dev/observability/setup/#logs-based-usage-dashboards[MaaS upstream - Logs-based Usage Dashboards]
-* link:https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1-latest/html/installing_on_openshift_container_platform/rhcl-install-on-ocp#configure-redis_installing-rhcl-on-ocp[RHCL - Configure Redis for Limitador]
+* link:https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1.4/html/install_connectivity_link/rhcl-install-on-ocp#configure-redis_install-on-ocp[RHCL - Configure Redis for Limitador]
 * link:https://opendatahub-io.github.io/models-as-a-service/dev/advanced-administration/limitador-persistence/[MaaS upstream - Limitador Persistence]
 * link:https://github.com/Kuadrant/limitador/blob/main/doc/server/configuration.md[Limitador server configuration (storage backends)]
 
