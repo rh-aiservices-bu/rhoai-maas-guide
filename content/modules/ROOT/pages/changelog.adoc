@@ -18,6 +18,10 @@ Each entry links to its pull request for full details.
 
 === Features
 
+* *Verify Guide Skill Documentation* - Added `/verify-guide` skill to the Claude Code guide page with usage, arguments, phases table, and description of all 6 verification phases. (link:{repo-url}/pull/166[#166])
+
+* *Anthropic External Model Provider* - Added Anthropic (Claude Haiku 4.5) as fourth external model provider with Kustomize manifests, setup/cleanup script support, and RHOAIENG-93984 known issue documentation for /v1/messages token counting gap. (link:{repo-url}/pull/164[#164])
+
 * *Phase 9: External OIDC Authentication* - Full Keycloak integration with PostgreSQL backend, realm import, automation script, and 6-check test suite. Supports corporate SSO with JWT claim-based authorization. (link:{repo-url}/pull/98[#98])
 
 * *Loki-based Usage Dashboards* - Added Loki Operator, MinIO, and LokiStack manifests to Phase 7. When usage logging is enabled, operator auto-creates EnvoyFilter, OTEL Collector, Tenancy Proxy, and Perses dashboards. RHOAI 3.5+ only. (link:{repo-url}/pull/96[#96])
