@@ -1,8 +1,8 @@
-= AI-Assisted Installation
+= AI-Assisted Installation and Verification
 
-This repository includes a skill definition that provides AI-assisted MaaS installation. The `/install-maas` skill wraps the same `setup-maas.sh` script used in the xref:quick-start.adoc[Automated Setup], letting your AI coding agent handle cluster detection, error diagnosis, and interactive troubleshooting.
+This repository includes skill definitions that provide AI-assisted MaaS installation and end-to-end verification. The `/install-maas` skill wraps the same `setup-maas.sh` script used in the xref:quick-start.adoc[Automated Setup], while the `/verify-guide` skill runs a full verification pass against a live cluster - covering installation, the 15-point E2E test suite, blind-spot regression checks, and guide content validation.
 
-The skill works with any AI coding tool that supports skill definitions:
+The skills work with any AI coding tool that supports skill definitions:
 
 * link:https://claude.ai/code[Claude Code] / link:https://opencode.ai[Open Code]
 * link:https://cursor.com[Cursor]
@@ -19,7 +19,11 @@ IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} docum
 * `oc` CLI authenticated as cluster-admin
 * This repository cloned locally
 
-== Usage
+== /install-maas
+
+The `/install-maas` skill wraps `./scripts/setup-maas.sh`, letting your AI coding agent handle cluster detection, error diagnosis, and interactive troubleshooting.
+
+=== Usage
 
 Open the repository in your AI coding tool and invoke the skill:
 
@@ -60,12 +64,111 @@ All arguments from `setup-maas.sh` are supported:
 | Also run Phase 7 (COO + telemetry)
 |===
 
-== What the Skill Does
+=== What the Skill Does
 
 The skill runs `./scripts/setup-maas.sh` from the repository root with the provided arguments. Your AI coding agent monitors the output, detects failures, and can help diagnose issues interactively.
 
 The skill has access to `oc`, `envsubst`, `curl`, `jq`, and other CLI tools needed for MaaS deployment.
 
-== Skill Definition
+=== Skill Definition
 
 The skill is defined in `.claude/skills/install-maas/SKILL.md` within this repository. It is automatically discovered when you open the repo in a compatible AI coding tool.
+
+== /verify-guide
+
+The `/verify-guide` skill runs end-to-end verification of the guide content against a live OpenShift cluster. It installs MaaS, executes the 15-point E2E test suite, runs 8 blind-spot regression checks learned from previous walkthroughs, and validates that commands documented in the AsciiDoc pages produce the expected output. At the end it generates a structured report with all results.
+
+=== Usage
+
+[source]
+----
+/verify-guide <API_URL> <USERNAME> <PASSWORD>
+----
+
+Example:
+
+[source]
+----
+/verify-guide https://api.cluster-abc.dyn.redhatworkshops.io:6443 admin my-password
+----
+
+=== Arguments
+
+[cols="2,4", options="header"]
+|===
+| Option | Description
+
+| `<API_URL>`
+| (Required) OpenShift API server URL, including port
+
+| `<USERNAME>`
+| (Required) Cluster admin username (e.g. `admin` or `kubeadmin`)
+
+| `<PASSWORD>`
+| (Required) Cluster admin password
+
+| `--skip-install`
+| Skip Phase 1 (setup-maas.sh). Use when MaaS is already installed
+
+| `--skip-verify-sh`
+| Skip Phase 2 (verify.sh E2E)
+
+| `--skip-blindspot`
+| Skip Phase 3 (8 blind-spot regression checks)
+
+| `--skip-guide-content`
+| Skip Phase 4 (AsciiDoc content verification)
+
+| `--with-observability`
+| Pass `--with-observability` to setup-maas.sh in Phase 1
+
+| `--walkthrough-number N`
+| Label this run as walkthrough N (default: auto-increment)
+|===
+
+=== Phases
+
+The skill runs 6 phases in sequence. Individual phases can be skipped with the flags above.
+
+[cols="1,4,2", options="header"]
+|===
+| Phase | What it checks | Time
+
+| 0
+| Cluster login, preflight detection (platform, OCP version, GPU, nodes)
+| instant
+
+| 1
+| Full MaaS installation via `./scripts/setup-maas.sh`
+| 15-30 min
+
+| 2
+| 15-point E2E via `./manifests/06-verification/verify.sh`
+| 3-5 min
+
+| 3
+| 8 blind-spot regression checks (gateway OOM, MetalLB IP, RHCL version, etc.)
+| 1-2 min
+
+| 4
+| AsciiDoc guide commands produce documented output
+| 1-2 min
+
+| 5
+| Report generation and findings summary
+| instant
+|===
+
+=== What the Skill Does
+
+The skill logs into the cluster, detects its characteristics (platform, GPU, node count), and then runs through each phase collecting PASS/FAIL/WARN results. It never stops on a single failure - all checks run regardless, so you get the full picture in one pass.
+
+Phase 3 blind-spot checks cover regressions that the standard `verify.sh` does not test: gateway memory limits, MetalLB IP collisions, OAuth/console accessibility, RHOAI dashboard reachability, namespace labels, RHCL operator version, HuggingFace Xet storage behavior, and an independent inference request.
+
+Phase 4 validates that specific commands from the guide pages (`05-maas-models.adoc`, `04-rhoai-config.adoc`, `06-verification.adoc`, `01-prerequisites.adoc`) return the documented output.
+
+At the end, the skill prints a structured report with all results, operator versions, and any issues found.
+
+=== Skill Definition
+
+The skill is defined in `.claude/skills/verify-guide/SKILL.md` within this repository. It is automatically discovered when you open the repo in a compatible AI coding tool.
