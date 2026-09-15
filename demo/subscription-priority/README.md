@@ -110,6 +110,17 @@ a handful of calls rather than hundreds. A burn takes a few seconds.
 > shows the quota already spent — the script says so plainly. The default mode
 > consumes nothing and can be repeated freely, so rehearse with that.
 
+To rehearse `--burn` back to back, reset the counters rather than waiting for the
+window to roll:
+
+```bash
+../reset-quotas.sh
+```
+
+Rate limit counters are held in memory by Limitador, so restarting it returns
+every subscription to a full allowance. It clears the counters; it does not
+disable the limits.
+
 Tear down with `./cleanup-demo.sh`, which removes the subscriptions, the auth
 policy, and the two users and groups from the realm. The OIDC demo's own users
 and the realm itself are left alone.
