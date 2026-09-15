@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Pre-flight for all four demos. Read-only: creates no users, applies no YAML.
+# Pre-flight for the demos. Read-only: creates no users, applies no YAML.
 #
 # Checks that every identity can authenticate AND resolves the subscription its
-# demo depends on - the two things that actually break between sessions.
+# demo depends on - the two things that actually break between sessions - and
+# that the single-URL demo reaches every model through the shared endpoint.
 #
 # It also sends a warm-up request: maas-api returns 500 on the first call after
 # an idle period while it reopens its database connection, and you do not want
@@ -120,6 +121,22 @@ if R=$(oc get route model-client -n maas-clients -o jsonpath='{.spec.host}' 2>/d
   [ "$A" = "200" ] && ok "in-cluster app reachable: https://${R}" || bad "app returned HTTP ${A}"
 else
   bad "model-client route missing — run service-account-access/setup-demo.sh"
+fi
+
+# ------------------------------------------------------- 5. single url access ---
+hr "5. single-url-access  (local and external models, one endpoint)"
+KEY=$(curl -sSk -m 30 -H "Authorization: Bearer $(oc whoami -t)" -H 'Content-Type: application/json' -X POST \
+      -d '{"name":"preflight-single-url","description":"preflight","expiresIn":"10m","subscription":"single-url-demo"}' \
+      "$MAAS/maas-api/v1/api-keys" 2>/dev/null \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("key",""))' 2>/dev/null)
+if [ -z "$KEY" ]; then
+  bad "no API key for single-url-demo — run single-url-access/setup-demo.sh"
+else
+  for MODEL in publishers/llm/models/facebook/opt-125m publishers/llm/models/RedHatAI/gemma-4-31B-it external-chat; do
+    C=$(curl -sk -m 30 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -X POST \
+        -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4}" "$MAAS/v1/chat/completions")
+    [ "$C" = "200" ] && ok "$MODEL via /v1/chat/completions" || bad "$MODEL via /v1/chat/completions returned HTTP $C"
+  done
 fi
 
 # ------------------------------------------------------------------- summary ---

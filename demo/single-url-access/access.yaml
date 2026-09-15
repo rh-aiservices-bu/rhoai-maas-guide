@@ -1,0 +1,57 @@
+# One subscription and one auth policy covering all three models - two local,
+# one external. The same API key reaches every one of them.
+#
+# setup-demo.sh replaces PRESENTER with your own username (oc whoami), so the
+# demo grants access to you alone and leaves every other identity untouched.
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSAuthPolicy
+metadata:
+  name: single-url-access
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Single URL demo"
+    openshift.io/description: "Grants the presenter access to two local models and one external model"
+spec:
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+    - name: gemma-4-31b-it
+      namespace: llm
+    - name: external-chat
+      namespace: external-models
+  subjects:
+    groups: []
+    users:
+      - PRESENTER
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: single-url-demo
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Single URL demo"
+    openshift.io/description: "One entitlement across local and external models"
+spec:
+  owner:
+    groups: []
+    users:
+      - PRESENTER
+  modelRefs:
+    - name: facebook-opt-125m-simulated
+      namespace: llm
+      tokenRateLimits:
+        - limit: 100000
+          window: 1h
+    - name: gemma-4-31b-it
+      namespace: llm
+      tokenRateLimits:
+        - limit: 100000
+          window: 1h
+    - name: external-chat
+      namespace: external-models
+      tokenRateLimits:
+        - limit: 100000
+          window: 1h
+  priority: 1

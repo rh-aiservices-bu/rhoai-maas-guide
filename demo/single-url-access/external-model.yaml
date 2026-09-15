@@ -1,0 +1,50 @@
+# Register the external provider and its model with MaaS.
+#
+# setup-demo.sh replaces EXTERNAL_PROVIDER_HOST with the provider's hostname and
+# creates the credential Secret imperatively - credentials never live in YAML.
+#
+# For a real provider, set endpoint to its hostname (e.g. api.openai.com), put
+# its API key in the Secret, and set modelName and targetModel to the
+# provider's model identifier (e.g. gpt-4o-mini).
+---
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: demo-provider
+  namespace: external-models
+spec:
+  provider: openai
+  endpoint: EXTERNAL_PROVIDER_HOST
+  auth:
+    type: apikey
+    secretRef:
+      name: demo-provider-key
+---
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: external-chat
+  namespace: external-models
+spec:
+  # The name clients send in the request body. Use the provider's own model
+  # identifier here, the same value as targetModel.
+  modelName: external-chat
+  externalProviderRefs:
+    - ref:
+        name: demo-provider
+      targetModel: external-chat
+      apiFormat: openai-chat
+      path: /v1/chat/completions
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: external-chat
+  namespace: external-models
+  annotations:
+    openshift.io/display-name: "External Chat (Provider)"
+    openshift.io/description: "A model served by an external provider, governed by MaaS"
+spec:
+  modelRef:
+    kind: ExternalModel
+    name: external-chat

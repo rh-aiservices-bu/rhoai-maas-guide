@@ -1,0 +1,84 @@
+# A second local model, so the demo routes between two models on the cluster
+# as well as one external model.
+#
+# CPU-only simulator. It serves the name RedHatAI/gemma-4-31B-it, which MaaS
+# publishes as publishers/llm/models/RedHatAI/gemma-4-31B-it.
+---
+apiVersion: serving.kserve.io/v1alpha1
+kind: LLMInferenceService
+metadata:
+  name: gemma-4-31b-it
+  namespace: llm
+spec:
+  model:
+    uri: hf://sshleifer/tiny-gpt2
+    name: RedHatAI/gemma-4-31B-it
+  replicas: 1
+  router:
+    route: {}
+    gateway:
+      refs:
+        - name: maas-default-gateway
+          namespace: openshift-ingress
+  template:
+    containers:
+      - name: main
+        image: "ghcr.io/llm-d/llm-d-inference-sim:v0.7.1"
+        imagePullPolicy: IfNotPresent
+        command: ["/app/llm-d-inference-sim"]
+        args:
+          - --port
+          - "8000"
+          - --model
+          - RedHatAI/gemma-4-31B-it
+          - --mode
+          - random
+          - --ssl-certfile
+          - /var/run/kserve/tls/tls.crt
+          - --ssl-keyfile
+          - /var/run/kserve/tls/tls.key
+        env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+        ports:
+          - name: https
+            containerPort: 8000
+            protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: https
+            scheme: HTTPS
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: https
+            scheme: HTTPS
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: gemma-4-31b-it
+  namespace: llm
+  annotations:
+    openshift.io/display-name: "Gemma 4 31B IT (Simulated)"
+    openshift.io/description: "CPU-only simulator for the single-URL demo"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: gemma-4-31b-it
