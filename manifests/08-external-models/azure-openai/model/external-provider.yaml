@@ -1,0 +1,12 @@
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: azure-openai
+  namespace: external-models
+spec:
+  provider: azure-openai
+  endpoint: maas-aoai-7c8wm-eb594.openai.azure.com
+  auth:
+    type: apikey
+    secretRef:
+      name: azure-openai-api-key

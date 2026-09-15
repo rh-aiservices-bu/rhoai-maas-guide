@@ -1,0 +1,12 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: azure-gpt-4-1-mini
+  namespace: external-models
+  annotations:
+    openshift.io/display-name: "Azure GPT-4.1 Mini"
+    openshift.io/description: "Azure OpenAI GPT-4.1 Mini via Azure OpenAI Service"
+spec:
+  modelRef:
+    kind: ExternalModel
+    name: azure-gpt-4-1-mini

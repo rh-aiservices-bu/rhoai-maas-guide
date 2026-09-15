@@ -167,7 +167,7 @@ fi
 if should_run 1; then
     log_phase 1 "External Models"
 
-    for provider in openai gemini bedrock anthropic; do
+    for provider in openai gemini bedrock anthropic azure-openai; do
         if oc get namespace external-models &>/dev/null; then
             delete_all_in_ns "externalmodel" "external-models"
         fi
@@ -187,7 +187,7 @@ if should_run 1; then
     done
 
     # Provider secrets
-    for secret in openai-api-key gemini-api-key bedrock-api-key anthropic-api-key; do
+    for secret in openai-api-key gemini-api-key bedrock-api-key anthropic-api-key azure-openai-api-key; do
         if oc get secret "$secret" -n external-models &>/dev/null; then
             log_info "  Deleting secret/$secret in external-models..."
             run_cmd oc delete secret "$secret" -n external-models --ignore-not-found

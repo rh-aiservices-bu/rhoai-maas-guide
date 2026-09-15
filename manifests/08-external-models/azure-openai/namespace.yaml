@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-models
+  labels:
+    opendatahub.io/generated-namespace: "true"
+    maas.opendatahub.io/gateway-access: "true"

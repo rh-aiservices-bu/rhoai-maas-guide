@@ -1,0 +1,13 @@
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: azure-gpt-4-1-mini
+  namespace: external-models
+spec:
+  modelName: azure-gpt-4-1-mini
+  externalProviderRefs:
+    - ref:
+        name: azure-openai
+      targetModel: gpt-4-1-mini
+      apiFormat: openai-chat
+      path: /openai/deployments/gpt-4-1-mini/chat/completions?api-version=2025-04-01-preview

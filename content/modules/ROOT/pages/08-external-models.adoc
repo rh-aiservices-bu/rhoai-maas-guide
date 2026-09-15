@@ -2,7 +2,7 @@
 
 NOTE: This phase requires a completed MaaS installation (through xref:04-rhoai-config.adoc[Phase 4]) and at least one local model deployed (xref:05-maas-models.adoc[Phase 5]) to validate the gateway is functional.
 
-WARNING: This phase is NOT compatible with disconnected/air-gapped environments. External models require internet access to reach third-party APIs (OpenAI, Bedrock, Gemini, Anthropic). If you are running in disconnected mode, skip this phase entirely.
+WARNING: This phase is NOT compatible with disconnected/air-gapped environments. External models require internet access to reach third-party APIs (OpenAI, Bedrock, Gemini, Anthropic, Azure OpenAI). If you are running in disconnected mode, skip this phase entirely.
 
 The `ExternalModel` CRD lets you expose third-party LLM APIs (OpenAI, AWS Bedrock, Google Gemini, Anthropic, Azure OpenAI, etc.) through the MaaS gateway. External models get the same API key management, authentication, rate limiting, and usage tracking as locally-served models - your consumers use a single gateway endpoint regardless of where the model runs.
 
@@ -239,7 +239,7 @@ The setup script handles all of the above in a single command:
     --external-model-api-key "$OPENAI_API_KEY"
 ----
 
-The `--external-model-provider` flag selects which provider manifests to deploy (`openai`, `gemini`, `bedrock`, or `anthropic`; default: `openai`).
+The `--external-model-provider` flag selects which provider manifests to deploy (`openai`, `gemini`, `bedrock`, `anthropic`, or `azure-openai`; default: `openai`).
 
 [[dashboard-ui]]
 == Dashboard UI (Technology Preview)
@@ -632,6 +632,207 @@ curl -sk "${MAAS_GW}/v1/chat/completions" \
     --external-model-api-key "$BEDROCK_API_KEY"
 ----
 
+[[azure-openai]]
+=== Azure OpenAI
+
+Manifests for Azure OpenAI (`gpt-4.1-mini` deployment) are included under `manifests/08-external-models/azure-openai/`. The BBR `azure-openai` provider routes requests through Azure's OpenAI Service - consumers send standard OpenAI-format requests to the gateway and the BBR handles Azure-specific path construction and API key injection via the `api-key` header.
+
+NOTE: On RHOAI 3.4, the `azure-openai` BBR provider must handle Azure path rewriting internally (there is no `path` field on the ExternalModel CRD). This has not been validated on 3.4 - if inference returns errors, upgrade to RHOAI 3.5+ where the `path` field explicitly sets the Azure deployment path.
+
+WARNING: The `endpoint` in the ExternalProvider manifest must match your Azure OpenAI resource. Replace `<your-resource>.openai.azure.com` with your actual resource hostname (e.g., `myresource.openai.azure.com`). Similarly, the `path` in the ExternalModel must match your deployment name and API version.
+
+==== Prerequisites
+
+You need an Azure OpenAI resource with a deployed model. Create one via the link:https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI[Azure Portal] or the Azure CLI:
+
+[source,bash]
+----
+# Create an Azure OpenAI resource
+az cognitiveservices account create \
+    --name <your-resource-name> \
+    --resource-group <your-resource-group> \
+    --kind OpenAI \
+    --sku S0 \
+    --location eastus2
+
+# Deploy gpt-4.1-mini
+az cognitiveservices account deployment create \
+    --name <your-resource-name> \
+    --resource-group <your-resource-group> \
+    --deployment-name gpt-4-1-mini \
+    --model-name gpt-4.1-mini \
+    --model-version "2025-04-14" \
+    --model-format OpenAI \
+    --sku-capacity 10 \
+    --sku-name GlobalStandard
+----
+
+Get the API key from the Azure Portal (Resource > Keys and Endpoint) or via CLI:
+
+[source,bash]
+----
+export AZURE_OPENAI_API_KEY=$(az cognitiveservices account keys list \
+    --name <your-resource-name> \
+    --resource-group <your-resource-group> \
+    --query key1 -o tsv)
+----
+
+TIP: Verify the key works before deploying: `curl -s "https://<your-resource>.openai.azure.com/openai/deployments/gpt-4-1-mini/chat/completions?api-version=2025-04-01-preview" -H "api-key: $AZURE_OPENAI_API_KEY" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"Hi"}],"max_tokens":5}' | python3 -m json.tool`
+
+==== Manual Deployment
+
+Create the namespace if it does not already exist (shared with other external model providers):
+
+[source,bash]
+----
+oc apply -f manifests/08-external-models/azure-openai/namespace.yaml
+----
+
+Create the credential Secret (never stored in manifests):
+
+[tabs]
+====
+RHOAI 3.5+::
++
+--
+[source,bash]
+----
+oc create secret generic azure-openai-api-key \
+    --from-literal=api-key="$AZURE_OPENAI_API_KEY" \
+    -n external-models \
+    --dry-run=client -o yaml | oc apply -f -
+
+oc label secret azure-openai-api-key -n external-models \
+    inference.llm-d.ai/ipp-managed=true --overwrite
+----
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc create secret generic azure-openai-api-key \
+    --from-literal=api-key="$AZURE_OPENAI_API_KEY" \
+    -n external-models \
+    --dry-run=client -o yaml | oc apply -f -
+
+oc label secret azure-openai-api-key -n external-models \
+    inference.networking.k8s.io/bbr-managed=true --overwrite
+----
+--
+====
+
+Apply the external model and MaaS governance resources:
+
+[tabs]
+====
+RHOAI 3.5+::
++
+--
+[source,bash]
+----
+oc apply -k manifests/08-external-models/azure-openai/model/
+oc apply -k manifests/08-external-models/azure-openai/maas/
+----
+
+The ExternalProvider and ExternalModel CRs:
+
+[source,yaml]
+----
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalProvider
+metadata:
+  name: azure-openai
+  namespace: external-models
+spec:
+  provider: azure-openai
+  endpoint: <your-resource>.openai.azure.com
+  auth:
+    type: apikey
+    secretRef:
+      name: azure-openai-api-key
+---
+apiVersion: inference.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: azure-gpt-4-1-mini
+  namespace: external-models
+spec:
+  modelName: azure-gpt-4-1-mini
+  externalProviderRefs:
+    - ref:
+        name: azure-openai
+      targetModel: gpt-4-1-mini
+      apiFormat: openai-chat
+      path: /openai/deployments/gpt-4-1-mini/chat/completions?api-version=2025-04-01-preview
+----
+--
+
+RHOAI 3.4::
++
+--
+[source,bash]
+----
+oc apply -f manifests/08-external-models/azure-openai/model/external-model-34.yaml
+oc apply -k manifests/08-external-models/azure-openai/maas/
+----
+
+The ExternalModel CR:
+
+[source,yaml]
+----
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: azure-gpt-4-1-mini
+  namespace: external-models
+spec:
+  provider: azure-openai
+  targetModel: gpt-4-1-mini
+  endpoint: <your-resource>.openai.azure.com
+  credentialRef:
+    name: azure-openai-api-key
+----
+--
+====
+
+Verify the model reaches Ready:
+
+[source,bash]
+----
+oc get maasmodelref azure-gpt-4-1-mini -n external-models
+# Expected: PHASE = Ready
+----
+
+Test inference:
+
+[source,bash]
+----
+MAAS_GW="https://maas.$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')"
+
+API_KEY=$(curl -sk -X POST "${MAAS_GW}/maas-api/v1/api-keys" \
+    -H "Authorization: Bearer $(oc whoami -t)" \
+    -H "Content-Type: application/json" \
+    -d '{"name": "azure-openai-test", "subscription": "azure-openai-free", "expiresIn": "1h"}' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
+
+curl -sk "${MAAS_GW}/v1/chat/completions" \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"model": "azure-gpt-4-1-mini", "messages": [{"role": "user", "content": "Say hello in 3 words."}], "max_tokens": 20}'
+----
+
+==== Automated Deployment
+
+[source,bash]
+----
+./scripts/setup-maas.sh --from-phase 8 \
+    --with-external-models \
+    --external-model-provider azure-openai \
+    --external-model-api-key "$AZURE_OPENAI_API_KEY"
+----
+
 [[known-issues]]
 == Known Issues
 
@@ -696,6 +897,19 @@ manifests/08-external-models/
       maas-auth-policy.yaml
       maas-subscription.yaml
   anthropic/
+    kustomization.yaml
+    namespace.yaml
+    model/
+      kustomization.yaml
+      external-provider.yaml     # ExternalProvider CR (3.5+)
+      external-model.yaml        # ExternalModel CR (3.5+)
+      external-model-34.yaml     # ExternalModel CR (3.4)
+    maas/
+      kustomization.yaml
+      maas-model.yaml
+      maas-auth-policy.yaml
+      maas-subscription.yaml
+  azure-openai/
     kustomization.yaml
     namespace.yaml
     model/

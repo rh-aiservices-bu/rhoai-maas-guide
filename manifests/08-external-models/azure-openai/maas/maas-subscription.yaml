@@ -1,0 +1,20 @@
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: azure-openai-free
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Azure OpenAI Free Tier"
+    openshift.io/description: "Free tier: 10000 tokens/hour for all authenticated users"
+spec:
+  owner:
+    groups:
+      - name: system:authenticated
+    users: []
+  modelRefs:
+    - name: azure-gpt-4-1-mini
+      namespace: external-models
+      tokenRateLimits:
+        - limit: 10000
+          window: 1h
+  priority: 10
