@@ -1,8 +1,8 @@
 = Phase 7: Observability (Optional)
 
-NOTE: User Workload Monitoring (UWM) was already configured in xref:02-platform-config.adoc[Phase 2] as a *required* component. UWM provides the foundational Prometheus scraping infrastructure that all other monitoring features depend on.
+NOTE: In {rhoai} 3.5, the monitoring stack uses the Cluster Observability Operator (COO) and its MonitoringStack CR for metrics collection. User Workload Monitoring (UWM) is no longer required. The RHOAI operator creates its own ServiceMonitors with `monitoring.opendatahub.io/scrape` labels that the COO-managed Prometheus scrapes.
 
-This phase adds *optional* observability enhancements on top of UWM:
+This phase installs the *optional* observability operators and configuration:
 
 . *Tempo Operator* - provides the `TempoStack` CRD that the RHOAI operator's Monitoring controller requires for distributed tracing. Without this operator, the Monitoring CR cannot provision tracing infrastructure.
 

@@ -1,6 +1,6 @@
 = Phase 2: Platform Configuration
 
-This phase configures the platform prerequisites for MaaS: Kuadrant/Authorino (auth and rate limiting), User Workload Monitoring, the GatewayClass, and the MaaS Gateway.
+This phase configures the platform prerequisites for MaaS: Kuadrant/Authorino (auth and rate limiting), the GatewayClass, and the MaaS Gateway.
 
 Apply each step in order and wait for the status gates before proceeding to the next step. The ordering matters because later resources depend on earlier ones (e.g. the Authorino CR references the TLS cert created by the Service annotation, and the Gateway requires the GatewayClass to exist).
 
@@ -20,8 +20,7 @@ Kuadrant provides authentication (Authorino) and rate limiting (Limitador) for M
 
 * Create the `kuadrant-system` namespace
 * Pre-configure the Authorino Service with a service-ca annotation to auto-generate a TLS certificate (`authorino-server-cert`) for secure Gateway-to-Authorino communication
-* Deploy the Kuadrant CR with observability enabled, which triggers the Kuadrant operator to install Authorino and Limitador components. The `observability.enable: true` setting ensures
-these components expose metrics that User Workload Monitoring can scrape, which is essential for the optional observability dashboards in Phase 7.
+* Deploy the Kuadrant CR with observability enabled, which triggers the Kuadrant operator to install Authorino and Limitador components. The `observability.enable: true` setting exposes rate-limiting and auth metrics for the RHOAI monitoring stack (COO) and the optional observability dashboards in Phase 7.
 
 The Kuadrant operator auto-creates an Authorino instance when reconciling the Kuadrant resource. You'll enable TLS on that Authorino instance in the next step.
 
@@ -102,7 +101,12 @@ Wait for the Authorino deployment to become available:
 oc wait --for=condition=Available deployment/authorino -n kuadrant-system --timeout=300s
 ----
 
-== Step 3: User Workload Monitoring (UWM)
+== Step 3: User Workload Monitoring (Optional)
+
+[NOTE]
+====
+In {rhoai} 3.5, User Workload Monitoring is *no longer required* for MaaS. The RHOAI operator creates its own ServiceMonitors with `monitoring.opendatahub.io/scrape` labels, and the COO MonitoringStack (configured in Phase 7) handles metrics collection. UWM is still harmless to enable and useful if you want standalone Prometheus access to Kuadrant metrics outside of the RHOAI-managed monitoring stack.
+====
 
 Enable User Workload Monitoring so that Prometheus scrapes MaaS and Kuadrant metrics from user namespaces.
 
