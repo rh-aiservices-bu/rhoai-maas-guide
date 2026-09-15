@@ -105,7 +105,7 @@ oc wait --for=condition=Available deployment/authorino -n kuadrant-system --time
 
 [NOTE]
 ====
-In {rhoai} 3.5, User Workload Monitoring is *no longer required* for MaaS. The RHOAI operator creates its own ServiceMonitors with `monitoring.opendatahub.io/scrape` labels, and the COO MonitoringStack (configured in Phase 7) handles metrics collection. UWM is still harmless to enable and useful if you want standalone Prometheus access to Kuadrant metrics outside of the RHOAI-managed monitoring stack.
+In {rhoai} 3.5, User Workload Monitoring is *no longer required* for MaaS. The RHOAI operator creates its own ServiceMonitors with `monitoring.opendatahub.io/scrape` labels, and the COO MonitoringStack (configured in Phase 7) handles metrics collection. Enable UWM if you want the cluster to collect and forward MaaS metrics to external observability tools (Grafana, Datadog, etc.) via the standard OpenShift remote-write configuration. Skip it if you only need the RHOAI-native observability dashboards.
 ====
 
 Enable User Workload Monitoring so that Prometheus scrapes MaaS and Kuadrant metrics from user namespaces.
