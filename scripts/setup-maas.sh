@@ -118,9 +118,9 @@ Phases:
 
 Auto-detection (--model auto):
   No GPU             -> simulator (CPU-only, ~30s startup)
-  GPU VRAM >= 40 GiB -> gpt-oss-20b (L40S, A100, H100)
-  GPU VRAM >= 16 GiB -> gemma (L4, L40)
-  GPU VRAM <  16 GiB -> granite-tiny-gpu (L4)
+  GPU VRAM >= 22 GiB -> gpt-oss-20b (quantized; 24 GB-class cards - L4, L40S, A100 - report ~23 GiB)
+  GPU VRAM >= 16 GiB -> gemma (16-22 GiB cards)
+  GPU VRAM <  16 GiB -> granite-tiny-gpu
 EOF
             exit 0
             ;;
@@ -206,6 +206,8 @@ log_info "TLS certificate: ${CERT_NAME}"
 # State detection
 HAS_RHOAI_CSV=false
 HAS_RHCL_CSV=false
+HAS_CERTMGR_CSV=false
+HAS_LWS_CSV=false
 HAS_KUADRANT=false
 HAS_UWM=false
 HAS_GATEWAY_CLASS=false
@@ -259,6 +261,10 @@ else
 fi
 RHCL_CSVS=$(oc get csv -n openshift-operators --no-headers 2>/dev/null || true)
 echo "$RHCL_CSVS" | grep rhcl >/dev/null 2>&1 && HAS_RHCL_CSV=true
+CERTMGR_CSVS=$(oc get csv -n cert-manager-operator --no-headers 2>/dev/null || true)
+echo "$CERTMGR_CSVS" | grep cert-manager >/dev/null 2>&1 && HAS_CERTMGR_CSV=true
+LWS_CSVS=$(oc get csv -n openshift-lws-operator --no-headers 2>/dev/null || true)
+echo "$LWS_CSVS" | grep leader-worker-set >/dev/null 2>&1 && HAS_LWS_CSV=true
 oc get kuadrant kuadrant -n kuadrant-system &>/dev/null && HAS_KUADRANT=true
 UWM_CFG=$(oc get configmap cluster-monitoring-config -n openshift-monitoring -o jsonpath='{.data.config\.yaml}' 2>/dev/null || true)
 echo "$UWM_CFG" | grep enableUserWorkload >/dev/null 2>&1 && HAS_UWM=true
@@ -290,6 +296,8 @@ log_info "  RHOAI version:      ${RHOAI_MAJOR_MINOR} (3.5+: ${IS_35_PLUS})"
 log_info "  maas-api namespace: ${MAAS_API_NS}"
 log_info "  RHOAI operator:     $([ "$HAS_RHOAI_CSV" = true ] && echo "installed" || echo "not found")"
 log_info "  RHCL operator:      $([ "$HAS_RHCL_CSV" = true ] && echo "installed" || echo "not found")"
+log_info "  cert-manager op:    $([ "$HAS_CERTMGR_CSV" = true ] && echo "installed" || echo "not found")"
+log_info "  LWS operator:       $([ "$HAS_LWS_CSV" = true ] && echo "installed" || echo "not found")"
 log_info "  Kuadrant CR:        $([ "$HAS_KUADRANT" = true ] && echo "ready" || echo "not found")"
 log_info "  User Workload Mon:  $([ "$HAS_UWM" = true ] && echo "enabled" || echo "not enabled")"
 log_info "  GatewayClass:       $([ "$HAS_GATEWAY_CLASS" = true ] && echo "exists" || echo "not found")"
@@ -330,8 +338,9 @@ log_info "Phases to run:${PHASES_TO_RUN:- (none)}"
 if should_run 1; then
     log_phase 1 "Operators"
 
-    if [ "$HAS_RHOAI_CSV" = true ] && [ "$HAS_RHCL_CSV" = true ]; then
-        log_info "Required operators already installed, skipping"
+    if [ "$HAS_RHOAI_CSV" = true ] && [ "$HAS_RHCL_CSV" = true ] && \
+       [ "$HAS_CERTMGR_CSV" = true ] && [ "$HAS_LWS_CSV" = true ]; then
+        log_info "All four required operators already installed, skipping"
     else
         RESTORE_SUB=false
         if [ "$IS_35_PLUS" = false ] && [ "$HAS_RHOAI_CSV" != true ]; then
@@ -339,6 +348,11 @@ if should_run 1; then
                 "$MANIFESTS_DIR/01-prerequisites/operators/rhoai-operator/subscription.yaml"
             log_info "Patched RHOAI subscription to channel: stable-3.4"
             RESTORE_SUB=true
+            # Restore the checked-in manifest even if the script aborts mid-phase
+            # (e.g. a CSV wait exits 1) - otherwise the repo is left dirty.
+            trap '[ -f "$MANIFESTS_DIR/01-prerequisites/operators/rhoai-operator/subscription.yaml.bak" ] && \
+                mv "$MANIFESTS_DIR/01-prerequisites/operators/rhoai-operator/subscription.yaml.bak" \
+                   "$MANIFESTS_DIR/01-prerequisites/operators/rhoai-operator/subscription.yaml"' EXIT
         fi
 
         log_info "Applying operator subscriptions..."
@@ -984,9 +998,9 @@ if should_run 5 && [ "$SKIP_MODELS" = false ]; then
                     log_info "No GPU nodes detected -> simulator"
                     log_info "Hint: use --model qwen3-06b for real CPU inference (~16Gi RAM, downloads from HuggingFace)"
                 fi
-            elif [ "$GPU_MEMORY" -ge 40960 ] 2>/dev/null; then
+            elif [ "$GPU_MEMORY" -ge 22528 ] 2>/dev/null; then
                 MODEL="gpt-oss-20b"
-                log_info "GPU VRAM: ${GPU_MEMORY} MiB (>= 40960) -> gpt-oss-20b"
+                log_info "GPU VRAM: ${GPU_MEMORY} MiB (>= 22528) -> gpt-oss-20b (quantized, fits 24 GB-class GPUs)"
             elif [ "$GPU_MEMORY" -ge 16384 ] 2>/dev/null; then
                 MODEL="gemma"
                 log_info "GPU VRAM: ${GPU_MEMORY} MiB (>= 16384) -> gemma"
@@ -1052,12 +1066,18 @@ if should_run 5 && [ "$SKIP_MODELS" = false ]; then
             done
             [ $ELAPSED -ge $TIMEOUT ] && log_warn "Pods not all Running after ${TIMEOUT}s"
 
-            # Wait for MaaSModelRef
-            log_info "Waiting for MaaSModelRef phase=Ready..."
+            # Wait for MaaSModelRef. Watch THIS model's modelref by name -
+            # with several models deployed, .items[0] can be a different model.
+            MODELREF_NAME=$(awk '/^  name:/{print $2; exit}' "$MODEL_DIR/maas/maas-model.yaml" 2>/dev/null || echo "")
+            log_info "Waiting for MaaSModelRef ${MODELREF_NAME:-<first>} phase=Ready..."
             TIMEOUT=300
             ELAPSED=0
             while [ $ELAPSED -lt $TIMEOUT ]; do
-                PHASE=$(oc get maasmodelref -n llm -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+                if [ -n "$MODELREF_NAME" ]; then
+                    PHASE=$(oc get maasmodelref "$MODELREF_NAME" -n llm -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+                else
+                    PHASE=$(oc get maasmodelref -n llm -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+                fi
                 [ "$PHASE" = "Ready" ] && break
                 sleep 10
                 ELAPSED=$((ELAPSED + 10))
@@ -1329,31 +1349,26 @@ if should_run 8 && [ "$WITH_EXTERNAL_MODELS" = true ]; then
                 EXTMODEL_NAME="gpt-4o-mini"
                 EXTMODEL_SECRET="openai-api-key"
                 EXTMODEL_SUBSCRIPTION="openai-free"
-                EXTMODEL_TARGET_MODEL="gpt-4o-mini"
                 ;;
             gemini)
                 EXTMODEL_NAME="gemini-2-5-flash"
                 EXTMODEL_SECRET="gemini-api-key"
                 EXTMODEL_SUBSCRIPTION="gemini-free"
-                EXTMODEL_TARGET_MODEL="gemini-2.5-flash"
                 ;;
             bedrock)
                 EXTMODEL_NAME="aws-gpt-oss-20b"
                 EXTMODEL_SECRET="bedrock-api-key"
                 EXTMODEL_SUBSCRIPTION="bedrock-free"
-                EXTMODEL_TARGET_MODEL="openai.gpt-oss-20b"
                 ;;
             anthropic)
                 EXTMODEL_NAME="claude-haiku-4-5"
                 EXTMODEL_SECRET="anthropic-api-key"
                 EXTMODEL_SUBSCRIPTION="anthropic-free"
-                EXTMODEL_TARGET_MODEL="claude-haiku-4-5-20251001"
                 ;;
             azure-openai)
                 EXTMODEL_NAME="azure-gpt-4-1-mini"
                 EXTMODEL_SECRET="azure-openai-api-key"
                 EXTMODEL_SUBSCRIPTION="azure-openai-free"
-                EXTMODEL_TARGET_MODEL="gpt-4-1-mini"
                 ;;
             *)
                 log_warn "Unknown provider '${EXTERNAL_MODEL_PROVIDER}' (supported: openai, gemini, bedrock, anthropic, azure-openai)"

@@ -4,7 +4,7 @@
 #
 # Supports auto-detection of GPU capabilities to select the appropriate model:
 #   - No GPU             -> simulator (CPU-only mock)
-#   - GPU VRAM >= 40 GiB -> gpt-oss-20b
+#   - GPU VRAM >= 22 GiB -> gpt-oss-20b (quantized; 24 GB-class cards - L4, L40S, A100 - report ~23 GiB)
 #   - GPU VRAM >= 16 GiB -> gemma
 #   - GPU VRAM <  16 GiB -> granite-tiny-gpu
 #
@@ -66,7 +66,7 @@ Options:
 
 Auto-detection rules:
   - No GPU node             -> simulator (or simulator-disconnected with --disconnected)
-  - GPU VRAM >= 40 GiB      -> gpt-oss-20b
+  - GPU VRAM >= 22 GiB      -> gpt-oss-20b (quantized, fits 24 GB-class cards: L4, L40S, A100)
   - GPU VRAM >= 16 GiB      -> gemma
   - GPU VRAM <  16 GiB      -> granite-tiny-gpu
 EOF
@@ -115,8 +115,8 @@ if [ "$MODEL" = "auto" ]; then
             log_info "Hint: use --model qwen3-06b for real CPU inference (~16Gi RAM, downloads from HuggingFace)"
             MODEL="simulator"
         fi
-    elif [ "$GPU_MEMORY" -ge 40960 ] 2>/dev/null; then
-        log_info "GPU VRAM: ${GPU_MEMORY} MiB (>= 40960), selecting gpt-oss-20b"
+    elif [ "$GPU_MEMORY" -ge 22528 ] 2>/dev/null; then
+        log_info "GPU VRAM: ${GPU_MEMORY} MiB (>= 22528), selecting gpt-oss-20b (quantized, fits 24 GB-class GPUs)"
         MODEL="gpt-oss-20b"
     elif [ "$GPU_MEMORY" -ge 16384 ] 2>/dev/null; then
         log_info "GPU VRAM: ${GPU_MEMORY} MiB (>= 16384), selecting gemma"
@@ -190,7 +190,9 @@ while [ $ELAPSED -lt $TIMEOUT ]; do
     # Check if any pods exist for the model in the llm namespace
     POD_COUNT=$(oc get pods -n llm --no-headers 2>/dev/null | wc -l | tr -d ' ')
     if [ "$POD_COUNT" -gt 0 ]; then
-        NOT_READY=$(oc get pods -n llm --no-headers 2>/dev/null | grep -v "Running\|Completed" | wc -l | tr -d ' ')
+        # NOTE: grep -v returns 1 when everything is Running - guard it, or
+        # pipefail + set -e kills the script at the moment of success
+        NOT_READY=$(oc get pods -n llm --no-headers 2>/dev/null | { grep -v "Running\|Completed" || true; } | wc -l | tr -d ' ')
         if [ "$NOT_READY" -eq 0 ]; then
             log_info "All pods in llm namespace are Running"
             PODS_READY=true
@@ -211,13 +213,19 @@ if [ "$PODS_READY" = false ]; then
     oc get pods -n llm --no-headers 2>/dev/null || true
 fi
 
-# Wait for MaaSModelRef phase=Ready
-log_info "Waiting for MaaSModelRef to be Ready..."
+# Wait for MaaSModelRef phase=Ready. Watch THIS model's modelref by name -
+# with several models deployed, .items[0] can be a different (older) model.
+MODELREF_NAME=$(awk '/^  name:/{print $2; exit}' "$MODEL_DIR/maas/maas-model.yaml" 2>/dev/null || echo "")
+log_info "Waiting for MaaSModelRef ${MODELREF_NAME:-<first>} to be Ready..."
 TIMEOUT=300
 ELAPSED=0
 MODEL_READY=false
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    PHASE=$(oc get maasmodelref -n llm -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    if [ -n "$MODELREF_NAME" ]; then
+        PHASE=$(oc get maasmodelref "$MODELREF_NAME" -n llm -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+    else
+        PHASE=$(oc get maasmodelref -n llm -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    fi
     if [ "$PHASE" = "Ready" ]; then
         log_info "MaaSModelRef phase: Ready"
         MODEL_READY=true

@@ -110,11 +110,26 @@ cleanup_test_resources() {
         log_info "Deleted test API key"
     fi
 
-    # Delete MaaS resources (order matters: subscription, auth-policy, model-ref, then model)
+    # Delete MaaS resources (order matters: subscription, auth-policy, model-ref, then model).
+    # Resources that existed BEFORE this run (e.g. deployed by the Phase 5 kustomize)
+    # are left in place - only what this script created is removed. In --cleanup-only
+    # mode the PREEXISTING_* flags are unset, so everything is removed as before.
     oc delete maassubscription simulator-subscription -n "$MAAS_NS" 2>/dev/null || true
-    oc delete maasauthpolicy simulator-access -n "$MAAS_NS" 2>/dev/null || true
-    oc delete maasmodelref "$MODEL_NAME" -n "$MODEL_NS" 2>/dev/null || true
-    oc delete llminferenceservice "$MODEL_NAME" -n "$MODEL_NS" 2>/dev/null || true
+    if [ "${PREEXISTING_AUTHPOLICY:-false}" = false ]; then
+        oc delete maasauthpolicy simulator-access -n "$MAAS_NS" 2>/dev/null || true
+    else
+        log_info "Keeping pre-existing MaaSAuthPolicy simulator-access"
+    fi
+    if [ "${PREEXISTING_MODELREF:-false}" = false ]; then
+        oc delete maasmodelref "$MODEL_NAME" -n "$MODEL_NS" 2>/dev/null || true
+    else
+        log_info "Keeping pre-existing MaaSModelRef $MODEL_NAME"
+    fi
+    if [ "${PREEXISTING_LLMISVC:-false}" = false ]; then
+        oc delete llminferenceservice "$MODEL_NAME" -n "$MODEL_NS" 2>/dev/null || true
+    else
+        log_info "Keeping pre-existing LLMInferenceService $MODEL_NAME"
+    fi
 
     # Wait for pods to terminate
     if oc get namespace "$MODEL_NS" &>/dev/null; then
@@ -374,8 +389,10 @@ log_info "Ensured namespaces: $MODEL_NS, $MAAS_NS"
 
 # Deploy LLMInferenceService (simulator model)
 log_info "Deploying simulator model..."
+PREEXISTING_LLMISVC=false
 if oc get llminferenceservice "$MODEL_NAME" -n "$MODEL_NS" &>/dev/null; then
-    log_info "LLMInferenceService $MODEL_NAME already exists, skipping"
+    log_info "LLMInferenceService $MODEL_NAME already exists, skipping (will be kept at cleanup)"
+    PREEXISTING_LLMISVC=true
 else
     oc apply --server-side=true -f - <<EOF
 apiVersion: serving.kserve.io/v1alpha1
@@ -448,7 +465,12 @@ fi
 
 # Deploy MaaSModelRef
 log_info "Deploying MaaSModelRef..."
-oc apply --server-side=true -f - <<EOF
+PREEXISTING_MODELREF=false
+if oc get maasmodelref "$MODEL_NAME" -n "$MODEL_NS" &>/dev/null; then
+    log_info "MaaSModelRef $MODEL_NAME already exists, skipping (will be kept at cleanup)"
+    PREEXISTING_MODELREF=true
+else
+    oc apply --server-side=true -f - <<EOF
 apiVersion: maas.opendatahub.io/v1alpha1
 kind: MaaSModelRef
 metadata:
@@ -462,10 +484,16 @@ spec:
     kind: LLMInferenceService
     name: $MODEL_NAME
 EOF
+fi
 
 # Deploy MaaSAuthPolicy
 log_info "Deploying MaaSAuthPolicy..."
-oc apply --server-side=true -f - <<EOF
+PREEXISTING_AUTHPOLICY=false
+if oc get maasauthpolicy simulator-access -n "$MAAS_NS" &>/dev/null; then
+    log_info "MaaSAuthPolicy simulator-access already exists, skipping (will be kept at cleanup)"
+    PREEXISTING_AUTHPOLICY=true
+else
+    oc apply --server-side=true -f - <<EOF
 apiVersion: maas.opendatahub.io/v1alpha1
 kind: MaaSAuthPolicy
 metadata:
@@ -480,6 +508,7 @@ spec:
       - name: system:authenticated
     users: []
 EOF
+fi
 
 # Deploy MaaSSubscription
 log_info "Deploying MaaSSubscription..."
@@ -678,7 +707,7 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${INFERENCE_MODEL:-}" 
     log_info "Sending 16 rapid requests to trigger rate limit..."
     RATE_LIMITED=0
     SUCCESSES=0
-    for i in $(seq 1 16); do
+    for _ in $(seq 1 16); do
         CODE=$(maas_curl \
             -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${API_KEY}" \

@@ -167,11 +167,13 @@ fi
 if should_run 1; then
     log_phase 1 "External Models"
 
-    for provider in openai gemini bedrock anthropic azure-openai; do
-        if oc get namespace external-models &>/dev/null; then
-            delete_all_in_ns "externalmodel" "external-models"
+    if oc get namespace external-models &>/dev/null; then
+        delete_all_in_ns "externalmodel" "external-models"
+        # ExternalProvider CRs only exist on RHOAI 3.5+
+        if oc get crd externalproviders.inference.opendatahub.io &>/dev/null; then
+            delete_all_in_ns "externalprovider" "external-models"
         fi
-    done
+    fi
 
     # MaaS governance CRs for external models
     for cr in maasauthpolicy maassubscription; do
@@ -245,6 +247,30 @@ if should_run 2; then
         delete_namespace "openshift-tempo-operator"
     else
         log_info "  Tempo operator not found, skipping"
+    fi
+
+    # Usage logging (Loki operator + MinIO + LokiStack, 3.5+ with --with-observability)
+    if oc get lokistack usage -n redhat-ods-monitoring &>/dev/null; then
+        log_info "  Removing usage-logging stack (LokiStack + MinIO)..."
+        if oc get configs.maas.opendatahub.io default &>/dev/null; then
+            run_cmd oc patch configs.maas.opendatahub.io default --type=merge \
+                -p '{"spec":{"usageLogging":false}}' 2>/dev/null || true
+        fi
+        delete_if_exists lokistack usage redhat-ods-monitoring
+        delete_if_exists deployment minio redhat-ods-monitoring
+        delete_if_exists service minio redhat-ods-monitoring
+        delete_if_exists job minio-create-bucket redhat-ods-monitoring
+        delete_if_exists pvc minio-data redhat-ods-monitoring
+        delete_if_exists secret minio-secret redhat-ods-monitoring
+    fi
+    # Loki operator lives in the SHARED openshift-operators-redhat namespace -
+    # remove only the subscription and CSV, never the namespace
+    if oc get subscription loki-operator -n openshift-operators-redhat &>/dev/null; then
+        log_info "  Removing Loki operator (keeping shared namespace)..."
+        delete_if_exists subscription loki-operator openshift-operators-redhat
+        for csv in $(oc get csv -n openshift-operators-redhat --no-headers -o custom-columns='NAME:.metadata.name' 2>/dev/null | grep loki-operator || true); do
+            run_cmd oc delete csv "$csv" -n openshift-operators-redhat --ignore-not-found
+        done
     fi
 
     # Redis for Limitador persistence
@@ -401,9 +427,15 @@ if should_run 7 && [ "$KEEP_OPERATORS" = false ]; then
         done
     fi
 
-    # RHCL / Kuadrant operator (subscription is in openshift-operators, shared namespace)
+    # RHCL / Kuadrant operator (subscription is in openshift-operators, shared namespace).
+    # OLM creates dependency Subscriptions (authorino, limitador, dns) alongside
+    # rhcl-operator - delete those too, or OLM reinstalls the CSVs we remove below.
     log_info "  Removing RHCL operator..."
     delete_if_exists subscription rhcl-operator openshift-operators
+    for sub in $(oc get subscription -n openshift-operators --no-headers -o custom-columns='NAME:.metadata.name' 2>/dev/null | grep -E '^(authorino-operator|limitador-operator|dns-operator)' || true); do
+        log_info "  Deleting dependency subscription $sub..."
+        run_cmd oc delete subscription "$sub" -n openshift-operators --ignore-not-found
+    done
     for csv in $(oc get csv -n openshift-operators --no-headers -o custom-columns='NAME:.metadata.name' 2>/dev/null | grep -E 'rhcl-operator|authorino-operator|limitador-operator|dns-operator' || true); do
         log_info "  Deleting CSV $csv..."
         run_cmd oc delete csv "$csv" -n openshift-operators --ignore-not-found

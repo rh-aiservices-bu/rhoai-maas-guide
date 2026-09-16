@@ -101,9 +101,9 @@ if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
     # Decode and show groups claim
     PAYLOAD_B64=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+')
     MOD=$((${#PAYLOAD_B64} % 4))
-    [ "$MOD" -eq 2 ] && PAYLOAD_B64="${PAYLOAD_B64}==" || { [ "$MOD" -eq 3 ] && PAYLOAD_B64="${PAYLOAD_B64}="; }
-    GROUPS=$(echo "$PAYLOAD_B64" | base64 -d 2>/dev/null | jq -r '.groups // [] | join(", ")' 2>/dev/null || echo "decode failed")
-    log_info "Token groups: $GROUPS"
+    [ "$MOD" -eq 2 ] && PAYLOAD_B64="${PAYLOAD_B64}==" || { [ "$MOD" -eq 3 ] && PAYLOAD_B64="${PAYLOAD_B64}="; } || true
+    TOKEN_GROUPS=$(echo "$PAYLOAD_B64" | base64 -d 2>/dev/null | jq -r '.groups // [] | join(", ")' 2>/dev/null || echo "decode failed")
+    log_info "Token groups: $TOKEN_GROUPS"
 else
     log_fail "Failed to get OIDC token for maas-user"
     log_error "Check Keycloak is running: oc get keycloak -n $KEYCLOAK_NS"
@@ -210,7 +210,7 @@ if [ -n "$RESTRICTED_TOKEN" ] && [ "$RESTRICTED_TOKEN" != "null" ]; then
 
     PAYLOAD_B64=$(echo "$RESTRICTED_TOKEN" | cut -d. -f2 | tr '_-' '/+')
     MOD=$((${#PAYLOAD_B64} % 4))
-    [ "$MOD" -eq 2 ] && PAYLOAD_B64="${PAYLOAD_B64}==" || { [ "$MOD" -eq 3 ] && PAYLOAD_B64="${PAYLOAD_B64}="; }
+    [ "$MOD" -eq 2 ] && PAYLOAD_B64="${PAYLOAD_B64}==" || { [ "$MOD" -eq 3 ] && PAYLOAD_B64="${PAYLOAD_B64}="; } || true
     RESTRICTED_GROUPS=$(echo "$PAYLOAD_B64" | base64 -d 2>/dev/null | jq -r '.groups // [] | join(", ")' 2>/dev/null || echo "decode failed")
     log_info "Token groups: $RESTRICTED_GROUPS"
 else
