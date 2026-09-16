@@ -354,7 +354,7 @@ oc get machines -n openshift-machine-api -w
 oc get nodes -l nvidia.com/gpu.present=true
 ----
 
-The default instance type is `g6.2xlarge` (1x L4, 24 GB VRAM) - enough for Gemma 2 9B FP8. Edit the template to use `g6e.2xlarge` (1x L40S, 48 GB VRAM) for larger models like gpt-oss-20b.
+The default instance type is `g6.2xlarge` (1x L4, 24 GB VRAM) - enough for Gemma 2 9B FP8, Granite tiny, and gpt-oss-20b (quantized). Edit the template to use `g6e.2xlarge` (1x L40S, 48 GB VRAM) for more VRAM headroom (longer context, larger models).
 
 IMPORTANT: Do not use `g5` instances (A10G GPUs) - vLLM FP8 requires compute capability >= 80 (Ampere or newer). A10G GPUs are not supported. Use `g6` (L4) or `g6e` (L40S) instances instead.
 

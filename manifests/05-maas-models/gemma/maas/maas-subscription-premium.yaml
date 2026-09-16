@@ -5,7 +5,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Gemma Premium Tier"
-    openshift.io/description: "Premium tier: 10000 tokens/min for all authenticated users"
+    openshift.io/description: "Premium tier: 100000 tokens/min for all authenticated users"
 spec:
   owner:
     groups:

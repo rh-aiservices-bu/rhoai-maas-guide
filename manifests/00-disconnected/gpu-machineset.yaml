@@ -15,8 +15,8 @@
 #   envsubst < manifests/00-disconnected/gpu-machineset.yaml | oc apply -f -
 #
 # Instance types (vLLM FP8 requires compute capability >= 80, do NOT use g5/A10G):
-#   g6.2xlarge   1x L4    (24 GB VRAM) - fits Gemma 9B FP8, Granite tiny
-#   g6e.2xlarge  1x L40S  (48 GB VRAM) - fits GPT-oss-20b
+#   g6.2xlarge   1x L4    (24 GB VRAM) - fits Gemma 9B FP8, Granite tiny, GPT-oss-20b (quantized)
+#   g6e.2xlarge  1x L40S  (48 GB VRAM) - more VRAM headroom (longer context, larger models)
 apiVersion: machine.openshift.io/v1beta1
 kind: MachineSet
 metadata:

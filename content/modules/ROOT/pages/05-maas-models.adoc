@@ -50,12 +50,12 @@ NOTE: Gemma is a US-origin model, making it suitable for deployments with export
 
 === gpt-oss-20b
 
-OpenAI gpt-oss-20b running on the Red Hat AI Inference Server (vLLM CUDA). Requires a capable GPU node (L4 or better) with sufficient VRAM.
+OpenAI gpt-oss-20b running on the Red Hat AI Inference Server. Uses the link:https://huggingface.co/RedHatAI/gpt-oss-20b[Red Hat AI validated quantized build^], which fits on a single 24 GB GPU (L4) or better.
 
 * *Runtime*: vLLM CUDA (registry.redhat.io/rhaii/vllm-cuda-rhel9:3.3.0)
 * *Model weights*: OCI modelcar from registry.redhat.io (~8GB download)
 * *Resources*: 2-4 CPU, 16Gi-60Gi memory, 1x NVIDIA GPU
-* *GPU memory*: ~16GB required
+* *GPU memory*: ~16GB required (quantized - verified on a 24 GB L4)
 * *Startup time*: 5-15 minutes (image pull + model loading)
 
 === qwen3-06b
@@ -69,7 +69,7 @@ Qwen3-0.6B running on the Red Hat AI Inference Server (vLLM CPU). A small but ca
 * *Context length*: 2048 tokens
 * *Startup time*: 2-5 minutes (HuggingFace download + CPU model loading)
 
-NOTE: This model downloads weights from HuggingFace (`hf://`), so it is subject to the same HuggingFace Xet download hang described above for the simulator. If the pod is stuck in `Init:0/1`, apply the `HF_HUB_DISABLE_XET` workaround.
+NOTE: This model downloads weights from HuggingFace (`hf://`), so it is subject to the same HuggingFace Xet download hang as the simulator (see <<xet-hang,HuggingFace Xet Download Hang>> below). If the pod is stuck in `Init:0/1`, apply the `HF_HUB_DISABLE_XET` workaround.
 
 === simulator-disconnected
 
@@ -82,7 +82,7 @@ A variant of the simulator for air-gapped clusters. Uses `oci://` storage URI in
 
 == Custom Resource Descriptions
 
-Each model deployment creates the following CRDs under `maas.opendatahub.io/v1alpha1`:
+Each model deployment creates the following custom resources. `LLMInferenceService` is a KServe resource (`serving.kserve.io/v1alpha1`); the MaaS resources belong to `maas.opendatahub.io/v1alpha1`:
 
 === LLMInferenceService (namespace: `llm`)
 
@@ -151,6 +151,7 @@ Deploy the simulator (no GPU required):
 oc apply -k manifests/05-maas-models/simulator/
 ----
 
+[[xet-hang]]
 [NOTE]
 ====
 *HuggingFace Xet Download Hang*

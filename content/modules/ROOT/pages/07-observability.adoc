@@ -215,7 +215,7 @@ Patch the MaaS Config to enable the usage logging pipeline:
 
 [source,bash]
 ----
-oc patch configs.maas.opendatahub.io default -n models-as-a-service --type=merge \
+oc patch configs.maas.opendatahub.io default --type=merge \
   -p '{"spec":{"usageLogging":true}}'
 ----
 

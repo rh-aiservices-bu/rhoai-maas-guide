@@ -138,8 +138,8 @@ For end-to-end deployment using a single script, see the xref:quick-start.adoc[A
 
 | `gpt-oss-20b`
 | Yes
-| >= 40 GiB
-| Large GPU (L40S, A100, H100)
+| ~16 GiB
+| Large model, runs quantized (L4 24 GB, L40S, A100)
 
 | `qwen3-06b`
 | No

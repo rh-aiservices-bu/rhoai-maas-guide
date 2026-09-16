@@ -82,6 +82,17 @@ This creates:
 * A Keycloak instance connected to PostgreSQL
 * A `KeycloakRealmImport` that creates the `maas` realm with test users and groups
 
+Set the Keycloak hostname. Without it, the RHBK operator creates a host-less Ingress that {ocp-short} cannot convert into a Route, and Step 2 will find no route:
+
+[source,bash]
+----
+CLUSTER_DOMAIN=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')
+KEYCLOAK_HOSTNAME="keycloak-maas-keycloak.${CLUSTER_DOMAIN}"
+
+oc patch keycloak keycloak -n maas-keycloak --type merge \
+    -p "{\"spec\": {\"hostname\": {\"hostname\": \"${KEYCLOAK_HOSTNAME}\", \"strict\": false, \"strictBackchannel\": false}}}"
+----
+
 Wait for Keycloak to be ready:
 
 [source,bash]

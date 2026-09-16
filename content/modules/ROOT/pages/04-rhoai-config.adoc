@@ -162,11 +162,11 @@ TIP: The `maas-api` deployment may take 30-60 seconds to appear after the DSC is
 RHOAI 3.5+::
 +
 --
-In RHOAI 3.5+, the maas-controller auto-creates a `Config` CR (replacing the Tenant CR from 3.4):
+In RHOAI 3.5+, the maas-controller auto-creates a cluster-scoped `Config` CR (replacing the namespaced Tenant CR from 3.4):
 
 [source,bash]
 ----
-oc get configs.maas.opendatahub.io -n models-as-a-service
+oc get configs.maas.opendatahub.io
 ----
 --
 

@@ -45,7 +45,7 @@ oc wait --for=condition=Ready kuadrant/kuadrant -n kuadrant-system --timeout=120
 
 [NOTE]
 ====
-*Troubleshooting:* If Kuadrant reports `MissingDependency` (Istio race condition), restart the Kuadrant operator pod and wait again:
+*Expected on fresh clusters:* If the cluster has no GatewayClass yet, this wait times out with `Ready=False`, reason `MissingDependency` (_"Gateway API provider (istio / envoy gateway) is not installed"_). This is normal - Istio is only provisioned when the GatewayClass is created in Step 4. Continue with Steps 2-4, then restart the Kuadrant operator pod and re-run the wait:
 
 [source,bash]
 ----
@@ -53,12 +53,14 @@ oc delete pod -n openshift-operators \
   $(oc get pods -n openshift-operators --no-headers | grep kuadrant-operator | awk '{print $1}')
 oc wait --for=condition=Ready kuadrant/kuadrant -n kuadrant-system --timeout=180s
 ----
+
+The same fix applies if Kuadrant reports `MissingDependency` on a cluster where Istio was installed *after* the Kuadrant CR (race condition).
 ====
 
 == Step 2: Configure TLS for Models-as-a-Service
 
 Now that Kuadrant is deployed, we need to update the Authorino CR to enable TLS. (Detailed documentation for this step is available in the RHOAI docs: link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service_maas#configure-tls-for-maas_maas-deploy[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service_maas#configure-tls-for-maas_maas-deploy[3.4].)
-Follow the four steps below to enable TLS between the Gateway and Authorino.
+Follow the three steps below to enable TLS between the Gateway and Authorino. (The fourth step from the official docs - annotating the Gateway for the Authorino TLS bootstrap - is applied in Step 5c, after the Gateway is created.)
 
 *Step 2a:* The service annotation (already applied above) triggered the service-ca operator to generate the `authorino-server-cert` TLS Secret:
 

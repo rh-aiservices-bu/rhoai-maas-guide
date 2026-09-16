@@ -93,7 +93,7 @@ See the [Automated Setup](https://rh-aiservices-bu.github.io/rhoai-maas-guide/mo
 | `simulator` | No | None | Testing/demo (CPU-only) |
 | `granite-tiny-gpu` | Yes | ~8 GiB | Small GPU (L4, L40) |
 | `gemma` | Yes | ~12 GiB | Mid GPU (L4, L40, L40S) |
-| `gpt-oss-20b` | Yes | >= 40 GiB | Large GPU (L40S, A100, H100) |
+| `gpt-oss-20b` | Yes | ~16 GiB | Large model, runs quantized (L4 24 GB, L40S, A100) |
 | `qwen3-06b` | No | None (~16 GiB RAM) | Real CPU inference (no GPU needed) |
 
 ## Scripts
