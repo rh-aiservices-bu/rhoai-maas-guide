@@ -7,6 +7,11 @@
 #   MaaSAuthPolicy  (group)  -> every SA in maas-clients may call the model
 #   MaaSSubscription (users) -> one per SA, so tiers differ without overlapping
 #
+# Priority 40 keeps these per-workload tiers above any generic tiers granted to
+# system:authenticated by the model manifests (e.g. qwen3-06b-premium at 20) -
+# ServiceAccounts belong to system:authenticated too, and a higher-priority
+# generic tier would otherwise win API-key resolution and break this demo.
+#
 # IMPORTANT - why not a namespace-wide subscription plus per-SA overrides:
 # if an identity matches TWO subscriptions, key issuance still resolves the
 # higher priority correctly, but using the ServiceAccount token DIRECTLY on the
@@ -57,7 +62,7 @@ spec:
         # spends the whole budget, which reads as broken rather than throttled.
         - limit: 120
           window: 1m
-  priority: 10
+  priority: 40
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
 kind: MaaSSubscription
@@ -78,4 +83,4 @@ spec:
       tokenRateLimits:
         - limit: 15
           window: 1m
-  priority: 10
+  priority: 40

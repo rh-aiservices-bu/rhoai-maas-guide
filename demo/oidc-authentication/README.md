@@ -46,7 +46,8 @@ into the token, which is what `MaaSAuthPolicy` and `MaaSSubscription` match on.
 
 Then from `manifests/09-external-oidc/maas-oidc/`: two `MaaSAuthPolicy` objects
 granting each group access to the model, and two `MaaSSubscription` objects
-(`oidc-data-scientists` priority 10, `oidc-ml-engineers` priority 20).
+(`oidc-data-scientists` priority 30, `oidc-ml-engineers` priority 40 - kept
+above the generic per-model tiers at 10/20 so OIDC users resolve these).
 
 ## Run it
 

@@ -12,7 +12,7 @@
 #   alice  -> group tier + gold override           -> 5000 tokens/min (upgraded)
 #   bob    -> group tier + throttled override      -> 20 tokens/min   (downgraded)
 #
-# The overrides win because priority 30 > 10. That is the point of the demo:
+# The overrides win because priority 30 > 25. That is the point of the demo:
 # a per-user subscription overrides the group tier in BOTH directions.
 #
 # Rate limits are counted per SUBSCRIPTION, not per key - minting a second key
@@ -41,7 +41,7 @@ spec:
       tokenRateLimits:
         - limit: 200
           window: 1m
-  priority: 10
+  priority: 25  # above generic model tiers granted to system:authenticated (e.g. qwen premium at 20), below the per-user overrides at 30
 ---
 # alice is upgraded. Higher priority than the group tier, so this one applies.
 apiVersion: maas.opendatahub.io/v1alpha1

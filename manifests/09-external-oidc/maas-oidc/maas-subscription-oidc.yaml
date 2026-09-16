@@ -17,7 +17,7 @@ spec:
       tokenRateLimits:
         - limit: 100000
           window: 1m
-  priority: 10
+  priority: 30  # above generic model tiers granted to system:authenticated (e.g. premium tiers at 20)
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
 kind: MaaSSubscription
@@ -38,4 +38,4 @@ spec:
       tokenRateLimits:
         - limit: 100000
           window: 1m
-  priority: 20
+  priority: 40  # outranks oidc-data-scientists so dual-group users resolve to the ml-engineers tier

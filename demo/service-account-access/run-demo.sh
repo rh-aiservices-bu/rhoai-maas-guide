@@ -5,7 +5,7 @@
 # with its own ServiceAccount token, which MaaS validates through Kubernetes
 # TokenReview.
 #
-#   batch-scorer   -> sa-batch-scorer-tier   (40 tokens/min)
+#   batch-scorer   -> sa-batch-scorer-tier   (120 tokens/min)
 #   report-writer  -> sa-report-writer-tier  (15 tokens/min)
 #
 # ACCESS is granted once for the whole namespace, by a MaaSAuthPolicy matching
