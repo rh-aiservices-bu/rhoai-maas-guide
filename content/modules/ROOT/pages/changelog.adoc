@@ -20,6 +20,8 @@ Each entry links to its pull request for full details.
 
 === Features
 
+* *Site Search* - Search box in the top navbar, powered by the official Antora Lunr extension. Client-side index built at build time, results grouped by page with section deep links and snippets. (link:{repo-url}/pull/171[#171])
+
 * *Verify Guide Skill Documentation* - Added `/verify-guide` skill to the Claude Code guide page with usage, arguments, phases table, and description of all 6 verification phases. (link:{repo-url}/pull/166[#166])
 
 * *Azure OpenAI External Model Provider* - Added Azure OpenAI as fifth external model provider with Kustomize manifests, setup/cleanup script support, and gpt-4.1-mini as default model. Uses the `azure-openai` BBR provider type. (link:{repo-url}/pull/168[#168])
