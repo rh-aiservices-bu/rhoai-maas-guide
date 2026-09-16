@@ -18,6 +18,8 @@ ui:
 antora:
   extensions:
     - require: '@andrew-jones/antora-tabs-extension'
+    - require: '@antora/lunr-extension'
+      index_latest_only: true
 
 output:
   dir: ./www
