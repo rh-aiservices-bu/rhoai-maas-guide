@@ -8,6 +8,8 @@ Each entry links to its pull request for full details.
 
 === New Pages
 
+* *Multi-Tenancy Reference* - What RHOAI 3.5 MaaS multi-tenancy covers: tenants vs instances, dedicated vs shared resources, isolation boundaries, AITenant provisioning walkthrough, and quick answers for the common questions. (link:{repo-url}/pull/170[#170])
+
 * *API Key Security Reference* - Deep dive into MaaS API key internals: key anatomy, hash derivation, ValidateAPIKey flow, IDOR protection, lifecycle management, and 8-threat model. (link:{repo-url}/pull/129[#129])
 
 * *Model Swap Reference* - How to swap a model backend without customer-facing changes. Covers MaaSModelRef hierarchy, 6-step migration procedure, BBR endpoint routing, and concrete Qwen 3.6→3.8 swap templates. (link:{repo-url}/pull/113[#113], link:{repo-url}/pull/134[#134])
@@ -45,6 +47,8 @@ Each entry links to its pull request for full details.
 * *External Models Dashboard Documentation* - Added Technology Preview callout for the External models tab in the RHOAI Dashboard (AI hub > Models > Deployments). New section in Phase 8 with screenshot showing the model listing and provider details. (link:{repo-url}/pull/156[#156])
 
 === Fixes
+
+* *Broken Official Docs Links* - The RHOAI 3.5 docs renamed the MaaS chapter chunk and retired two anchors, breaking five deep links in Phases 2, 7, and 8. All links now point at the correct per-version chunk and anchors, verified against the live docs. (link:{repo-url}/pull/170[#170])
 
 * *Live Install Review Fixes* - Docs, script, and demo fixes from a full manual install review: Phase 3 namespace pre-create for 3.5+, Phase 9 Keycloak hostname patch, verify.sh now keeps pre-existing models at cleanup, demo subscription priorities raised above the generic model tiers, and gpt-oss-20b VRAM corrected to ~16 GiB (runs quantized on a 24 GB L4). (link:{repo-url}/pull/169[#169])
 
