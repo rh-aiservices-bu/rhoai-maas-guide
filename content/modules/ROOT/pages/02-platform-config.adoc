@@ -59,7 +59,7 @@ The same fix applies if Kuadrant reports `MissingDependency` on a cluster where 
 
 == Step 2: Configure TLS for Models-as-a-Service
 
-Now that Kuadrant is deployed, we need to update the Authorino CR to enable TLS. (Detailed documentation for this step is available in the RHOAI docs: link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service_maas#configure-tls-for-maas_maas-deploy[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service_maas#configure-tls-for-maas_maas-deploy[3.4].)
+Now that Kuadrant is deployed, we need to update the Authorino CR to enable TLS. (Detailed documentation for this step is available in the RHOAI docs: link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service#configure-tls-for-maas_maas-deploy[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service_maas#configure-tls-for-maas_maas-deploy[3.4].)
 Follow the three steps below to enable TLS between the Gateway and Authorino. (The fourth step from the official docs - annotating the Gateway for the Authorino TLS bootstrap - is applied in Step 5c, after the Gateway is created.)
 
 *Step 2a:* The service annotation (already applied above) triggered the service-ca operator to generate the `authorino-server-cert` TLS Secret:
