@@ -46,6 +46,8 @@ Each entry links to its pull request for full details.
 
 === Fixes
 
+* *Live Install Review Fixes* - Docs, script, and demo fixes from a full manual install review: Phase 3 namespace pre-create for 3.5+, Phase 9 Keycloak hostname patch, verify.sh now keeps pre-existing models at cleanup, demo subscription priorities raised above the generic model tiers, and gpt-oss-20b VRAM corrected to ~16 GiB (runs quantized on a 24 GB L4). (link:{repo-url}/pull/169[#169])
+
 * *UWM No Longer Required in RHOAI 3.5* - Marked User Workload Monitoring as optional in Phase 2. RHOAI 3.5 uses COO's MonitoringStack for metrics collection. UWM is still useful for forwarding metrics to external tools. (link:{repo-url}/pull/167[#167])
 
 * *Phase 4 CRD Race Condition* - DSC triggers async CRD registration. Script was applying HardwareProfile before CRD existed. Added wait_for_crd() helper. (link:{repo-url}/pull/108[#108])
