@@ -1,0 +1,235 @@
+= Multi-Tenancy
+
+This page is a reference for {rhoai} {maas} multi-tenancy (RHOAI 3.5+). It answers the question that comes up in every architecture discussion: _"Can we have a MaaS per team or per namespace in the same cluster?"_ The short answer: you get multiple *MaaS tenants* on one shared platform, not multiple independent MaaS instances. This page explains what that difference means, what is isolated, what is shared, and how to provision an additional tenant.
+
+IMPORTANT: MaaS multi-tenancy is a *Technology Preview* feature in RHOAI 3.5. Technology Preview features are not supported with Red Hat production service level agreements (SLAs) and might not be functionally complete. See the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service#managing-maas-multi-tenancy[official RHOAI 3.5 multi-tenancy documentation^] for the supported scope.
+
+== Tenants, Not Instances
+
+A tenant is a slice of one shared MaaS platform, bootstrapped by an `AITenant` custom resource. From the user's point of view each tenant behaves like an independent MaaS environment: its own gateway hostname, its own identity configuration, its own API keys, subscriptions, and model catalog. From the platform's point of view there is still one maas-controller, one PostgreSQL database, and one model serving infrastructure underneath.
+
+What each tenant gets (dedicated):
+
+[cols="1,3", options="header"]
+|===
+| Resource | Detail
+
+| Gateway
+| A dedicated Gateway API `Gateway` with a unique hostname (e.g. `finance-maas.apps.<cluster-domain>`). The controller *claims* each Gateway for exactly one tenant - two `AITenant` resources cannot share a Gateway.
+
+| Tenant namespace
+| Created as `ai-tenant-<name>` for additional tenants. Holds the tenant-scoped MaaS resources: `MaaSSubscription`, `MaaSAuthPolicy`, `MaaSModelRef`, and the tenant's `MaasTenantConfig`.
+
+| API infrastructure
+| A per-tenant `maas-api` instance (`maas-api-<name>` in `redhat-ai-gateway-infra`), plus gateway-scoped authentication and rate-limit policies for that tenant's Gateway.
+
+| Identity realm
+| Each tenant can point at its own OIDC issuer (`spec.oidc` on the AITenant), or fall back to OpenShift TokenReview. Tokens minted for one tenant are rejected by other tenants' gateways.
+
+| RBAC Roles
+| The controller creates `aitenant-<name>-tenant-admin` (manage subscriptions, auth policies, tenant config in the tenant namespace) and `aitenant-<name>-object-admin` (read the AITenant object). You grant access by creating standard RoleBindings.
+|===
+
+What stays shared across all tenants:
+
+[cols="1,3", options="header"]
+|===
+| Resource | Detail
+
+| PostgreSQL database
+| All tenants store API keys in the same database instance. Keys are stored as salted SHA-256 hashes together with the username, group memberships, subscription, and tenant name, and every lookup is scoped by the `(key_hash, tenant)` index - a key created in tenant A returns `404 API key not found` on tenant B's gateway. See xref:08c-api-key-security.adoc[API Key Security] for the full storage and validation internals.
+
+| maas-controller
+| One controller reconciles all tenants.
+
+| Model serving infrastructure
+| GPU nodes, model weights, and the serving stack (KServe / llm-d / vLLM) are cluster resources. Tenants govern *access* to models; they do not get dedicated copies of them.
+
+| Authorino and Limitador
+| Platform-level authentication and rate limiting components are shared; the policies they enforce are per tenant.
+
+| Observability stack
+| Prometheus, OTEL collectors, and dashboards are shared. Metrics, traces, and structured logs carry the tenant name, so usage can be filtered and attributed per tenant.
+|===
+
+So "a MaaS per namespace" is not quite the model. The model is: one platform, and per team a tenant slice consisting of a gateway, a tenant namespace, and labeled model namespaces. Traffic separation comes from the dedicated gateways; governance separation comes from the tenant scoping in maas-api and the per-tenant policies.
+
+== Isolation Boundaries
+
+The official docs list four cross-tenant protections, all enforced at the application layer:
+
+* *API key rejection* - a key created in one tenant returns HTTP 404 (`API key not found`) against another tenant's gateway. Each tenant's maas-api instance queries only its own tenant's keys.
+* *OIDC token rejection* - tokens are validated against the tenant-specific identity provider configuration; tokens from another tenant's IdP are rejected by the gateway AuthPolicy.
+* *Subscription scoping* - `GET /v1/subscriptions` returns only the requesting tenant's data.
+* *Model discovery scoping* - `GET /v1/models` returns only models associated with the tenant through `MaaSModelRef` resources in the tenant namespace or with a matching `tenantRef`.
+
+[NOTE]
+====
+*Network-layer isolation is not part of MaaS tenancy.* The boundaries above are gateway, identity, and RBAC boundaries. Pods in different tenant namespaces still share the cluster network. If your isolation requirements go further (e.g. tenants must not reach each other's model pods directly, bypassing the gateway), add NetworkPolicies or, on OVN-Kubernetes, User Defined Networks (UDN) on top - that is standard OpenShift multi-tenancy hardening, independent of MaaS. This guide has not validated a UDN setup with MaaS.
+====
+
+== The Default Tenant
+
+Deploying MaaS (xref:04-rhoai-config.adoc[Phase 4]) automatically creates the default tenant, which is exactly what this guide has been using all along:
+
+[source,bash]
+----
+oc get aitenant models-as-a-service -n ai-tenants
+----
+
+[source]
+----
+NAME                  READY   TENANT NAMESPACE      GATEWAY                AGE
+models-as-a-service   True    models-as-a-service   maas-default-gateway   1h
+----
+
+The default tenant uses the `models-as-a-service` namespace and claims `maas-default-gateway`. On upgrade from 3.4, the controller migrates the old `Tenant` resource to a `MaasTenantConfig`, preserving API keys, subscriptions, and models.
+
+IMPORTANT: `ExternalModel` resources (xref:08-external-models.adoc[Phase 8]) are supported *only in the default tenant*. The controller disables the ExternalModel controller for non-default tenants (`DISABLE_EXTERNAL_MODEL_CONTROLLER=true`) to prevent HTTPRoute conflicts between tenant gateways. Access external models through the default tenant gateway.
+
+== Provisioning an Additional Tenant
+
+Condensed from the link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service#provision-maas-tenant_maas-multi-tenancy[official procedure^]. Prerequisites: the default tenant is `Ready`, cert-manager is installed, and RHCL is at Kuadrant v1.4.2 or later (the gateway-scoped AuthPolicy needs `spec.defaults.rules`).
+
+*Step 1:* Pick a tenant name (DNS-1123 label, max 41 characters), detect the TLS certificate name (same derivation as xref:02-platform-config.adoc[Phase 2] - the official docs hardcode `router-certs-default`, which is wrong on clusters with a custom ingress certificate), and label the namespaces that must attach routes to the tenant Gateway:
+
+[source,bash]
+----
+TENANT_NAME="finance"
+CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+GATEWAY_HOSTNAME="${TENANT_NAME}-maas.${CLUSTER_DOMAIN}"
+
+CERT_NAME=$(oc get ingresscontroller default -n openshift-ingress-operator \
+  -o jsonpath='{.spec.defaultCertificate.name}' 2>/dev/null)
+CERT_NAME="${CERT_NAME:-router-certs-default}"
+
+# infrastructure namespace (per-tenant maas-api HTTPRoute)
+oc label namespace redhat-ai-gateway-infra \
+  "maas.opendatahub.io/gateway-access-${TENANT_NAME}=true" --overwrite
+
+# every model namespace this tenant should serve from
+oc label namespace <model_namespace> \
+  "maas.opendatahub.io/gateway-access-${TENANT_NAME}=true" --overwrite
+----
+
+*Step 2:* Create the dedicated Gateway. The two annotations are required - `opendatahub.io/managed: "false"` keeps the ODH model controller from overriding MaaS policies, and the TLS bootstrap annotation enables Gateway-to-Authorino TLS (same pattern as xref:02-platform-config.adoc[Phase 2]). The heredoc expands the variables from Step 1:
+
+[source,bash]
+----
+cat <<EOF | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: ${TENANT_NAME}
+  namespace: openshift-ingress
+  annotations:
+    opendatahub.io/managed: "false"
+    security.opendatahub.io/authorino-tls-bootstrap: "true"
+spec:
+  gatewayClassName: openshift-default
+  listeners:
+    - name: https
+      hostname: "${GATEWAY_HOSTNAME}"
+      port: 443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              maas.opendatahub.io/gateway-access-${TENANT_NAME}: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: ${CERT_NAME}
+EOF
+----
+
+NOTE: On non-cloud platforms (baremetal, SNO, OpenStack) the same LoadBalancer considerations as in xref:02-platform-config.adoc[Phase 2] apply: each additional Gateway needs its own external IP from MetalLB (extend the `IPAddressPool`), or a passthrough/reencrypt Route through the OpenShift router. Check whether the Gateway controller auto-provisioned a Route (`oc get route -n openshift-ingress -l gateway.networking.k8s.io/gateway-name=<tenant-name>`) and create one manually if not.
+
+*Step 3:* Create the AITenant. It must live in the `ai-tenants` management namespace - the admission webhook rejects any other namespace:
+
+[source,bash]
+----
+cat <<EOF | oc apply -f -
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: AITenant
+metadata:
+  name: ${TENANT_NAME}
+  namespace: ai-tenants
+spec:
+  gateway:
+    name: ${TENANT_NAME}
+  # optional - per-tenant identity provider (BYOIDP), see Phase 9 for the Keycloak setup
+  # oidc:
+  #   issuerUrl: "https://<oidc_provider>/realms/<tenant_realm>"
+  #   clientId: <client_id>
+  #   ttl: 300
+EOF
+----
+
+*Step 4:* Wait for the tenant to become Ready and verify the bootstrap:
+
+[source,bash]
+----
+oc get aitenant ${TENANT_NAME} -n ai-tenants -w
+
+# tenant namespace, config, and per-tenant maas-api
+oc get namespace ai-tenant-${TENANT_NAME}
+oc get maastenantconfig default-tenant -n ai-tenant-${TENANT_NAME}
+oc get deployment maas-api-${TENANT_NAME} -n redhat-ai-gateway-infra
+
+# tenant endpoint answers with tenant-scoped models
+curl -sk "https://${GATEWAY_HOSTNAME}/v1/models" \
+  -H "Authorization: Bearer $(oc whoami -t)" | jq .
+----
+
+*Step 5:* Grant tenant admins access by binding the controller-created Roles (the `spec.rbac` field on AITenant is deprecated and ignored):
+
+[source,bash]
+----
+oc create rolebinding finance-tenant-admins \
+  -n ai-tenant-${TENANT_NAME} \
+  --role=aitenant-${TENANT_NAME}-tenant-admin \
+  --group=finance-admins
+----
+
+From there, the tenant admin creates `MaaSSubscription` and `MaaSAuthPolicy` resources in the tenant namespace exactly as in xref:05-maas-models.adoc[Phase 5], and users mint API keys against the tenant's own gateway hostname.
+
+== Deleting a Tenant
+
+Delete the `AITenant` CR. The controller revokes the tenant's API keys, removes the per-tenant maas-api, releases the Gateway claim, and deletes the controller-owned Roles and RoleBindings. User-created RoleBindings are preserved - review and remove stale ones before re-creating a tenant with the same name, or former admins regain access.
+
+== Quick Answers
+
+[cols="2,3", options="header"]
+|===
+| Question | Answer
+
+| Can we run a MaaS per namespace in the same cluster?
+| You run one MaaS platform with multiple isolated tenants. Each tenant maps to a dedicated gateway + tenant namespace + labeled model namespaces, not to an arbitrary namespace.
+
+| Multiple MaaS instances then?
+| No - multiple tenants. One controller, one database, one serving infrastructure. The per-tenant pieces are the gateway, identity realm, namespace, maas-api instance, and policies.
+
+| Are the API keys separated?
+| Logically yes, physically no. All keys live in the shared PostgreSQL database (as salted hashes with tenant metadata, see xref:08c-api-key-security.adoc[API Key Security]), and every validation is tenant-scoped: a tenant A key gets 404 on tenant B's gateway.
+
+| Can each tenant bring its own IdP?
+| Yes - `spec.oidc` on the AITenant points that tenant at its own issuer. Without it, the tenant uses OpenShift TokenReview.
+
+| Are external models per tenant?
+| No - `ExternalModel` works only in the default tenant in 3.5 (Technology Preview limitation).
+
+| Is there network isolation between tenants?
+| Not from MaaS itself - isolation is at the gateway/identity/RBAC layer. Add NetworkPolicies or UDN separately if you need network-level separation.
+|===
+
+== References
+
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/deploy-and-manage-models-as-a-service#managing-maas-multi-tenancy[RHOAI 3.5 - Manage MaaS multi-tenancy (official docs)]
+* link:https://github.com/opendatahub-io/models-as-a-service[MaaS upstream repo (AITenant controller)]
+* xref:08c-api-key-security.adoc[API Key Security] - what is actually stored in the shared database
+* xref:09-external-oidc.adoc[Phase 9: External OIDC Authentication] - Keycloak setup reusable per tenant

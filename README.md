@@ -49,6 +49,7 @@ Each phase has step-by-step instructions, status gates, and troubleshooting.
 | Page | Description |
 |------|-------------|
 | [Architecture & Request Flow](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/08-architecture.html) | End-to-end request flow through the MaaS gateway |
+| [Multi-Tenancy](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/08d-multi-tenancy.html) | Isolated MaaS tenants: what is dedicated vs shared, AITenant provisioning |
 | [Model Swap](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/11-model-swap.html) | Replace a deployed model without downtime |
 | [Platform Upgrade (3.4 to 3.5)](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/12-platform-upgrade.html) | Upgrade guide with post-upgrade troubleshooting |
 | [Cleanup & Teardown](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/09-cleanup.html) | Full MaaS removal |
