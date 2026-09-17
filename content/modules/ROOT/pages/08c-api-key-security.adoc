@@ -233,6 +233,70 @@ curl -sk -o /dev/null -w '%{http_code}' \
 oc logs -n redhat-ai-gateway-infra deploy/maas-api | grep -i "tenant\|denied\|403\|404"
 ----
 
+== Admin Key Management
+
+Two questions come up regularly from administrators. Both answers follow directly from the ownership model above.
+
+=== Can an Admin Create a Key Owned by Another User?
+
+Not directly. `POST /v1/api-keys` has no owner or username field -- the key always belongs to the identity of the Bearer token that created it, and it snapshots that identity's group memberships (see <<Group Validation>>). This is by design: the groups baked into the key are what resolve the subscription, so the key must be minted from a token that actually carries the user's groups.
+
+[WARNING]
+====
+A commonly suggested shortcut does *not* work:
+
+[source,bash]
+----
+oc --as=alice whoami -t   # returns YOUR token, not alice's
+----
+
+`--as` only adds impersonation headers to Kubernetes API requests. `oc whoami -t` prints the token from your kubeconfig without contacting the server, so the output is identical with and without `--as` (easy to verify: run both and compare). A key created with that token is owned by the *admin* -- the maas-api resolves identity from a `TokenReview` of the presented token, and impersonation headers never reach it.
+====
+
+What works instead:
+
+[cols="1,3", options="header"]
+|===
+| Approach | When to use it
+
+| Self-service (intended flow)
+| The user creates their own key with their own token. This is the design center: keys are self-service, and admins govern through subscriptions and auth policies rather than by minting keys.
+
+| Token from the identity provider
+| With external OIDC (xref:09-external-oidc.adoc[Phase 9]), an admin who controls the IdP can obtain a token *as* the user (password grant or token exchange in Keycloak) and create the key with it. The key is then owned by the user with the user's groups. This is exactly how the Phase 9 test script and the OIDC demos mint user-owned keys.
+
+| ServiceAccount token
+| For workloads rather than humans: `oc create token <sa> -n <ns>` mints a token whose identity is `system:serviceaccount:<ns>:<sa>`, and the key created with it is owned by the ServiceAccount. See the link:{repo-url}/tree/main/demo/service-account-access[Service Account Access demo].
+|===
+
+What admins *can* do to other users' keys, per <<Owner-or-Admin>>: view, search, revoke individual keys, and bulk-revoke by username -- just not create them.
+
+=== Can the Number of Keys per User Be Capped?
+
+There is no per-user key count limit in the current maas-api. Two things make this less of a problem than it sounds:
+
+* *Extra keys do not multiply quota.* Rate limits are counted per *subscription*, not per key. A user who mints five keys against the same subscription shares one token budget across all five -- creating a second key does not reset or extend the limit. (The corporate scenario demo verifies exactly this: a second key is rate-limited immediately after the first key exhausts the subscription quota.)
+* *Lifetime is capped centrally.* The `API_KEY_MAX_EXPIRATION_DAYS` setting on the maas-api bounds how long any key can live, and ephemeral keys default to 1 hour, so unused key sprawl ages out.
+
+For cleanup, admins can audit and bulk-revoke a user's keys (dry run first):
+
+[source,bash]
+----
+DOMAIN=$(oc get ingresses.config/cluster -o jsonpath='{.spec.domain}')
+
+# Preview what would be revoked for a user
+curl -sk -X POST "https://maas.${DOMAIN}/maas-api/v1/api-keys/bulk-revoke" \
+  -H "Authorization: Bearer $(oc whoami -t)" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "dryRun": true}'
+
+# Revoke them
+curl -sk -X POST "https://maas.${DOMAIN}/maas-api/v1/api-keys/bulk-revoke" \
+  -H "Authorization: Bearer $(oc whoami -t)" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice"}'
+----
+
 == Lifecycle
 
 There are no permanent {maas} API keys. State transitions are one-way -- there is no mechanism to reactivate a revoked or expired key.
