@@ -17,7 +17,7 @@ image::deepdive-filter-chain.svg[Envoy filter chain - 4 stages inside the Gatewa
 | *①*
 | `ext_proc` (IPP Pre)
 | `payload-pre-processing`
-| Extracts model name from body into `X-Gateway-Model-Name` header. Runs BEFORE auth so Kuadrant can use the header for per-model policy matching.
+| Runs two plugins: `model-extractor` (body-field-to-header) copies the `model` field from the body into the `X-Gateway-Model-Name` header, and `model-provider-resolver` resolves it. Runs BEFORE auth so Kuadrant can use the header for per-model policy matching.
 
 | *②*
 | `wasm` (Kuadrant)
@@ -138,13 +138,13 @@ oc get pods -n kuadrant-system
 | 7
 | `authorino`
 | `kuadrant-system`
-| Receives gRPC call from Wasm shim. Calls MaaS API to validate the `sk-oai-*` key.
+| Receives gRPC call from Wasm shim. Calls MaaS API to validate the `sk-oai-*` key. On success, injects the identity headers (`X-MaaS-Username`, `X-MaaS-Group`, `X-MaaS-Subscription`) from the validation result via the `MaaSAuthPolicy` response stage.
 | `oc logs -n kuadrant-system deploy/authorino -f`
 
 | 8-9
 | `maas-api`
 | `redhat-ai-gateway-infra`
-| Looks up key hash in PostgreSQL. Returns `{valid, userId, groups, subscription}`. Injects `X-MaaS-Username` and `X-MaaS-Subscription` headers.
+| Looks up key hash in PostgreSQL. Returns the validation result `{valid, userId, groups, subscription}` to Authorino (a JSON body, not headers). The subscription comes from the key record bound at mint time.
 | `oc logs -n redhat-ai-gateway-infra deploy/maas-api -f`
 
 | 10
@@ -174,7 +174,7 @@ oc get pods -n kuadrant-system
 | 21-22
 | `payload-processing`
 | `openshift-ingress`
-| Response plugins: api-translation converts Anthropic response back to OpenAI format
+| Response plugins: api-translation converts Anthropic response back to OpenAI format (only when response translation is enabled - see note below)
 | `oc logs -n openshift-ingress deploy/payload-processing -f`
 
 | 23-25
@@ -189,6 +189,11 @@ oc get pods -n kuadrant-system
 | Receives OpenAI-format response regardless of which provider was used
 | -
 |===
+
+[NOTE]
+====
+Response `api-translation` is *off by default*. The `payload-processing-plugins` ConfigMap ships with an empty response profile (`response: []`) so streaming (SSE) is not held by a response processor. Providers that rewrite responses (for example Anthropic Messages to OpenAI) need it enabled manually on the ConfigMap. Steps 21-22 above only run once you opt in. See the upstream link:https://opendatahub-io.github.io/models-as-a-service/latest/[MaaS docs] (External Model Setup - IPP response translation).
+====
 
 === Internal Model Request (P/D Disaggregated)
 

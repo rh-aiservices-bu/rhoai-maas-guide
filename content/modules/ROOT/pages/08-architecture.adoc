@@ -27,7 +27,7 @@ IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} docum
 | API key lifecycle: mint, validate, and revoke `sk-oai-*` keys. Stores hashed keys and subscription bindings.
 
 | *Model Serving*
-| KServe (InferenceService), vLLM, ExternalModel
+| KServe (LLMInferenceService), vLLM, ExternalModel
 | Run inference. Internal models run as vLLM pods on-cluster; external models proxy to third-party APIs (Anthropic, OpenAI, etc.).
 |===
 
@@ -49,10 +49,12 @@ The user authenticates with their {ocp-short} token (or an external IdP token) a
 ----
 curl -X POST https://maas.${CLUSTER_DOMAIN}/maas-api/v1/api-keys \
   -H "Authorization: Bearer <identity-token>" \
-  -d '{"subscriptionName": "my-subscription", "expiresIn": "24h"}'
+  -d '{"subscription": "my-subscription", "expiresIn": "24h"}'
 ----
 
 Authorino validates the identity token. If valid, maas-api generates a random `sk-oai-*` key, hashes it with SHA-256, stores the hash and subscription binding in PostgreSQL, and returns the plaintext key *once*.
+
+NOTE: The `subscription` field is optional. If you omit it, maas-api binds the highest-priority subscription your groups have access to. The field name is `subscription` (not `subscriptionName`).
 
 === 2. Send an Inference Request
 
@@ -72,7 +74,7 @@ The request hits the `maas-default-gateway` in the `openshift-ingress` namespace
 
 === 4. Authorino Validates the API Key
 
-Before the request reaches any model, Authorino intercepts it (via `MaaSAuthPolicy`) and calls the maas-api `/validate-key` endpoint:
+Before the request reaches any model, Authorino intercepts it (via `MaaSAuthPolicy`) and calls the maas-api `/internal/v1/api-keys/validate` endpoint:
 
 * Looks up the salted hash in PostgreSQL
 * Returns the user identity (username, groups, key ID) and the subscription name bound to that key
