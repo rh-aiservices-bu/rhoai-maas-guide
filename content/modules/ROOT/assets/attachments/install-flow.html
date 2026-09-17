@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RHOAI MaaS — Install & Configuration Visualizer</title>
+<link rel="stylesheet" href="https://noyitz.github.io/flowstory/templates/style.css">
+</head>
+<body>
+<button class="fs-theme-toggle" id="fs-theme">&#9790;</button>
+<div class="fs-brand" id="fs-brand"></div>
+<div class="fs-title" id="fs-title"></div>
+<div class="fs-panel">
+  <div class="fs-flow-bar">
+    <select id="fs-flow-select"></select>
+    <button class="fs-start" id="fs-play">&#9654; Start</button>
+    <button id="fs-speed">1x</button>
+    <button id="fs-loop">&#8635; Loop</button>
+    <button class="fs-reset" id="fs-reset">Reset</button>
+  </div>
+  <div class="fs-steps" id="fs-steps">
+    <div class="fs-steps-title">Flow Steps</div>
+    <div id="fs-steps-container"></div>
+  </div>
+</div>
+<div id="fs-highlight-box" style="display:none;position:fixed;z-index:350;border-radius:10px;pointer-events:none"></div>
+<div id="fs-overlay" onclick="if(event.target===this)window.__flowstory?.closeOverlay()" style="display:none;position:fixed;top:0;left:0;right:380px;bottom:0;z-index:300;background:rgba(0,0,0,0.6)">
+  <div id="fs-overlay-card" style="position:absolute;background:#161b22ee;border:1px solid #30363d;border-radius:14px;max-width:440px;padding:22px 26px;box-shadow:0 12px 40px rgba(0,0,0,0.5);transition:opacity .2s">
+    <button onclick="window.__flowstory?.closeOverlay()" style="position:absolute;top:10px;right:14px;background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px">&#10005;</button>
+    <div id="fs-overlay-accent" style="width:4px;height:24px;border-radius:2px;position:absolute;left:0;top:22px"></div>
+    <h2 id="fs-overlay-title" style="margin:0 0 6px;font-size:18px;color:#c9d1d9;font-family:system-ui"></h2>
+    <p id="fs-overlay-desc" style="margin:0 0 14px;font-size:13px;color:#8b949e;line-height:1.5;font-family:system-ui"></p>
+    <div id="fs-overlay-details" style="font-size:12px;font-family:'SF Mono',Menlo,monospace"></div>
+    <button onclick="window.__flowstory?.closeOverlay()" style="margin-top:14px;padding:7px 20px;border:1px solid #3fb950;border-radius:8px;background:transparent;color:#3fb950;font-size:13px;cursor:pointer;font-family:system-ui">&#9654; Resume Flow</button>
+  </div>
+</div>
+<div class="fs-legend" id="fs-legend"></div>
+<canvas id="fs-canvas"></canvas>
+<script type="module">
+import { FlowStory } from 'https://noyitz.github.io/flowstory/src/index.js';
+
+const viz = new FlowStory(document.getElementById('fs-canvas'), {
+  panelElement: document.querySelector('.fs-panel'),
+  flowSelect: document.getElementById('fs-flow-select'),
+  playBtn: document.getElementById('fs-play'),
+  speedBtn: document.getElementById('fs-speed'),
+  loopBtn: document.getElementById('fs-loop'),
+  resetBtn: document.getElementById('fs-reset'),
+  stepsContainer: document.getElementById('fs-steps-container'),
+  overlayElement: document.getElementById('fs-overlay'),
+  overlayCard: document.getElementById('fs-overlay-card'),
+  overlayTitle: document.getElementById('fs-overlay-title'),
+  overlayDesc: document.getElementById('fs-overlay-desc'),
+  overlayDetails: document.getElementById('fs-overlay-details'),
+  overlayAccent: document.getElementById('fs-overlay-accent'),
+  highlightBox: document.getElementById('fs-highlight-box'),
+  brandElement: document.getElementById('fs-brand'),
+  titleElement: document.getElementById('fs-title'),
+  legendElement: document.getElementById('fs-legend'),
+  themeBtn: document.getElementById('fs-theme')
+});
+
+window.__flowstory = viz;
+
+const diagram = {
+  "meta": {
+    "title": "RHOAI MaaS — Install & Configuration Visualizer",
+    "author": "rhoai-maas-guide",
+    "branding": {
+      "logo": "",
+      "title": "Red Hat OpenShift AI — MaaS"
+    }
+  },
+  "canvas": { "width": 1450, "height": 900 },
+  "nodes": {
+    "admin":  { "x": -40, "y": 130, "w": 120, "h": 50, "label": "Admin / CLI", "type": "icon" },
+    "caller": { "x": -40, "y": 440, "w": 120, "h": 50, "label": "App / User",  "type": "icon" },
+
+    "cluster": { "x": 100, "y": 20, "w": 1320, "h": 760, "type": "boundary", "label": "OpenShift Cluster · RHOAI 3.5 · OCP 4.19+" },
+
+    "c1_prereq":  { "x": 130,  "y": 60, "w": 200, "h": 250, "type": "container", "label": "\u2460 Prerequisites", "color": "#58a6ff" },
+    "c2_platform":{ "x": 345,  "y": 60, "w": 200, "h": 250, "type": "container", "label": "\u2461 Platform Config", "color": "#f0883e" },
+    "c3_db":      { "x": 560,  "y": 60, "w": 195, "h": 250, "type": "container", "label": "\u2462 MaaS Platform", "color": "#3fb950" },
+    "c4_rhoai":   { "x": 770,  "y": 60, "w": 225, "h": 250, "type": "container", "label": "\u2463 RHOAI Config", "color": "#d2a8ff" },
+    "c5_model":   { "x": 1010, "y": 60, "w": 195, "h": 250, "type": "container", "label": "\u2464 Model Deployment", "color": "#79c0ff" },
+    "c6_verify":  { "x": 1220, "y": 60, "w": 170, "h": 250, "type": "container", "label": "\u2465 Verification", "color": "#8b949e" },
+
+    "op_rhoai":   { "x": 150, "y": 98,  "w": 160, "h": 34, "label": "RHOAI Operator", "color": "#58a6ff", "fontSize": 13 },
+    "op_rhcl":    { "x": 150, "y": 138, "w": 160, "h": 34, "label": "RHCL Operator", "sublabel": "Kuadrant", "color": "#58a6ff", "fontSize": 12 },
+    "op_certmgr": { "x": 150, "y": 178, "w": 160, "h": 34, "label": "cert-manager", "color": "#58a6ff", "fontSize": 13 },
+    "op_lws":     { "x": 150, "y": 218, "w": 160, "h": 34, "label": "LeaderWorkerSet", "color": "#58a6ff", "fontSize": 12 },
+
+    "n_uwm":      { "x": 365, "y": 98,  "w": 160, "h": 34, "label": "User Workload Mon.", "color": "#f0883e", "fontSize": 11 },
+    "n_gwclass":  { "x": 365, "y": 138, "w": 160, "h": 34, "label": "GatewayClass", "color": "#f0883e", "fontSize": 13 },
+    "n_gw":       { "x": 365, "y": 178, "w": 160, "h": 44, "label": "Gateway", "sublabel": "maas-default-gateway", "color": "#f0883e", "fontSize": 13 },
+    "n_kuadrant": { "x": 365, "y": 230, "w": 160, "h": 34, "label": "Kuadrant CR", "color": "#f0883e", "fontSize": 13 },
+
+    "n_pg":       { "x": 580, "y": 135, "w": 155, "h": 60, "label": "PostgreSQL", "sublabel": "redhat-ods-applications", "color": "#3fb950", "fontSize": 15 },
+    "n_dbsecret": { "x": 580, "y": 210, "w": 155, "h": 44, "label": "maas-db-config", "sublabel": "Secret", "color": "#3fb950", "fontSize": 13 },
+
+    "n_dsci":     { "x": 790, "y": 98,  "w": 185, "h": 32, "label": "DSCInitialization", "color": "#d2a8ff", "fontSize": 12 },
+    "n_dsc":      { "x": 790, "y": 136, "w": 185, "h": 48, "label": "DataScienceCluster", "sublabel": "aigateway.modelsAsAService", "color": "#d2a8ff", "fontSize": 13 },
+    "n_dash":     { "x": 790, "y": 190, "w": 185, "h": 32, "label": "OdhDashboardConfig", "color": "#d2a8ff", "fontSize": 11 },
+    "n_maasapi":  { "x": 790, "y": 228, "w": 185, "h": 46, "label": "maas-api", "sublabel": "redhat-ai-gateway-infra", "color": "#d2a8ff", "fontSize": 14 },
+
+    "n_lis":      { "x": 1028, "y": 112, "w": 160, "h": 55, "label": "LLMInferenceService", "sublabel": "vLLM", "color": "#79c0ff", "fontSize": 13 },
+    "n_mmr":      { "x": 1028, "y": 182, "w": 160, "h": 55, "label": "MaaSModelRef", "sublabel": "Pending \u2192 Ready", "color": "#79c0ff", "fontSize": 14 },
+
+    "n_verify":   { "x": 1238, "y": 150, "w": 135, "h": 70, "label": "verify.sh", "sublabel": "15-point E2E", "color": "#8b949e", "fontSize": 15 },
+
+    "c_gov": { "x": 770, "y": 340, "w": 460, "h": 205, "type": "container", "label": "Governance Pairing \u00b7 models-as-a-service ns", "color": "#ffa657" },
+    "n_authpolicy":  { "x": 795,  "y": 390, "w": 135, "h": 70, "label": "MaaSAuthPolicy", "sublabel": "WHO may call", "color": "#ffa657", "fontSize": 13 },
+    "n_sub_free":    { "x": 950,  "y": 390, "w": 120, "h": 70, "label": "Subscription", "sublabel": "free \u00b7 pri 10", "color": "#ffa657", "fontSize": 13 },
+    "n_sub_premium": { "x": 1090, "y": 390, "w": 120, "h": 70, "label": "Subscription", "sublabel": "premium \u00b7 pri 20", "color": "#ffa657", "fontSize": 13 },
+    "n_resolved":    { "x": 795,  "y": 475, "w": 415, "h": 50, "label": "Priority Resolver", "sublabel": "highest priority wins \u2014 not accumulated", "color": "#ffa657", "fontSize": 13 },
+
+    "c7_obs":  { "x": 130, "y": 600, "w": 380, "h": 170, "type": "container", "label": "\u2466 Observability (optional)", "color": "#6e7681" },
+    "c8_ext":  { "x": 530, "y": 600, "w": 380, "h": 170, "type": "container", "label": "\u2467 External Models (optional)", "color": "#39c5cf" },
+    "c9_oidc": { "x": 930, "y": 600, "w": 380, "h": 170, "type": "container", "label": "\u2468 External OIDC (optional)", "color": "#db61a2" },
+
+    "n_tempo": { "x": 150, "y": 640, "w": 165, "h": 40, "label": "Tempo", "color": "#6e7681", "fontSize": 13 },
+    "n_otel":  { "x": 330, "y": 640, "w": 165, "h": 40, "label": "OTel Collector", "color": "#6e7681", "fontSize": 12 },
+    "n_loki":  { "x": 150, "y": 695, "w": 165, "h": 40, "label": "Loki", "color": "#6e7681", "fontSize": 13 },
+    "n_coo":   { "x": 330, "y": 695, "w": 165, "h": 40, "label": "Cluster Obs. Operator", "color": "#6e7681", "fontSize": 11 },
+
+    "n_extprov":   { "x": 550, "y": 640, "w": 165, "h": 40, "label": "ExternalProvider", "color": "#39c5cf", "fontSize": 12 },
+    "n_extmodel":  { "x": 730, "y": 640, "w": 165, "h": 40, "label": "ExternalModel", "color": "#39c5cf", "fontSize": 12 },
+    "n_providers": { "x": 550, "y": 695, "w": 345, "h": 40, "label": "OpenAI \u00b7 Gemini \u00b7 Bedrock", "color": "#39c5cf", "fontSize": 12 },
+
+    "n_keycloak": { "x": 950,  "y": 640, "w": 165, "h": 40, "label": "Keycloak", "color": "#db61a2", "fontSize": 13 },
+    "n_aitenant": { "x": 1130, "y": 640, "w": 165, "h": 40, "label": "AITenant", "sublabel": "OIDC patch", "color": "#db61a2", "fontSize": 12 }
+  },
+  "tooltips": {
+    "admin": {
+      "title": "Admin / CLI",
+      "description": "Cluster-admin operator running the guided installation, typically via the single end-to-end script or the AI-assisted /install-maas skill.",
+      "details": [
+        ["Script", "scripts/setup-maas.sh"],
+        ["Flags", "--rhoai-version 3.5|3.4, --with-observability, --with-external-models, --from-phase N"],
+        ["Requires", "OpenShift 4.19+, cluster-admin access"],
+        ["AI-assisted", "/install-maas skill (Claude Code, Cursor, Open Code, Roo Code)"]
+      ]
+    },
+    "caller": {
+      "title": "App / End User",
+      "description": "A client application or team member calling the OpenAI-compatible endpoint with an sk-oai-* API key bound to a specific MaaSSubscription.",
+      "details": [
+        ["API", "POST /v1/chat/completions"],
+        ["Auth", "Authorization: Bearer sk-oai-..."],
+        ["Key \u2192 Subscription", "bound at key-creation time, evaluated server-side"]
+      ]
+    },
+    "op_rhoai": {
+      "title": "RHOAI Operator",
+      "description": "Installs Red Hat OpenShift AI (rhods-operator), providing the DataScienceCluster / DSCInitialization CRDs, KServe, and the dashboard.",
+      "details": [
+        ["Manifest", "manifests/01-prerequisites/operators/rhoai-operator/subscription.yaml"],
+        ["Provides", "DataScienceCluster, DSCInitialization, KServe, Dashboard"]
+      ]
+    },
+    "op_rhcl": {
+      "title": "RHCL Operator (Kuadrant)",
+      "description": "Red Hat Connectivity Link installs the Kuadrant control plane, which in turn deploys Authorino (authZ) and Limitador (rate limiting) once a Kuadrant CR is created.",
+      "details": [
+        ["Manifest", "manifests/01-prerequisites/operators/connectivity-link/subscription.yaml"],
+        ["Deploys", "Kuadrant, Authorino, Limitador"]
+      ],
+      "links": [["Kuadrant Docs", "https://docs.kuadrant.io"]]
+    },
+    "op_certmgr": {
+      "title": "cert-manager",
+      "description": "TLS certificate automation required by Authorino's serving certs and the Gateway.",
+      "details": [
+        ["Manifest", "manifests/01-prerequisites/operators/cert-manager/subscription.yaml"]
+      ]
+    },
+    "op_lws": {
+      "title": "LeaderWorkerSet",
+      "description": "Coordinates distributed, multi-pod inference workloads (used for prefill/decode disaggregated serving).",
+      "details": [
+        ["Manifest", "manifests/01-prerequisites/operators/leader-worker-set/subscription.yaml"]
+      ]
+    },
+    "n_uwm": {
+      "title": "User Workload Monitoring",
+      "description": "Cluster-level Prometheus config enabling scraping of user workloads. Required for Kuadrant/Gateway metrics and the optional Phase 7 observability stack.",
+      "details": [
+        ["Manifest", "manifests/02-platform-config/uwm/cluster-monitoring-config.yaml"]
+      ]
+    },
+    "n_gwclass": {
+      "title": "GatewayClass",
+      "description": "Creating the openshift-default GatewayClass triggers OpenShift's built-in gateway controller to provision the underlying Istio control plane.",
+      "details": [
+        ["Manifest", "manifests/02-platform-config/gatewayclass.yaml"],
+        ["Controller", "openshift-default"]
+      ]
+    },
+    "n_gw": {
+      "title": "Gateway (maas-default-gateway)",
+      "description": "The Gateway API resource that all model HTTPRoutes attach to. Ships with a bumped 2Gi memory limit because loading the Kuadrant Wasm plugin after model deployment can OOM the default 1Gi.",
+      "details": [
+        ["Manifest", "manifests/02-platform-config/gateway.yaml.tmpl + gateway-resources.yaml"],
+        ["Namespace", "openshift-ingress"],
+        ["Common issue", "Default 1Gi memory OOMs once Kuadrant Wasm loads \u2014 fixed via parametersRef"]
+      ]
+    },
+    "n_kuadrant": {
+      "title": "Kuadrant CR",
+      "description": "Cluster-scoped CR that activates the Kuadrant control plane, deploying Authorino and Limitador and wiring policy enforcement onto the Gateway.",
+      "details": [
+        ["Manifest", "manifests/02-platform-config/kuadrant/kuadrant.yaml"],
+        ["Namespace", "kuadrant-system"]
+      ]
+    },
+    "n_pg": {
+      "title": "PostgreSQL",
+      "description": "Backing database for maas-api (API keys, subscriptions, model listings). MUST exist and be reachable before enabling MaaS in the DataScienceCluster \u2014 this is the single most common install-order mistake.",
+      "details": [
+        ["Manifest", "manifests/03-maas-platform/postgres-deployment.yaml"],
+        ["Namespace", "redhat-ods-applications"],
+        ["Critical rule", "Phase 3 (Postgres) must complete before Phase 4 (DSC)"]
+      ]
+    },
+    "n_dbsecret": {
+      "title": "maas-db-config Secret",
+      "description": "Database connection credentials that maas-api reads on startup. If missing when maas-api starts, the pod CrashLoopBackOffs.",
+      "details": [
+        ["Created by", "Phase 3 setup script"],
+        ["Consumed by", "maas-api Deployment (Phase 4)"]
+      ]
+    },
+    "n_dsci": {
+      "title": "DSCInitialization",
+      "description": "Cluster-wide RHOAI initialization object controlling monitoring and service-mesh settings.",
+      "details": [
+        ["Manifest", "manifests/04-rhoai-config/dscinitialization.yaml"]
+      ]
+    },
+    "n_dsc": {
+      "title": "DataScienceCluster",
+      "description": "The central RHOAI feature-toggle object. Setting the MaaS field to Managed enables the whole gateway control plane, including the maas-api rollout.",
+      "details": [
+        ["Manifest (3.5)", "manifests/04-rhoai-config/datasciencecluster.yaml"],
+        ["Manifest (3.4)", "manifests/04-rhoai-config/datasciencecluster-34.yaml"],
+        ["3.5 field", "aigateway.modelsAsAService: Managed"],
+        ["3.4 field", "kserve.modelsAsService: Managed"]
+      ]
+    },
+    "n_dash": {
+      "title": "OdhDashboardConfig",
+      "description": "Enables the modelAsService and externalModels UI flags in the RHOAI dashboard.",
+      "details": [
+        ["Manifest", "manifests/04-rhoai-config/odh-dashboard-config.yaml"]
+      ]
+    },
+    "n_maasapi": {
+      "title": "maas-api",
+      "description": "Control-plane API server managing API keys, subscriptions, and model listings. Rolled out when the DSC enables MaaS \u2014 crash-loops if PostgreSQL / maas-db-config isn't ready yet.",
+      "details": [
+        ["Namespace (3.5)", "redhat-ai-gateway-infra"],
+        ["Namespace (3.4)", "redhat-ods-applications"],
+        ["Endpoints", "/v1/models, /v1/api-keys, /internal/v1/api-keys/validate"],
+        ["Debug: logs", "oc logs -n redhat-ai-gateway-infra deploy/maas-api"]
+      ]
+    },
+    "n_lis": {
+      "title": "LLMInferenceService",
+      "description": "KServe custom resource that runs the vLLM model server and attaches to the shared Gateway.",
+      "details": [
+        ["Manifest pattern", "manifests/05-maas-models/<model>/llm/model.yaml"],
+        ["Models", "simulator, granite-tiny-gpu, gemma, gpt-oss-20b, qwen3-06b"]
+      ]
+    },
+    "n_mmr": {
+      "title": "MaaSModelRef",
+      "description": "Registers a model with the MaaS control plane. Stays Pending until BOTH a MaaSAuthPolicy and a MaaSSubscription reference the same model \u2014 they are independent CRDs that must be paired manually.",
+      "details": [
+        ["Manifest pattern", "manifests/05-maas-models/<model>/maas/maas-model.yaml"],
+        ["Pending reason", "\"No active subscription and auth policy pairing found\""],
+        ["Debug", "oc get maasmodelref -A"]
+      ]
+    },
+    "n_verify": {
+      "title": "verify.sh",
+      "description": "Automated 15-point end-to-end check covering API key issuance, inference, and rate limiting.",
+      "details": [
+        ["Script", "scripts/verify-maas.sh \u2192 manifests/06-verification/verify.sh"]
+      ]
+    },
+    "n_authpolicy": {
+      "title": "MaaSAuthPolicy",
+      "description": "Defines WHO may call a model \u2014 subjects such as groups, users, or service accounts. Reconciles independently of MaaSSubscription; editing one does not resync the other.",
+      "details": [
+        ["Manifest pattern", "manifests/05-maas-models/<model>/maas/maas-auth-policy.yaml"],
+        ["Debug", "oc get maasauthpolicy -A"]
+      ]
+    },
+    "n_sub_free": {
+      "title": "MaaSSubscription (free)",
+      "description": "Defines HOW MUCH a caller may consume \u2014 token rate limits and priority. Example free tier: priority 10, ~100 tokens/min.",
+      "details": [
+        ["Manifest", "manifests/05-maas-models/<model>/maas/maas-subscription-free.yaml"]
+      ]
+    },
+    "n_sub_premium": {
+      "title": "MaaSSubscription (premium)",
+      "description": "Higher-priority tier \u2014 example priority 20, ~100k tokens/min. Wins over the free subscription when a caller matches both.",
+      "details": [
+        ["Manifest", "manifests/05-maas-models/<model>/maas/maas-subscription-premium.yaml"],
+        ["Demo", "demo/subscription-priority/README.md"]
+      ]
+    },
+    "n_resolved": {
+      "title": "Priority Resolver",
+      "description": "When a caller matches multiple subscriptions on the same model, the platform selects the single highest-priority entitlement \u2014 limits are never accumulated across matching subscriptions.",
+      "details": [
+        ["Concept", "Selection, not accumulation"],
+        ["Demo", "demo/subscription-priority/README.md"],
+        ["Related", "demo/user-level-rate-limiting/README.md"]
+      ]
+    },
+    "n_tempo": {
+      "title": "Tempo",
+      "description": "Distributed tracing backend for gateway request traces.",
+      "details": [["Manifest area", "manifests/07-observability/"]]
+    },
+    "n_otel": {
+      "title": "OpenTelemetry Collector",
+      "description": "Collects and forwards traces/metrics emitted by the Gateway and IPP filters.",
+      "details": [["Manifest area", "manifests/07-observability/"]]
+    },
+    "n_loki": {
+      "title": "Loki",
+      "description": "Log aggregation backend (RHOAI 3.5+) for gateway and control-plane logs.",
+      "details": [["Manifest area", "manifests/07-observability/"]]
+    },
+    "n_coo": {
+      "title": "Cluster Observability Operator",
+      "description": "Manages the UIPlugin and dashboards that surface Tempo/Loki data in the OpenShift console.",
+      "details": [["Manifest area", "manifests/07-observability/"]]
+    },
+    "n_extprov": {
+      "title": "ExternalProvider",
+      "description": "Configures a third-party inference API endpoint (RHOAI 3.5 split from ExternalModel).",
+      "details": [["Manifest", "manifests/08-external-models/openai/model/external-provider.yaml"]]
+    },
+    "n_extmodel": {
+      "title": "ExternalModel",
+      "description": "Maps a specific model name (e.g. gpt-4o-mini) to an ExternalProvider and registers it with MaaS.",
+      "details": [["Manifest", "manifests/08-external-models/openai/model/external-model.yaml"]]
+    },
+    "n_providers": {
+      "title": "Supported External Providers",
+      "description": "OpenAI, Google Gemini, and AWS Bedrock are supported as external model backends, proxied through the same gateway policy stack as on-cluster models.",
+      "details": [["Manifest area", "manifests/08-external-models/"]]
+    },
+    "n_keycloak": {
+      "title": "Keycloak",
+      "description": "Deployed by the OIDC setup script to act as (or front) a corporate identity provider for external OIDC authentication.",
+      "details": [["Script", "manifests/09-external-oidc/setup-keycloak.sh"]]
+    },
+    "n_aitenant": {
+      "title": "AITenant (OIDC patch)",
+      "description": "Patches the tenant CR with the OIDC issuer and client ID so group claims from the IdP map to MaaSAuthPolicy subjects.",
+      "details": [["Manifest", "manifests/09-external-oidc/maas-oidc/aitenant-oidc-patch.yaml"]]
+    }
+  },
+  "flows": {
+    "full": {
+      "label": "Full Install (Phases 0-9)",
+      "steps": [
+        { "text": "1. Run ./scripts/setup-maas.sh \u2014 Phase 1: Prerequisites", "mode": "arrow", "from": "admin", "to": "c1_prereq", "color": "#58a6ff", "num": 1, "glow": "c1_prereq" },
+        { "text": "2. Subscribe RHOAI operator (rhods-operator)", "mode": "lightup", "target": "op_rhoai", "badge": 1 },
+        { "text": "3. Subscribe RHCL operator \u2014 installs Kuadrant, Authorino, Limitador", "mode": "lightup", "target": "op_rhcl", "badge": 2 },
+        { "text": "4. Subscribe cert-manager", "mode": "lightup", "target": "op_certmgr", "badge": 3 },
+        { "text": "5. Subscribe LeaderWorkerSet (for P/D disaggregated serving)", "mode": "lightup", "target": "op_lws", "badge": 4 },
+        { "text": "6. Phase 2: Platform Configuration begins", "mode": "arrow", "from": "c1_prereq", "to": "c2_platform", "color": "#f0883e", "num": 6, "glow": "c2_platform" },
+        { "text": "7. Enable User Workload Monitoring", "mode": "lightup", "target": "n_uwm", "badge": 7 },
+        { "text": "8. Create Kuadrant CR \u2014 deploys Authorino + Limitador", "mode": "lightup", "target": "n_kuadrant", "badge": 8 },
+        { "text": "9. Create GatewayClass openshift-default \u2014 provisions Istio", "mode": "lightup", "target": "n_gwclass", "badge": 9 },
+        { "text": "10. Create Gateway maas-default-gateway (2Gi memory)", "mode": "lightup", "target": "n_gw", "badge": 10 },
+        { "text": "11. Phase 3: MaaS Platform begins", "mode": "arrow", "from": "c2_platform", "to": "c3_db", "color": "#3fb950", "num": 11, "glow": "c3_db" },
+        { "text": "12. Deploy PostgreSQL in redhat-ods-applications", "mode": "lightup", "target": "n_pg", "badge": 12 },
+        { "text": "13. Create maas-db-config Secret \u2014 REQUIRED before Phase 4", "mode": "lightup", "target": "n_dbsecret", "badge": 13 },
+        { "text": "14. Phase 4: RHOAI Configuration begins (PostgreSQL ready \u2713)", "mode": "arrow", "from": "c3_db", "to": "c4_rhoai", "color": "#d2a8ff", "num": 14, "glow": "c4_rhoai" },
+        { "text": "15. Apply DSCInitialization", "mode": "lightup", "target": "n_dsci", "badge": 15 },
+        { "text": "16. Apply DataScienceCluster \u2014 aigateway.modelsAsAService: Managed", "mode": "lightup", "target": "n_dsc", "badge": 16 },
+        { "text": "17. Enable dashboard flags (modelAsService, externalModels)", "mode": "lightup", "target": "n_dash", "badge": 17 },
+        { "text": "18. maas-api starts and connects to PostgreSQL successfully", "mode": "lightup", "target": "n_maasapi", "badge": 18 },
+        { "text": "19. Phase 5: Model Deployment begins", "mode": "arrow", "from": "c4_rhoai", "to": "c5_model", "color": "#79c0ff", "num": 19, "glow": "c5_model" },
+        { "text": "20. Deploy LLMInferenceService (vLLM)", "mode": "lightup", "target": "n_lis", "badge": 20 },
+        { "text": "21. Create MaaSModelRef \u2014 status: Pending", "mode": "lightup", "target": "n_mmr", "badge": "P" },
+        { "text": "22. Create MaaSAuthPolicy (who may call this model)", "mode": "arrow", "from": "c5_model", "to": "n_authpolicy", "color": "#ffa657", "num": 22, "glow": "c_gov" },
+        { "text": "23. Create MaaSSubscription (free tier, priority 10)", "mode": "lightup", "target": "n_sub_free", "badge": 23 },
+        { "text": "24. Governance pairing satisfied \u2014 MaaSModelRef: Ready", "mode": "lightup", "target": "n_mmr", "badge": "R" },
+        { "text": "25. Phase 6: Verification \u2014 run verify.sh (15 checks)", "mode": "arrow", "from": "c5_model", "to": "c6_verify", "color": "#8b949e", "num": 25, "glow": "c6_verify" },
+        { "text": "26. 15/15 checks passed", "mode": "lightup", "target": "n_verify", "badge": 26 },
+        { "text": "27. Optional: Phase 7 Observability (Tempo, OTel, Loki)", "mode": "arrow", "from": "c6_verify", "to": "c7_obs", "color": "#6e7681", "num": 27, "glow": "c7_obs" },
+        { "text": "28. Optional: Phase 8 External Models (OpenAI, Gemini, Bedrock)", "mode": "arrow", "from": "c6_verify", "to": "c8_ext", "color": "#39c5cf", "num": 28, "glow": "c8_ext" },
+        { "text": "29. Optional: Phase 9 External OIDC (Keycloak)", "mode": "arrow", "from": "c6_verify", "to": "c9_oidc", "color": "#db61a2", "num": 29, "glow": "c9_oidc" },
+        { "text": "30. Install complete \u2014 ready to serve inference traffic", "mode": "arrow", "from": "c6_verify", "to": "caller", "color": "#3fb950", "num": 30 }
+      ]
+    },
+    "mistake": {
+      "label": "Common Mistake: Wrong Phase Order",
+      "steps": [
+        { "text": "1. Admin jumps ahead and applies Phase 4 before Phase 3", "mode": "arrow", "from": "admin", "to": "c4_rhoai", "color": "#f85149", "num": 1, "glow": "c4_rhoai" },
+        { "text": "2. DataScienceCluster created \u2014 aigateway.modelsAsAService: Managed", "mode": "lightup", "target": "n_dsc", "badge": 2 },
+        { "text": "3. maas-api pod starts and tries to connect to PostgreSQL...", "mode": "lightup", "target": "n_maasapi", "badge": 3 },
+        { "text": "4. PostgreSQL / maas-db-config Secret not found \u2014 maas-api CrashLoopBackOff", "mode": "lightup", "target": "n_maasapi", "badge": "\u2717", "errColor": "#f85149" },
+        { "text": "5. MaaSModelRef registration fails \u2014 depends on a healthy maas-api", "mode": "lightup", "target": "n_mmr", "badge": "\u2717", "errColor": "#f85149" },
+        { "text": "6. Admin sees CrashLoopBackOff and must fix the phase order", "mode": "arrow", "from": "n_maasapi", "to": "admin", "color": "#f85149", "num": 6 },
+        { "text": "7. Correct order: run Phase 3 first", "mode": "arrow", "from": "admin", "to": "c3_db", "color": "#3fb950", "num": 7, "glow": "c3_db" },
+        { "text": "8. Deploy PostgreSQL", "mode": "lightup", "target": "n_pg", "badge": 8 },
+        { "text": "9. Create maas-db-config Secret", "mode": "lightup", "target": "n_dbsecret", "badge": 9 },
+        { "text": "10. Now re-apply Phase 4 \u2014 DataScienceCluster reconciles", "mode": "arrow", "from": "c3_db", "to": "c4_rhoai", "color": "#3fb950", "num": 10, "glow": "c4_rhoai" },
+        { "text": "11. maas-api restarts cleanly and connects to PostgreSQL", "mode": "lightup", "target": "n_maasapi", "badge": 11 }
+      ]
+    },
+    "governance": {
+      "label": "Governance Pairing",
+      "steps": [
+        { "text": "1. Admin applies MaaSModelRef for the model", "mode": "arrow", "from": "admin", "to": "n_mmr", "color": "#79c0ff", "num": 1 },
+        { "text": "2. Status: Pending \u2014 \"no active subscription and auth policy pairing found\"", "mode": "lightup", "target": "n_mmr", "badge": "P" },
+        { "text": "3. Admin applies MaaSAuthPolicy referencing the model", "mode": "arrow", "from": "admin", "to": "n_authpolicy", "color": "#ffa657", "num": 3, "glow": "c_gov" },
+        { "text": "4. MaaSAuthPolicy created \u2014 defines WHO may call (groups/users/service accounts)", "mode": "lightup", "target": "n_authpolicy", "badge": 4 },
+        { "text": "5. Still Pending \u2014 the subscription half of the pairing is still missing", "mode": "lightup", "target": "n_mmr", "badge": "P" },
+        { "text": "6. Admin applies MaaSSubscription (free tier)", "mode": "arrow", "from": "admin", "to": "n_sub_free", "color": "#ffa657", "num": 6 },
+        { "text": "7. MaaSSubscription created \u2014 defines HOW MUCH (tokenRateLimits, priority)", "mode": "lightup", "target": "n_sub_free", "badge": 7 },
+        { "text": "8. Both halves found \u2014 MaaSModelRef transitions to Ready", "mode": "lightup", "target": "n_mmr", "badge": "R" },
+        { "text": "9. Note: editing one CRD later does not resync the other \u2014 they reconcile independently", "mode": "lightup", "target": "n_authpolicy", "badge": "i" }
+      ]
+    },
+    "tiers": {
+      "label": "Tiers & Priority",
+      "steps": [
+        { "text": "1. Two users call the same model with different API keys", "mode": "arrow", "from": "caller", "to": "n_mmr", "color": "#79c0ff", "num": 1 },
+        { "text": "2. User A's key is bound to the 'free' subscription \u2014 priority 10, ~100 tokens/min", "mode": "lightup", "target": "n_sub_free", "badge": 10 },
+        { "text": "3. User B's key is bound to the 'premium' subscription \u2014 priority 20, ~100k tokens/min", "mode": "lightup", "target": "n_sub_premium", "badge": 20 },
+        { "text": "4. Premium entitlement resolves for User B", "mode": "arrow", "from": "n_sub_premium", "to": "n_resolved", "color": "#ffa657", "num": 4 },
+        { "text": "5. Free entitlement resolves for User A", "mode": "arrow", "from": "n_sub_free", "to": "n_resolved", "color": "#ffa657", "num": 5 },
+        { "text": "6. Result: the highest matching priority is selected, never accumulated", "mode": "lightup", "target": "n_resolved", "badge": 6 }
+      ]
+    }
+  },
+  "flowOrder": ["full", "mistake", "governance", "tiers"],
+  "defaultFlow": "full",
+  "legend": [
+    { "color": "#58a6ff", "label": "Prerequisites (Phase 1)" },
+    { "color": "#f0883e", "label": "Platform Config (Phase 2)" },
+    { "color": "#3fb950", "label": "MaaS Platform / DB (Phase 3)" },
+    { "color": "#d2a8ff", "label": "RHOAI Config (Phase 4)" },
+    { "color": "#79c0ff", "label": "Model Deployment (Phase 5)" },
+    { "color": "#8b949e", "label": "Verification (Phase 6)" },
+    { "color": "#ffa657", "label": "Governance CRDs" },
+    { "color": "#f85149", "label": "Failure / CrashLoopBackOff" }
+  ]
+};
+
+await viz.load(diagram);
+
+const cvs = document.getElementById('fs-canvas');
+cvs.addEventListener('mousemove', e => {
+  const rect = cvs.getBoundingClientRect();
+  const eng = viz._engine;
+  const mx = (e.clientX - rect.left - eng._ox) / eng._sc;
+  const my = (e.clientY - rect.top - eng._oy) / eng._sc;
+  let hit = false;
+  for (const [k, n] of Object.entries(eng.state.nodes)) {
+    if (n.type === 'boundary' || n.type === 'container') continue;
+    if (eng.state.tooltips[k] && mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h) {
+      hit = true;
+      break;
+    }
+  }
+  cvs.style.cursor = hit ? 'pointer' : 'default';
+});
+
+viz.state.loopMode = true;
+viz.play();
+</script>
+</body>
+</html>

@@ -97,21 +97,21 @@ oc get datasciencecluster default-dsc \
 
 == Step 3: Add ogx Component (AI Playground)
 
-The `llamastackoperator` DSC component was renamed to `ogx` in 3.5. Add the new component:
+The `llamastackoperator` DSC component was renamed to `ogx` in 3.5. Add the new component *and* explicitly remove the old one in the same patch:
 
 [source,bash]
 ----
 oc patch datasciencecluster default-dsc --type=merge \
-  -p '{"spec":{"components":{"ogx":{"managementState":"Managed"}}}}'
+  -p '{"spec":{"components":{"ogx":{"managementState":"Managed"},"llamastackoperator":{"managementState":"Removed"}}}}'
 ----
 
-NOTE: Without `ogx`, the AI Playground section will not appear in the Dashboard. The old `llamastackoperator` field can be left as-is in the DSC - it is ignored in 3.5.
+IMPORTANT: Do *not* leave `llamastackoperator` as `Managed` (and do not just omit it - on some clusters the field already defaults to `Managed`). Reproduced and confirmed on a live 3.5.0 cluster: having both `llamastackoperator: Managed` and `ogx: Managed` at the same time causes the operator to reject the `ogx` module with `"LlamaStackOperator is set to Managed; it has been deprecated, set it to Removed before enabling OGX"`. That error aborts the *entire* module-provisioning batch at runlevel 32 - which also includes `aigateway` and `mlflowoperator`. The practical symptom is not just a missing Playground tab: `aigateway`'s CRDs never get installed, `maas-api` never deploys, `ModelsAsAServiceReady` stays `False`, and applying `MaaSModelRef` fails with `no matches for kind "MaaSModelRef"` even though `modelsAsAService` shows `Managed`. See xref:10-post-upgrade-troubleshooting.adoc#issue-14[Issue 14] for the full diagnosis and fix if you already hit this.
 
-WARNING: On some RHOAI 3.5.0 installations, the OGX CRD may not be available yet. If the DSC reports `OGXReady: False` with `no matches for kind "OGX"` after this step, set ogx back to `Removed` to unblock the DSC. This does not affect {maas} functionality - only the AI Playground feature.
+WARNING: On some RHOAI 3.5.0 installations, the OGX CRD may still not be available after removing `llamastackoperator`. If the DSC reports `OGXReady: False` with `no matches for kind "OGX"`, set `ogx` back to `Removed` to unblock the DSC - this one genuinely only affects the AI Playground feature, not {maas}.
 
 [source,bash]
 ----
-# Only if OGX is blocking DSC Ready:
+# Only if OGX is still blocking DSC Ready after removing llamastackoperator:
 oc patch datasciencecluster default-dsc --type=merge \
   -p '{"spec":{"components":{"ogx":{"managementState":"Removed"}}}}'
 ----
