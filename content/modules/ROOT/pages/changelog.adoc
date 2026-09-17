@@ -20,6 +20,8 @@ Each entry links to its pull request for full details.
 
 === Features
 
+* *Admin Key Management FAQ* - New section in the API Key Security page: why keys cannot be created on behalf of another user (and what works instead: self-service, IdP tokens with external OIDC, ServiceAccount tokens), and why there is no per-user key cap (quota is per subscription, not per key). (link:{repo-url}/pull/172[#172])
+
 * *Site Search* - Search box in the top navbar, powered by the official Antora Lunr extension. Client-side index built at build time, results grouped by page with section deep links and snippets. (link:{repo-url}/pull/171[#171])
 
 * *Verify Guide Skill Documentation* - Added `/verify-guide` skill to the Claude Code guide page with usage, arguments, phases table, and description of all 6 verification phases. (link:{repo-url}/pull/166[#166])
