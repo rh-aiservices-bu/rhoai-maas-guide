@@ -43,8 +43,8 @@ Expected result: 16 passed, 0 failed. The script also warms up `maas-api` to abs
 | In-cluster workload calls a model with its ServiceAccount token via TokenReview. No API key or secret needed. Access per namespace, rate limits per workload.
 | link:{repo-url}/tree/main/demo/service-account-access[README]
 
-| Corporate Scenario
-| Division-level model governance: three divisions (Sales, Engineering, Products), on-prem + cloud models, differentiated access and rate limits. Demonstrates the full CIO-to-deployment policy lifecycle. *Recommended starting point for enterprise demos.*
+| Fed Aura Capital Scenario
+| Bank-level model governance: seven Fed Aura Capital divisions (Sales, Branch, Credit, Developers, IT, Risk, Marketing), six on-prem + cloud models, differentiated access and per-model hourly caps. Production guide for the 3.6 product video: video structure, talk track, artwork, demo environment, and workshop extensions. *Recommended starting point for enterprise demos.*
 | xref:corporate-scenario.adoc[Full Guide] / link:{repo-url}/tree/main/demo/corporate-scenario[Scripts]
 |===
 

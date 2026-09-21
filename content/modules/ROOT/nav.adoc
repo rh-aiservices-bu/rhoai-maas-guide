@@ -36,7 +36,7 @@
 
 .Demos
 * xref:demos.adoc[Demos]
-* xref:corporate-scenario.adoc[Corporate Scenario]
+* xref:corporate-scenario.adoc[Fed Aura Capital Scenario]
 
 .Cleanup
 * xref:09-cleanup.adoc[Cleanup & Teardown]
