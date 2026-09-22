@@ -10,27 +10,15 @@ TIP: All file paths and `oc apply` commands in this guide are relative to the li
 
 == The video
 
-*Target: 5 minutes maximum. Voice of god (off-screen narration) throughout - no visible presenter. Screen recordings of the live environment on a real cluster; no re-enactments of the UI.*
+*Target: ~4:35, ceiling 5:00. Two presenters in role, in discussion - the CIO's mandate voice and the platform engineer's proof voice. Not voice-of-god narration. Screen recordings of the live environment on a real cluster; no re-enactments of the UI.*
 
-The video runs seven scenes. Each scene lists what is on screen and what the cut should feel like.
+The video runs six scenes. Each scene lists what is on screen, what the cut should feel like, and who carries the dialogue (see the talk track).
 
-=== Scene 1 - The mandate (0:00-0:25)
+=== Scene 1 - The bank and the mandate (0:00-0:45)
 
-On screen: the CIO email (asset M1, full-screen), then a quick flicker of the shadow AI it kills - a browser tab with a chatbot, an IDE with a personal provider - each one stamped out.
+On screen: the Fed Aura Capital org chart (asset M3) full-screen at open - 80,000 employees, seven divisions. Mid-scene, a 3-second B-roll flash of the shadow AI being killed - a browser chatbot tab, a personal provider in an IDE - stamped with the CIO email (asset M1) as the verdict.
 
-The email is the hook. It says, in plain language, that starting next month all AI consumption goes through the Red Hat AI Gateway. Keep it under 120 words - it is read in the edit, not on camera.
-
-=== Scene 2 - One gate for everything (0:25-1:00)
-
-On screen: the architecture diagram (asset M2): 80,000 employees on the left, the Red Hat AI Gateway in the middle, the two model estates on the right - on-prem models on the company's own GPUs, and cloud/SaaS models (general, large-context, image generation) in external clouds.
-
-This is the "single pane of glass" beat. Everything routes through the gateway; nothing bypasses it.
-
-=== Scene 3 - The bank (1:00-1:30)
-
-On screen: the Fed Aura Capital org chart (asset M3): seven divisions with their headcounts, totaling 80,000 employees.
-
-The point: a bank is not an internet company. Most of the headcount is bankers. Each division touches different data, so each division gets a different slice of the model estate.
+The scale is the hook. Open on the number, not on prose: 80,000 people, seven divisions, every one of them already reaching for AI. The mandate lands in dialogue; the email flash is the evidence, not the opening.
 
 |===
 | Division | Employees
@@ -57,44 +45,48 @@ The point: a bank is not an internet company. Most of the headcount is bankers. 
 | 3,000
 |===
 
-=== Scene 4 - Each person sees only what they are allowed (1:30-2:30)
+=== Scene 2 - One gate for everything (0:45-1:15)
 
-On screen: the {rhoai} Dashboard model catalog, three logins in sequence. Log out, log back in, different models.
+On screen: the architecture diagram (asset M2): 80,000 employees on the left, the Red Hat AI Gateway in the middle, the two model estates on the right - on-prem models on the company's own GPUs, and cloud/SaaS models (general, large-context, image generation) in external clouds.
 
-. As a developer - the coding models plus general purpose
-. As a marketer - the public general model plus the image model
-. As a credit officer - one on-prem general model, nothing else
-. (Optional, ~10s) As an IT admin - all six
+The engineer owns this beat: one gateway in front of everything, and nothing bypasses it. The CIO lands the "single pane of glass" line.
+
+=== Scene 3 - The catalog is the policy (1:15-1:55)
+
+On screen: the {rhoai} Dashboard model catalog. One full login as a developer, then a three-way split-screen card (~8s): the developer's catalog (coding models + general purpose), the marketer's (general purpose + image model), the credit officer's (one on-prem general model).
+
+One login establishes the mechanic; the split screen carries the comparison. No repeated logins - login cycles are dead air.
 
 The platform hides what a user cannot access. No "request access" button, no greyed-out rows. The catalog is the policy.
 
-=== Scene 5 - The admin view (2:30-3:20)
+=== Scene 4 - The admin view (1:55-2:45)
 
 On screen: admin side of the dashboard. Two cuts:
 
 * The subscription list - one per division, human-readable names, visible per-model hourly limits, and a description of what the tier is for.
 * The usage dashboard - consumption per model across the bank. Tokens first; dollars where the platform reports model pricing (see the xref:#the_dollar_display[branch] below).
 
-This is the CIO's dashboard: who is using what, and what it is costing.
+The CIO owns this beat: caps encode the cost model, on-prem is sunk cost, cloud is rented - and spend is visible in dollars.
 
-=== Scene 6 - The developer's day (3:20-4:30)
+=== Scene 5 - The developer's day (2:45-3:15)
 
-On screen: split screen. Left: the {rhoai} Dashboard endpoints page - model name, base URL, the freshly generated API key. Right: a VS Code workbench with the Zoo Code extension.
+On screen: split screen, one cut, ~30 seconds. Left: the {rhoai} Dashboard endpoints page - model name, base URL, the freshly generated API key. Right: a VS Code workbench with the Zoo Code extension.
 
-The developer copies the base URL and key, adds an OpenAI-compatible provider called "Red Hat AI" in Zoo Code, the allowed models populate the dropdown, they write a Python hello world, it runs, and the token meter climbs in real time - input and output counted.
+Copy URL and key, add the "Red Hat AI" OpenAI-compatible provider, the dropdown populates with only the division's allowed models, the token meter climbs in real time - input and output counted. No hello world on camera: the populated dropdown and the live meter are the proof.
 
 This is the payoff: the whole integration is copy-and-paste. The developer never sees a cluster.
 
-=== Scene 7 - Guardrails (4:30-5:00)
+=== Scene 6 - Guardrails and the scoreboard (3:15-4:35)
 
-On screen: a cut card - "55 minutes later..." (asset M5) - then the IT admin, same workbench style as scene 6, mid-generation: the request is rate-limited on the cloud model. The admin switches the dropdown to the on-prem Opus 5.1 and continues, uninterrupted.
+On screen: the "55 minutes later..." cut card (asset M5), then the IT admin mid-generation: the request is rate-limited on the cloud model. The dropdown switches to the on-prem Opus 5.1 and generation continues, uninterrupted.
 
-The cloud budget for this hour was exhausted in real usage; the on-prem model has no such constraint. The video ends on the mandate's promise: one gate, policy decides, the work keeps moving.
+Then the closing beat, and the frame the video ends on: the usage dashboard across all seven divisions - tokens and dollars. The scoreboard: who is using what, what it costs, one gate.
+
+The video ends on the mandate's promise. Closing line: "One gateway. Policy decides. The work keeps moving."
 
 [[the_dollar_display]]
 == The dollar display
-
-Scene 5 wants cost on screen, not just tokens. There are two branches, and the video is not blocked by which one we can use:
+Scene 4 and the scene 6 scoreboard ending want cost on screen, not just tokens. There are two branches, and the video is not blocked by which one we can use:
 
 * *Live*: if the RHOAI 3.6 dashboard reports cost for models with advertised pricing, film it as-is.
 * *Overlay*: if it does not, composite the pre-built cost panel (asset M4 doubles as a style reference; a small SVG overlay is added in the edit) onto the live token dashboard.
@@ -103,51 +95,60 @@ NOTE: Which branch is available must be confirmed on a live RHOAI 3.6 cluster be
 
 == Talk track
 
-Per-scene key messages and must-say points. Not a verbatim script - the narrator carries the tone, these lines carry the content. Total narration budget: ~5 minutes, ~700 spoken words.
+Two presenters in role, in discussion - not narrators reading lines:
 
-=== Scene 1 - The mandate
+* *CIO (Erwan)* - carries the why: the mandate, the cost model, the policy.
+* *Platform engineer (Roberto)* - carries the how: enforcement, integration, proof.
 
-* Key message: shadow AI is a risk problem, and the CIO solved it with a mandate, not a memo.
-* Must say: "Starting next month, every AI conversation in this bank goes through one gateway."
-* Must say: the company will not pay for, or defend, a dozen private subscriptions.
+Total dialogue budget: ~5 minutes, ~700 spoken words. Lines below are cues, not a verbatim script; keep the exchanges natural. The role assignment is swappable.
+
+=== Scene 1 - The bank and the mandate
+
+*CIO:* 80,000 people. Seven divisions. Last quarter, every one of them had an AI subscription we paid for and could not see.
+
+*Engineer:* So no memo. One email - starting next month, every AI conversation in this bank goes through one gateway.
+
+*CIO:* Who sees what - and what they can spend - lives in one place I control. Not buried in application code nobody can audit.
 
 === Scene 2 - One gate for everything
 
-* Key message: one gateway in front of everything - on-prem models we own, and cloud models we rent.
-* Must say: "Single pane of glass": one place to see, control, and bill for all AI usage.
-* Must say: nothing reaches a model without passing the gateway.
+*Engineer:* The whole architecture. On the left, the bank - all users, apps, and agents. On the right, two estates: models we own on our own GPUs, and models we rent from external clouds.
 
-=== Scene 3 - The bank
+*CIO:* And in the middle, the only path. One place to see, control, and bill for all AI usage.
 
-* Key message: 80,000 people, seven divisions, and data sensitivity is the axis that decides everything.
-* Must say: marketing creates content - public models are fine. Credit and risk touch customer financial data - on-prem only.
-* Must say: the policy is per division, and it lives in the platform, not in a wiki page.
+*Engineer:* Nothing reaches a model without passing through it.
 
-=== Scene 4 - Each person sees only what they are allowed
+=== Scene 3 - The catalog is the policy
 
-* Key message: the catalog is the policy. You see what you may use - nothing else exists, from your seat.
-* Must say: no greyed-out models, no "request access" - the platform hides what you cannot use.
-* Must say: the same login that opens the dashboard is what authorizes every API call.
+*Engineer:* Watch the policy become visible. I log in as a developer: the coding models plus general purpose. Nothing else exists from this seat.
 
-=== Scene 5 - The admin view
+*CIO:* A marketer sees the public general model plus the image model. A credit officer gets one on-prem general model - customer data never leaves. The policy is per division, and it lives in the platform, not in a wiki page.
 
-* Key message: the CIO's view - who is using what, how fast, and what it costs.
-* Must say: each division has one subscription with per-model hourly caps; the caps encode the cost model, not the technology.
-* Must say: on-prem is a sunk cost - we own the GPUs - so its caps are generous. Cloud is rented - its caps are tight.
-* Must say: spend is visible in dollars, not just tokens.
+*Engineer:* No greyed-out rows, no request-access button. The catalog is the policy - and the same login that opens the dashboard authorizes every API call.
 
-=== Scene 6 - The developer's day
+=== Scene 4 - The admin view
 
-* Key message: integration is copy-and-paste. Base URL, API key, done.
-* Must say: the developer picks a model from a dropdown that only lists what their division is allowed.
-* Must say: the meter on screen is live - the gateway is counting every token of every request.
+*CIO:* My view. Each division has one subscription with per-model hourly caps. The caps encode the cost model, not the technology.
 
-=== Scene 7 - Guardrails
+*Engineer:* On-prem is a sunk cost - we own the GPUs - so those caps are generous. Cloud is rented, so they are tight. IT runs the platform, so it gets roughly five times the standard caps.
 
-* Key message: when the cloud budget runs out, the work does not stop - it moves on-prem.
-* Must say: the IT admin burned through the cloud model's hourly budget in a real hour of work - the 429 is earned, not staged.
-* Must say: cloud is rented, so it is capped; on-prem is sunk cost, so the fallback has room to run.
-* Closing line: "One gateway. Policy decides. The work keeps moving."
+*CIO:* And spend shows in dollars, not just tokens.
+
+=== Scene 5 - The developer's day
+
+*Engineer:* Integration is copy-and-paste. Base URL, API key, done. The dropdown only lists what the division is allowed - the catalog follows them into the IDE.
+
+*CIO:* And the meter is live. The gateway counts every token of every request.
+
+=== Scene 6 - Guardrails and the scoreboard
+
+*Engineer:* Fifty-five minutes of real work later: the cloud model's hourly budget is gone. That 429 is earned, not staged.
+
+*CIO:* So the work moves. On-prem is sunk cost - the fallback has room to run.
+
+*Engineer:* (switches the dropdown to Opus 5.1; generation continues)
+
+*CIO:* (on the scoreboard) One gateway. Policy decides. The work keeps moving.
 
 == Materials
 
@@ -161,7 +162,7 @@ Five assets go into the video. Each is a hand-editable SVG under `demo/corporate
 
 === M1 - The CIO email
 
-A mock email client window, from the CIO of Fed Aura Capital to all employees. Style: a real mailbox (sender, subject, date), not a poster.
+A mock email client window, from the CIO of Fed Aura Capital to all employees. Style: a real mailbox (sender, subject, date), not a poster. Appears in scene 1 as a ~3-second B-roll flash - the verdict, not the opening.
 
 Content (keep under 120 words):
 
@@ -196,7 +197,7 @@ The visual rule: there is exactly one line between the bank and any model, and i
 
 === M3 - Org chart and headcount
 
-A flat org chart (bank, then seven boxes) with headcount and percent per division, using the scene 3 table (Sales 30,000 / Branch 20,000 / Credit 10,000 / Developers 8,000 / IT 5,000 / Risk 4,000 / Marketing 3,000). Total labeled 80,000.
+A flat org chart (bank, then seven boxes) with headcount and percent per division, using the scene 1 table (Sales 30,000 / Branch 20,000 / Credit 10,000 / Developers 8,000 / IT 5,000 / Risk 4,000 / Marketing 3,000). Total labeled 80,000. This is the opening asset.
 
 Optionally annotate each box with its data-sensitivity class: *public-facing* (Sales, Marketing, Branch), *sensitive* (Credit, Risk), *technical* (Developers, IT).
 
@@ -204,7 +205,7 @@ Optionally annotate each box with its data-sensitivity class: *public-facing* (S
 
 A 7x6 grid: divisions as rows, the six models as columns, a filled cell where access exists, plus the hourly cap in each filled cell. Source of truth: the xref:#the_access_matrix[access matrix] below - keep the two in sync.
 
-This is the "policy at a glance" frame; it can also serve as the style reference for the scene 5 cost overlay.
+This is the "policy at a glance" frame; it can also serve as the style reference for the scene 4 cost overlay and the scene 6 scoreboard ending.
 
 === M5 - Cut card
 
@@ -385,10 +386,9 @@ All under `demo/corporate-scenario/`:
 | Builds the whole environment: 14 users, 7 groups, the `htpasswd` identity provider, the `cloud-models` namespace, all six LLMInferenceServices, and the MaaS CRDs (model refs, auth policies, subscriptions). `DEMO_PASSWORD='...'` skips the interactive prompt.
 
 | `run-demo.sh`
-| Walks the video beats from the CLI: per-division catalog visibility, one inference request per allowed model, and prints the exact base URL + API key the IDE scene needs (scene 6).
-
+| Walks the video beats from the CLI: per-division catalog visibility, one inference request per allowed model, and prints the exact base URL + API key the IDE scene needs (scene 5).
 | `warmup-cloud-quota.sh`
-| Burns down the cloud model's hourly quota until the next rate-limit window boundary. This is what makes scene 7 true: the 429 on camera is a real, earned exhaustion of a real cap.
+| Burns down the cloud model's hourly quota until the next rate-limit window boundary. This is what makes scene 6 true: the 429 on camera is a real, earned exhaustion of a real cap.
 
 | `verify-fa-cap.sh`
 | The Fed Aura Capital test suite: the full 7x6 access matrix (allow/deny per cell), rate-limit behavior on the cloud models, key multiplication (limits are per subscription, not per credential), and config-drift checks that subscription caps match the matrix above.
@@ -405,8 +405,8 @@ cd demo/corporate-scenario
 ./setup-demo.sh
 
 # the video, in order:
-./run-demo.sh                 # scenes 4-6 (catalogs, admin view, IDE config)
-./warmup-cloud-quota.sh       # prepare scene 7 before the "55 minutes later" cut
+./run-demo.sh                 # scenes 3-5 (catalogs, admin view, IDE config)
+./warmup-cloud-quota.sh       # prepare scene 6 before the "55 minutes later" cut
 ./verify-fa-cap.sh            # prove the whole matrix holds
 ./cleanup-demo.sh             # when done
 ----
