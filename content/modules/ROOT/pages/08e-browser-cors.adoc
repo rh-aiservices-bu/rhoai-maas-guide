@@ -130,9 +130,36 @@ curl -sS -o /dev/null -w '%{http_code}\n' "https://<HOST>/v1/models" \
 
 Then the browser: point the chat UI at `https://<HOST>` with a MaaS key, click _Test connection_. Expect "Connected -- N model(s)".
 
-== Caveats and Rollback
+== Undo
+
+One resource, one delete. The procedure on this page changed nothing else -- auth, routes, and policies are untouched -- and nothing re-creates the filter afterwards: `setup-maas.sh` never applies `manifests/99-cors/`, and `cleanup-maas.sh` never deletes it, so the whole lifecycle is manual.
+
+. *Check whether the filter is currently active.* Resource existence is not proof -- a silent NACK leaves the EnvoyFilter in place but ineffective. The preflight is answered before auth, so an unauthenticated `OPTIONS` is the cleanest probe: 204 means the filter is live, 401 means stock gateway behavior:
++
+[source,bash]
+----
+oc get envoyfilter maas-cors-headers -n openshift-ingress
+
+# 204 = filter live, 401 = stock behavior (no CORS)
+curl -sS -o /dev/null -w '%{http_code}\n' -X OPTIONS "https://<HOST>/v1/chat/completions" \
+  -H "Origin: <ALLOWED_ORIGIN>" \
+  -H "Access-Control-Request-Method: POST"
+----
+
+. *Delete it:*
++
+[source,bash]
+----
+oc delete envoyfilter maas-cors-headers -n openshift-ingress
+----
+
+. *Verify the rollback.* Re-run the probe: expect 401 again -- the auth chain answering preflights, exactly the stock behavior from the top of this page. Re-run the three checks in the Verify section: expect no `access-control-allow-origin` on any response. The xDS config push is immediate; no pod restarts needed.
+
+* *Access ends immediately.* Browsers cache preflight decisions for up to 24h (`access-control-max-age`), but a cached preflight grants nothing after the delete: real responses stop carrying CORS headers, so the browser blocks them regardless. Cross-origin access ends as soon as the gateway stops emitting the headers.
+* *Outlives teardown.* A full `cleanup-maas.sh` run leaves `maas-cors-headers` (with `*` CORS) sitting in `openshift-ingress` on an otherwise torn-down gateway -- delete it manually if you want the cluster clean. Platform upgrades do not re-create it: the MaaS controller re-applies only its own filters (such as `authorino-tls-bootstrap`), never this one.
+
+== Caveats
 
 * *Silent NACK:* if the listener update is rejected, Envoy keeps its last-known-good config -- the EnvoyFilter resource still exists but CORS never appears. Check `oc logs -n openshift-ingress deploy/maas-default-gateway-openshift-default -c istio-proxy` for config rejections before concluding the filter applied.
 * *Controller reconcile:* the MaaS controller manages EnvoyFilters on this gateway (it creates the `authorino-tls-bootstrap` one itself) and may re-apply its own set on upgrade -- re-check after platform upgrades.
 * *If chat requests break:* remove the filter first (`oc delete envoyfilter maas-cors-headers -n openshift-ingress`) -- the MaaS disconnected setup shows the gateway falls back to deny-all when its WASM filter fails, so filter-chain interference is the prime suspect.
-* *Rollback:* `oc delete envoyfilter maas-cors-headers -n openshift-ingress`. Nothing else was changed -- auth, routes, and policies are untouched by design.
