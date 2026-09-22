@@ -1,0 +1,51 @@
+# CORS for the MaaS gateway — answers preflights before auth filters run and
+# tags every response with CORS headers. Docs: content/modules/ROOT/pages/08e-browser-cors.adoc
+# (page mirrors this spec — update both together). Verified end-to-end 2026-09-22, RHOAI 3.5.1.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: maas-cors-headers
+  namespace: openshift-ingress
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: maas-default-gateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+    patch:
+      operation: INSERT_FIRST
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          default_source_code:
+            inline_string: |
+              function envoy_on_request(request_handle)
+                local method = request_handle:headers():get(":method")
+                if method == "OPTIONS" and request_handle:headers():get("access-control-request-method") then
+                  -- CORS preflight: answer here, before auth filters run
+                  request_handle:respond({
+                    [":status"] = "204",
+                    ["access-control-allow-origin"] = "*",
+                    ["access-control-allow-methods"] = "GET, POST, OPTIONS",
+                    ["access-control-allow-headers"] = request_handle:headers():get("access-control-request-headers") or "authorization, content-type",
+                    ["access-control-max-age"] = "86400"
+                  })
+                end
+              end
+              function envoy_on_response(response_handle)
+                -- CORS headers on every response (200/401/429/...) — but only
+                -- when the upstream did not already send them (OpenAI-compatible
+                -- upstreams like LiteLLM run their own CORSMiddleware; adding
+                -- again would merge into an invalid multi-value header)
+                if not response_handle:headers():get("access-control-allow-origin") then
+                  response_handle:headers():add("access-control-allow-origin", "*")
+                  response_handle:headers():add("access-control-expose-headers", "x-request-id, retry-after")
+                end
+              end
