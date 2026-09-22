@@ -1,0 +1,138 @@
+= Browser Access (CORS)
+
+Calling the {maas} gateway directly from a browser -- pointing a browser-based chat UI at `https://<gateway-host>` with a MaaS API key -- fails out of the box: the gateway's auth chain answers CORS preflights with 401, and success responses carry no CORS headers. This page shows the one EnvoyFilter that fixes both.
+
+TIP: Prerequisites: cluster-admin access on the MaaS cluster, at least one model deployed (local or external), and a MaaS API key. A key comes from `POST /maas-api/v1/api-keys` with your OpenShift token.
+
+IMPORTANT: Status: undocumented and unsupported in RHOAI/Kuadrant docs -- but verified end-to-end on a live cluster (2026-09-22, {rhoai-short} 3.5.1 + MaaS from this repo's `setup-maas.sh`): all three CORS checks pass and the browser flow was confirmed working. Model-agnostic: the same gateway reconfiguration works for local models, external models, and the `/maas-api/*` control plane. No AuthPolicy changes -- authentication is untouched.
+
+== What Has to Happen for CORS to Work
+
+Three things, all on the gateway:
+
+. *Preflights must be answered before the auth filters run.* Browsers never send `Authorization` on a CORS preflight (fetch spec: preflights are credentialless). The {maas} gateway's auth chain (Kuadrant WASM -> Authorino ext-authz) answers `OPTIONS` with 401 before any CORS handling:
++
+[source,bash]
+----
+$ curl -i -X OPTIONS "https://<HOST>/v1/chat/completions" \
+    -H "Origin: https://<your-app>" \
+    -H "Access-Control-Request-Method: POST" \
+    -H "Access-Control-Request-Headers: authorization, content-type"
+HTTP/2 401
+www-authenticate: request.headers.authorization realm="api-keys"
+www-authenticate: Bearer realm="kubernetes-tokens"
+x-ext-auth-reason: Authentication required
+----
+
+. *Actual responses must carry CORS headers.* A preflight alone is not enough -- the browser also validates every real response (`200`, `401`, `429`, ...). No `access-control-allow-origin` on a response means the browser blocks it from JavaScript.
+
+. *Never add a second set of CORS headers.* OpenAI-compatible upstreams (LiteLLM-style) often run permissive CORSMiddleware and already emit `access-control-allow-origin` (plus `access-control-allow-credentials: true`). Adding another one merges into `access-control-allow-origin: *,*`, which browsers treat as invalid. Verified on-cluster 2026-09-22 -- an unguarded `headers():add()` produced exactly that.
+
+== How to Reconfigure the Gateway
+
+One EnvoyFilter. A Lua filter inserted *FIRST* in the gateway's HTTP filter chain -- before the Kuadrant WASM/ext-authz filters -- does both jobs: it answers preflights itself (auth never sees them) and adds CORS headers to responses that the upstream did not already decorate. No AuthPolicy changes, no auth touched.
+
+The applied, verified manifest is link:{repo-url}/blob/main/manifests/99-cors/envoyfilter-cors.yaml[manifests/99-cors/envoyfilter-cors.yaml] in the repo. The block below mirrors it -- if the filter changes, update both together.
+
+[source,yaml]
+----
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: maas-cors-headers
+  namespace: openshift-ingress
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: maas-default-gateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+    patch:
+      operation: INSERT_FIRST
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          default_source_code:
+            inline_string: |
+              function envoy_on_request(request_handle)
+                local method = request_handle:headers():get(":method")
+                if method == "OPTIONS" and request_handle:headers():get("access-control-request-method") then
+                  -- CORS preflight: answer here, before auth filters run
+                  request_handle:respond({
+                    [":status"] = "204",
+                    ["access-control-allow-origin"] = "*",
+                    ["access-control-allow-methods"] = "GET, POST, OPTIONS",
+                    ["access-control-allow-headers"] = request_handle:headers():get("access-control-request-headers") or "authorization, content-type",
+                    ["access-control-max-age"] = "86400"
+                  })
+                end
+              end
+              function envoy_on_response(response_handle)
+                -- CORS headers on every response (200/401/429/...) — but only
+                -- when the upstream did not already send them (OpenAI-compatible
+                -- upstreams like LiteLLM run their own CORSMiddleware; adding
+                -- again would merge into an invalid multi-value header)
+                if not response_handle:headers():get("access-control-allow-origin") then
+                  response_handle:headers():add("access-control-allow-origin", "*")
+                  response_handle:headers():add("access-control-expose-headers", "x-request-id, retry-after")
+                end
+              end
+----
+
+Apply from the repository root:
+
+[source,bash]
+----
+oc apply -f manifests/99-cors/envoyfilter-cors.yaml
+----
+
+Three properties make this work:
+
+* *`operation: INSERT_FIRST`* -- the Lua filter sits ahead of the Kuadrant ext-authz/WASM filters, so preflights are answered before auth can 401 them, and every response that comes back passes through the Lua `on_response` (including auth-generated 401s, which the upstream never sees).
+* *The `workloadSelector` matches the gateway pods* -- verify the label with `oc get pod -n openshift-ingress --show-labels`. The generic `istio: ingressgateway` label would hit every gateway on the node.
+* *The guard in `on_response`* -- only add CORS headers the upstream did not already send.
+
+On anything shared, pin `access-control-allow-origin` to the real origin instead of `*` (both in the preflight `respond()` and in `on_response`).
+
+== Why Not the Alternatives
+
+* *Native `envoy.filters.http.cors` filter* (VIRTUAL_HOST/ROUTE `typed_per_filter_config` CorsPolicy): works -- Istio ships it -- but its position in the filter chain is not controllable. If the Kuadrant ext-authz filter is inserted before it, preflights 401 before the cors filter ever sees them. Lua `INSERT_FIRST` guarantees ordering. (`header_mutation` was also considered: it mutates headers but cannot answer preflights with local replies.)
+* *AuthPolicy with an anonymous rule gated to OPTIONS* (`when: predicate: "request.method == 'OPTIONS'"` -- documented Kuadrant syntax, `predicate` per the Authorino 1.5.x features doc): only worth it if EnvoyFilters are blocked on your gateway. It is risky: the MaaS AuthPolicy on this setup is *Gateway-targeting* (`maas-gateway-auth` in `openshift-ingress`), and a route-level policy may REPLACE the gateway defaults for that route rather than OR-combine -- the CRD says gateway `defaults` are enforced on "routes that lack a more specific policy attached to". If it replaces, non-OPTIONS requests have no active authentication rules -> anonymous access -> the route silently opens. If you must, target the specific model HTTPRoute, then *MANDATORY:* verify an unauthenticated request still returns 401 and roll back (`oc delete authpolicy allow-cors-preflight -n <HTTPROUTE_NS>`) if it does not.
+* *Authorino response headers* (`rules.response.unauthenticated.headers` -- documented CRD fields): makes the 401 carry CORS headers (error bodies readable in-browser) but NOT success responses -- the CRD's `response.success.headers` are "wrapped as HTTP headers to be injected in the request" (the upstream request, not the client response). Success-response CORS needs the EnvoyFilter or a permissive upstream.
+
+== Verify
+
+[source,bash]
+----
+# 1. Preflight: expect 204 WITH a single access-control-allow-origin
+curl -sS -o /dev/null -D - -X OPTIONS "https://<HOST>/v1/chat/completions" \
+  -H "Origin: <ALLOWED_ORIGIN>" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization, content-type" | tr -d '\r'
+
+# 2. Actual request WITH a key: expect 200 + CORS headers
+curl -sS -o /dev/null -D - "https://<HOST>/v1/models" \
+  -H "Origin: <ALLOWED_ORIGIN>" \
+  -H "Authorization: Bearer <MAAS_KEY>" | tr -d '\r'
+
+# 3. Actual request WITHOUT a key: expect 401 (auth untouched -- a 200 means
+#    something else opened the route)
+curl -sS -o /dev/null -w '%{http_code}\n' "https://<HOST>/v1/models" \
+  -H "Origin: <ALLOWED_ORIGIN>"
+----
+
+Then the browser: point the chat UI at `https://<HOST>` with a MaaS key, click _Test connection_. Expect "Connected -- N model(s)".
+
+== Caveats and Rollback
+
+* *Silent NACK:* if the listener update is rejected, Envoy keeps its last-known-good config -- the EnvoyFilter resource still exists but CORS never appears. Check `oc logs -n openshift-ingress deploy/maas-default-gateway-openshift-default -c istio-proxy` for config rejections before concluding the filter applied.
+* *Controller reconcile:* the MaaS controller manages EnvoyFilters on this gateway (it creates the `authorino-tls-bootstrap` one itself) and may re-apply its own set on upgrade -- re-check after platform upgrades.
+* *If chat requests break:* remove the filter first (`oc delete envoyfilter maas-cors-headers -n openshift-ingress`) -- the MaaS disconnected setup shows the gateway falls back to deny-all when its WASM filter fails, so filter-chain interference is the prime suspect.
+* *Rollback:* `oc delete envoyfilter maas-cors-headers -n openshift-ingress`. Nothing else was changed -- auth, routes, and policies are untouched by design.
