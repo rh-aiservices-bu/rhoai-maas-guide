@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
         - name: minio
-          image: quay.io/minio/minio:latest
+          image: quay.io/rh-aiservices-bu/minio:RELEASE.2025-09-07T16-13-09Z
           command:
             - minio
             - server
@@ -79,7 +79,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: quay.io/minio/mc:latest
+          image: quay.io/rh-aiservices-bu/mc:latest
           env:
             - name: HOME
               value: /tmp
