@@ -79,7 +79,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: quay.io/minio/mc:latest
+          image: quay.io/rh-aiservices-bu/mc:latest
           env:
             - name: HOME
               value: /tmp
