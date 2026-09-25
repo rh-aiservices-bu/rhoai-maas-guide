@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RHOAI MaaS — System Architecture Visualizer</title>
+<link rel="stylesheet" href="https://noyitz.github.io/flowstory/templates/style.css">
+</head>
+<body>
+<button class="fs-theme-toggle" id="fs-theme">&#9790;</button>
+<div class="fs-brand" id="fs-brand"></div>
+<div class="fs-title" id="fs-title"></div>
+<div class="fs-panel">
+  <div class="fs-flow-bar">
+    <select id="fs-flow-select"></select>
+    <button class="fs-start" id="fs-play">&#9654; Start</button>
+    <button id="fs-speed">1x</button>
+    <button id="fs-loop">&#8635; Loop</button>
+    <button class="fs-reset" id="fs-reset">Reset</button>
+  </div>
+  <div class="fs-steps" id="fs-steps">
+    <div class="fs-steps-title">Flow Steps</div>
+    <div id="fs-steps-container"></div>
+  </div>
+</div>
+<div id="fs-highlight-box" style="display:none;position:fixed;z-index:350;border-radius:10px;pointer-events:none"></div>
+<div id="fs-overlay" onclick="if(event.target===this)window.__flowstory?.closeOverlay()" style="display:none;position:fixed;top:0;left:0;right:380px;bottom:0;z-index:300;background:rgba(0,0,0,0.6)">
+  <div id="fs-overlay-card" style="position:absolute;background:#161b22ee;border:1px solid #30363d;border-radius:14px;max-width:460px;padding:22px 26px;box-shadow:0 12px 40px rgba(0,0,0,0.5);transition:opacity .2s">
+    <button onclick="window.__flowstory?.closeOverlay()" style="position:absolute;top:10px;right:14px;background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px">&#10005;</button>
+    <div id="fs-overlay-accent" style="width:4px;height:24px;border-radius:2px;position:absolute;left:0;top:22px"></div>
+    <h2 id="fs-overlay-title" style="margin:0 0 6px;font-size:18px;color:#c9d1d9;font-family:system-ui"></h2>
+    <p id="fs-overlay-desc" style="margin:0 0 14px;font-size:13px;color:#8b949e;line-height:1.5;font-family:system-ui"></p>
+    <div id="fs-overlay-details" style="font-size:12px;font-family:'SF Mono',Menlo,monospace"></div>
+    <button onclick="window.__flowstory?.closeOverlay()" style="margin-top:14px;padding:7px 20px;border:1px solid #3fb950;border-radius:8px;background:transparent;color:#3fb950;font-size:13px;cursor:pointer;font-family:system-ui">&#9654; Resume Flow</button>
+  </div>
+</div>
+<div class="fs-legend" id="fs-legend"></div>
+<canvas id="fs-canvas"></canvas>
+<script type="module">
+import { FlowStory } from 'https://noyitz.github.io/flowstory/src/index.js';
+
+const viz = new FlowStory(document.getElementById('fs-canvas'), {
+  panelElement: document.querySelector('.fs-panel'),
+  flowSelect: document.getElementById('fs-flow-select'),
+  playBtn: document.getElementById('fs-play'),
+  speedBtn: document.getElementById('fs-speed'),
+  loopBtn: document.getElementById('fs-loop'),
+  resetBtn: document.getElementById('fs-reset'),
+  stepsContainer: document.getElementById('fs-steps-container'),
+  overlayElement: document.getElementById('fs-overlay'),
+  overlayCard: document.getElementById('fs-overlay-card'),
+  overlayTitle: document.getElementById('fs-overlay-title'),
+  overlayDesc: document.getElementById('fs-overlay-desc'),
+  overlayDetails: document.getElementById('fs-overlay-details'),
+  overlayAccent: document.getElementById('fs-overlay-accent'),
+  highlightBox: document.getElementById('fs-highlight-box'),
+  brandElement: document.getElementById('fs-brand'),
+  titleElement: document.getElementById('fs-title'),
+  legendElement: document.getElementById('fs-legend'),
+  themeBtn: document.getElementById('fs-theme')
+});
+
+window.__flowstory = viz;
+
+const diagram = {
+  "meta": {
+    "title": "RHOAI MaaS — System Architecture Visualizer",
+    "author": "rhoai-maas-guide",
+    "branding": {
+      "logo": "",
+      "title": "Red Hat OpenShift AI — MaaS"
+    }
+  },
+  "canvas": { "width": 1500, "height": 1060 },
+  "nodes": {
+    "admin":  { "x": -40, "y": 110, "w": 130, "h": 50, "label": "Cluster Admin", "type": "icon" },
+    "caller": { "x": -40, "y": 800, "w": 130, "h": 50, "label": "App / User",    "type": "icon" },
+
+    "cluster": { "x": 110, "y": 20, "w": 1360, "h": 995, "type": "boundary", "label": "OpenShift Cluster · RHOAI 3.5+" },
+
+    "c_olm": { "x": 135, "y": 55, "w": 460, "h": 150, "type": "container", "label": "OLM Operators (cluster-wide)", "color": "#58a6ff" },
+    "op_rhods":   { "x": 155, "y": 90,  "w": 200, "h": 34, "label": "rhods-operator", "sublabel": "redhat-ods-operator ns", "color": "#58a6ff", "fontSize": 12 },
+    "op_rhcl":    { "x": 155, "y": 132, "w": 200, "h": 44, "label": "RHCL (Kuadrant bundle)", "sublabel": "Authorino + Limitador + DNS", "color": "#58a6ff", "fontSize": 12 },
+    "op_certmgr": { "x": 375, "y": 90,  "w": 200, "h": 34, "label": "cert-manager", "sublabel": "+ OpenShift Serverless", "color": "#58a6ff", "fontSize": 12 },
+    "op_lws":     { "x": 375, "y": 132, "w": 200, "h": 44, "label": "LeaderWorkerSet", "sublabel": "+ OpenShift Pipelines", "color": "#58a6ff", "fontSize": 12 },
+
+    "c_dsc": { "x": 615, "y": 55, "w": 340, "h": 150, "type": "container", "label": "Cluster-Scoped Config", "color": "#d2a8ff" },
+    "n_dsci": { "x": 635, "y": 90,  "w": 300, "h": 34, "label": "DSCInitialization", "sublabel": "default-dsci", "color": "#d2a8ff", "fontSize": 12 },
+    "n_dsc":  { "x": 635, "y": 134, "w": 300, "h": 56, "label": "DataScienceCluster", "sublabel": "default-dsc — admin edits spec.components", "color": "#d2a8ff", "fontSize": 13 },
+
+    "n_crdgroups": { "x": 975, "y": 55, "w": 480, "h": 150, "label": "CRD API Groups", "sublabel": "4 API groups \u2014 click for the full list", "color": "#8b949e", "fontSize": 12 },
+
+    "c_modules": { "x": 135, "y": 225, "w": 1335, "h": 240, "type": "container", "label": "Component Modules — reconciled in batches by runlevel", "color": "#ffa657" },
+    "c_batch32": { "x": 160, "y": 265, "w": 460, "h": 170, "type": "container", "label": "runlevel 32 (all-or-nothing batch)", "color": "#f85149" },
+    "m_aigateway": { "x": 180, "y": 300, "w": 420, "h": 44, "label": "aigateway", "sublabel": "→ MaaS control plane", "color": "#ffa657", "fontSize": 13 },
+    "m_mlflow":    { "x": 180, "y": 352, "w": 200, "h": 44, "label": "mlflowoperator", "color": "#ffa657", "fontSize": 13 },
+    "m_ogx":       { "x": 400, "y": 352, "w": 200, "h": 44, "label": "ogx", "sublabel": "→ GenAI Studio / Playground", "color": "#ffa657", "fontSize": 13 },
+
+    "m_kserve":       { "x": 645, "y": 265, "w": 170, "h": 36, "label": "kserve", "color": "#ffa657", "fontSize": 13 },
+    "m_dashboard":    { "x": 645, "y": 308, "w": 170, "h": 36, "label": "dashboard", "color": "#ffa657", "fontSize": 13 },
+    "m_workbenches":  { "x": 645, "y": 351, "w": 170, "h": 36, "label": "workbenches", "color": "#ffa657", "fontSize": 12 },
+    "m_modelregistry":{ "x": 830, "y": 265, "w": 170, "h": 36, "label": "modelregistry", "color": "#ffa657", "fontSize": 12 },
+    "m_trainingray":  { "x": 830, "y": 308, "w": 170, "h": 36, "label": "ray / trainingoperator", "color": "#ffa657", "fontSize": 11 },
+    "m_trustyai":     { "x": 830, "y": 351, "w": 170, "h": 36, "label": "trustyai / feastoperator", "color": "#ffa657", "fontSize": 11 },
+
+    "n_batchnote": { "x": 1015, "y": 265, "w": 440, "h": 170, "label": "\u26a0 Batch semantics", "sublabel": "1 failing module aborts the WHOLE batch \u2014 click for details", "color": "#f85149", "fontSize": 11 },
+
+    "c_maasctrl": { "x": 135, "y": 485, "w": 1335, "h": 240, "type": "container", "label": "MaaS Control Plane", "color": "#39c5cf" },
+    "ns_gwinfra": { "x": 160, "y": 520, "w": 260, "h": 90, "type": "container", "label": "ns: redhat-ai-gateway-infra" },
+    "n_maasapi":  { "x": 175, "y": 555, "w": 230, "h": 44, "label": "maas-api", "sublabel": "/v1/models · /v1/api-keys", "color": "#39c5cf", "fontSize": 13 },
+
+    "ns_odhapps": { "x": 440, "y": 520, "w": 290, "h": 180, "type": "container", "label": "ns: redhat-ods-applications" },
+    "n_maascontroller": { "x": 455, "y": 555, "w": 260, "h": 40, "label": "maas-controller", "sublabel": "reconciles MaaS CRDs", "color": "#39c5cf", "fontSize": 13 },
+    "n_maasui":          { "x": 455, "y": 600, "w": 260, "h": 34, "label": "maas-ui", "color": "#39c5cf", "fontSize": 12 },
+    "n_dashboardpod":    { "x": 455, "y": 640, "w": 260, "h": 34, "label": "rhods-dashboard", "color": "#39c5cf", "fontSize": 12 },
+
+    "ns_maas": { "x": 750, "y": 520, "w": 360, "h": 180, "type": "container", "label": "ns: models-as-a-service" },
+    "n_config":       { "x": 765, "y": 555, "w": 330, "h": 34, "label": "Config / AITenant CR", "sublabel": "auto-created by maas-controller", "color": "#39c5cf", "fontSize": 12 },
+    "n_mmr":          { "x": 765, "y": 595, "w": 155, "h": 44, "label": "MaaSModelRef", "color": "#39c5cf", "fontSize": 12 },
+    "n_authpolicy":   { "x": 935, "y": 595, "w": 160, "h": 44, "label": "MaaSAuthPolicy", "color": "#39c5cf", "fontSize": 12 },
+    "n_subscription": { "x": 765, "y": 645, "w": 330, "h": 34, "label": "MaaSSubscription", "sublabel": "tier + rate limit + priority", "color": "#39c5cf", "fontSize": 12 },
+
+    "n_postgres": { "x": 1130, "y": 555, "w": 200, "h": 60, "label": "PostgreSQL", "sublabel": "API keys · usage", "color": "#39c5cf", "fontSize": 14 },
+
+    "c_dataplane": { "x": 135, "y": 745, "w": 1335, "h": 170, "type": "container", "label": "Data Plane — per inference request", "color": "#3fb950" },
+    "ns_ingress": { "x": 160, "y": 780, "w": 560, "h": 120, "type": "container", "label": "ns: openshift-ingress" },
+    "n_gateway":   { "x": 175, "y": 815, "w": 160, "h": 44, "label": "Gateway (Envoy)", "color": "#3fb950", "fontSize": 13 },
+    "n_authorino": { "x": 350, "y": 815, "w": 160, "h": 44, "label": "Authorino", "color": "#3fb950", "fontSize": 14 },
+    "n_limitador": { "x": 525, "y": 815, "w": 160, "h": 44, "label": "Limitador", "color": "#3fb950", "fontSize": 14 },
+
+    "ns_model": { "x": 750, "y": 780, "w": 280, "h": 120, "type": "container", "label": "ns: llm (example model ns)" },
+    "n_kservepod": { "x": 765, "y": 815, "w": 250, "h": 50, "label": "LLMInferenceService pod", "sublabel": "vLLM", "color": "#3fb950", "fontSize": 13 },
+
+    "c_extras": { "x": 135, "y": 935, "w": 1335, "h": 60, "type": "container", "label": "Optional Extensions (Phases 7-9 — see install-flow.html)", "color": "#6e7681" },
+    "n_obs":   { "x": 155,  "y": 960, "w": 420, "h": 28, "label": "Observability: Tempo · OTel · Loki · COO", "color": "#6e7681", "fontSize": 11 },
+    "n_ext2":  { "x": 590,  "y": 960, "w": 420, "h": 28, "label": "External Models: ExternalProvider (OpenAI/Gemini/Bedrock)", "color": "#6e7681", "fontSize": 11 },
+    "n_oidc2": { "x": 1025, "y": 960, "w": 420, "h": 28, "label": "External OIDC: Keycloak + AITenant patch", "color": "#6e7681", "fontSize": 11 }
+  },
+  "tooltips": {
+    "admin": {
+      "title": "Cluster Admin",
+      "description": "The operator running the installation and day-2 configuration — typically via scripts/setup-maas.sh or the /install-maas skill.",
+      "details": [["Script", "scripts/setup-maas.sh"], ["Access", "cluster-admin"]]
+    },
+    "caller": {
+      "title": "App / End User",
+      "description": "A client application calling the OpenAI-compatible endpoint with an sk-oai-* API key.",
+      "details": [["API", "POST /v1/chat/completions"], ["Auth", "Authorization: Bearer sk-oai-..."]]
+    },
+    "op_rhods": {
+      "title": "rhods-operator",
+      "description": "The Red Hat OpenShift AI operator. Installed via OLM subscription (channel stable-3.x). Owns the DataScienceCluster and DSCInitialization CRDs and reconciles every component listed in spec.components.",
+      "details": [["Namespace", "redhat-ods-operator"], ["Check", "oc get csv -n redhat-ods-operator"]]
+    },
+    "op_rhcl": {
+      "title": "RHCL (Red Hat Connectivity Link)",
+      "description": "Installs the Kuadrant control plane bundle: authorino-operator, limitador-operator, dns-operator, and rhcl-operator itself. Cluster-wide (AllNamespaces) install mode.",
+      "details": [["Deploys", "Kuadrant, Authorino, Limitador"]],
+      "links": [["Kuadrant Docs", "https://docs.kuadrant.io"]]
+    },
+    "op_certmgr": {
+      "title": "cert-manager + OpenShift Serverless",
+      "description": "cert-manager provides TLS automation for Authorino's serving certs and the Gateway. OpenShift Serverless (Knative) backs some KServe serving modes.",
+      "details": [["Manifest", "manifests/01-prerequisites/operators/cert-manager/"]]
+    },
+    "op_lws": {
+      "title": "LeaderWorkerSet + OpenShift Pipelines",
+      "description": "LeaderWorkerSet coordinates multi-pod prefill/decode disaggregated serving. OpenShift Pipelines (Tekton) is a transitive dependency pulled in by the RHCL bundle.",
+      "details": [["Manifest", "manifests/01-prerequisites/operators/leader-worker-set/"]]
+    },
+    "n_dsci": {
+      "title": "DSCInitialization",
+      "description": "Cluster-wide RHOAI initialization object: applications namespace, monitoring stack, trusted CA bundle. Applied once, before the DataScienceCluster.",
+      "details": [["Manifest", "manifests/04-rhoai-config/dscinitialization.yaml"]]
+    },
+    "n_dsc": {
+      "title": "DataScienceCluster (default-dsc)",
+      "description": "The central feature-toggle object. Every entry under spec.components (aigateway, kserve, ogx, mlflowoperator, dashboard, workbenches, ...) tells rhods-operator which Module controllers to run and with what config.",
+      "details": [
+        ["Manifest (3.5)", "manifests/04-rhoai-config/datasciencecluster.yaml"],
+        ["Check Ready", "oc get datasciencecluster default-dsc -o jsonpath='{.status.conditions[?(@.type==\"Ready\")]}'"],
+        ["Gotcha", "Omitted/legacy fields can still default to Managed and silently conflict with new ones — see the Batch Failure flow"]
+      ]
+    },
+    "n_crdgroups": {
+      "title": "CRD API Groups",
+      "description": "Everything MaaS touches lives under one of four CRD groups. These per-component CRDs (components.platform.opendatahub.io) are created dynamically by the operator itself, NOT installed from the CSV by OLM — so they can be legitimately missing until the owning module finishes reconciling.",
+      "details": [
+        ["components.platform.*", "AIGateway, KServe, OGX, MLflowOperator, ... (one CRD per DSC component)"],
+        ["maas.opendatahub.io", "MaaSModelRef, MaaSAuthPolicy, MaaSSubscription, Config, AITenant"],
+        ["services.platform.*", "GatewayConfig, Auth, Monitoring"],
+        ["inference.opendatahub.io", "ExternalProvider (3.5+)"],
+        ["Check installed CRDs", "oc get crd | grep -E 'opendatahub.io|maas'"],
+        ["Symptom if missing", "no matches for kind \"X\" in version \"...opendatahub.io/v1alpha1\""]
+      ]
+    },
+    "m_aigateway": {
+      "title": "aigateway module",
+      "description": "The MaaS modularization path (RHOAI 3.5+), replacing the deprecated kserve.modelsAsService field. When Managed, provisions maas-controller, maas-api, and the governance CRDs.",
+      "details": [
+        ["DSC field", "spec.components.aigateway.modelsAsAService.managementState: Managed"],
+        ["Status condition", "AIGatewayReady / ModelsAsAServiceReady"]
+      ]
+    },
+    "m_mlflow": {
+      "title": "mlflowoperator module",
+      "description": "Provisions MLflow experiment tracking, reconciled in the same runlevel-32 batch as aigateway and ogx.",
+      "details": [["Status condition", "MLflowOperatorReady"]]
+    },
+    "m_ogx": {
+      "title": "ogx module",
+      "description": "Renamed from llamastackoperator in 3.5. Backs the GenAI Studio / AI Playground feature. Must NOT be Managed at the same time as the old llamastackoperator field.",
+      "details": [
+        ["Status condition", "OGXReady"],
+        ["Known failure", "\"LlamaStackOperator is set to Managed; it has been deprecated, set it to Removed before enabling OGX\""]
+      ]
+    },
+    "m_kserve": {
+      "title": "kserve module",
+      "description": "Model-serving controller. Owns InferenceService/LLMInferenceService CRDs and the vLLM runtime pods. Reconciled independently of the runlevel-32 batch.",
+      "details": [["Status condition", "KserveReady"]]
+    },
+    "m_dashboard": {
+      "title": "dashboard module",
+      "description": "The RHOAI web console (odh-dashboard). Reads OdhDashboardConfig flags like modelAsService and externalModels to decide which UI tabs to show.",
+      "details": [["Manifest", "manifests/04-rhoai-config/odh-dashboard-config.yaml"]]
+    },
+    "m_workbenches": {
+      "title": "workbenches module",
+      "description": "Jupyter notebook workbenches for data scientists — unrelated to MaaS serving, listed here for completeness of the DSC component set.",
+      "details": [["Status condition", "WorkbenchesReady"]]
+    },
+    "m_modelregistry": {
+      "title": "modelregistry module",
+      "description": "Central catalog of registered models and versions across the cluster.",
+      "details": [["Status condition", "ModelRegistryReady"]]
+    },
+    "m_trainingray": {
+      "title": "ray / trainingoperator",
+      "description": "Distributed training and batch compute components — not part of the MaaS serving path.",
+      "details": [["Status condition", "RayReady / TrainingOperatorReady"]]
+    },
+    "m_trustyai": {
+      "title": "trustyai / feastoperator",
+      "description": "Model evaluation (TrustyAI: bias, drift, LMEval) and feature store (Feast) components.",
+      "details": [["Status condition", "TrustyAIReady / FeastOperatorReady"]]
+    },
+    "n_batchnote": {
+      "title": "Runlevel batch semantics",
+      "description": "rhods-operator provisions modules in ordered batches by runlevel (e.g. \"32\"). Modules in the same batch are gated together: if BuildModuleCR fails validation for any one of them, the operator returns an error for the whole reconcile pass and none of that batch's CRDs get installed — not just the failing module's.",
+      "details": [
+        ["Observed log", "\"provisioning failed: module provisioning failed: ogx\""],
+        ["Observed log", "\"module CRDs not yet available, requesting requeue\" (repeats forever until fixed)"],
+        ["Practical impact", "aigateway can look completely unconfigured/broken for a reason that has nothing to do with MaaS"]
+      ]
+    },
+    "n_maasapi": {
+      "title": "maas-api",
+      "description": "Control-plane API server. Serves /v1/models, /v1/api-keys, /internal/v1/api-keys/validate, and /health. Watches MaaSModelRef (all namespaces) and MaaSSubscription (models-as-a-service namespace) via informers, and connects to PostgreSQL on startup.",
+      "details": [
+        ["Namespace (3.5+)", "redhat-ai-gateway-infra"],
+        ["Namespace (3.4)", "redhat-ods-applications"],
+        ["Debug", "oc logs -n redhat-ai-gateway-infra deploy/maas-api"]
+      ]
+    },
+    "n_maascontroller": {
+      "title": "maas-controller",
+      "description": "Reconciles the MaaS-specific CRDs (MaaSModelRef, MaaSAuthPolicy, MaaSSubscription) and auto-creates/maintains the Config (3.5+) or Tenant (3.4) CR. Also mirrors the maas-db-config secret to whichever namespace maas-api runs in, converting hostnames to FQDNs.",
+      "details": [["Namespace", "redhat-ods-applications"]]
+    },
+    "n_maasui": {
+      "title": "maas-ui",
+      "description": "Backend serving the MaaS-specific dashboard pages (API key management, model catalog) embedded in the RHOAI console.",
+      "details": [["Namespace", "redhat-ods-applications"]]
+    },
+    "n_dashboardpod": {
+      "title": "rhods-dashboard",
+      "description": "The main RHOAI web console deployment, gated by the dashboard module and OdhDashboardConfig flags.",
+      "details": [["Namespace", "redhat-ods-applications"]]
+    },
+    "n_config": {
+      "title": "Config / AITenant CR",
+      "description": "Auto-created by maas-controller in the models-as-a-service namespace. Replaces the 3.4 Tenant CR. Deleting it is non-destructive — maas-controller recreates it within seconds (self-healing), but maas-api will restart to pick up the fresh config.",
+      "details": [
+        ["Check (3.5+)", "oc get configs.maas.opendatahub.io -n models-as-a-service"],
+        ["Check (3.4)", "oc get tenant default-tenant -n models-as-a-service"]
+      ]
+    },
+    "n_mmr": {
+      "title": "MaaSModelRef",
+      "description": "Registers one model with the MaaS control plane. Stays Pending until BOTH a MaaSAuthPolicy and a MaaSSubscription reference the same model — these are independent CRDs reconciled separately and must be paired manually.",
+      "details": [["Debug", "oc get maasmodelref -A"]]
+    },
+    "n_authpolicy": {
+      "title": "MaaSAuthPolicy",
+      "description": "Defines WHO may call a model — groups, users, or service accounts.",
+      "details": [["Debug", "oc get maasauthpolicy -A"]]
+    },
+    "n_subscription": {
+      "title": "MaaSSubscription",
+      "description": "Defines HOW MUCH a caller may consume — token rate limits and a priority number. When a caller matches multiple subscriptions on the same model, the highest priority wins; limits are never accumulated.",
+      "details": [["Debug", "oc get maassubscription -A"]]
+    },
+    "n_postgres": {
+      "title": "PostgreSQL",
+      "description": "Backing database for maas-api: hashed API keys, subscription bindings, usage. Must exist and be reachable before maas-api starts, or the pod CrashLoopBackOffs.",
+      "details": [["Manifest", "manifests/03-maas-platform/postgres-deployment.yaml"]]
+    },
+    "n_gateway": {
+      "title": "Gateway (Envoy)",
+      "description": "The Gateway API resource (maas-default-gateway) that all model HTTPRoutes attach to. Backed by Istio via OpenShift's built-in Gateway controller.",
+      "details": [["Namespace", "openshift-ingress"]]
+    },
+    "n_authorino": {
+      "title": "Authorino",
+      "description": "Enforces authentication and authorization at the edge, before any request reaches a model. Validates API keys against maas-api and checks MaaSAuthPolicy subjects.",
+      "details": [["Rejects with", "401 Unauthorized / 403 Forbidden"]]
+    },
+    "n_limitador": {
+      "title": "Limitador",
+      "description": "Enforces rate limiting per the resolved MaaSSubscription's token/request budgets.",
+      "details": [["Rejects with", "429 Too Many Requests"]]
+    },
+    "n_kservepod": {
+      "title": "LLMInferenceService pod (vLLM)",
+      "description": "The actual model server. Internal models run as vLLM pods on-cluster via KServe; external models instead proxy through an ExternalProvider to a third-party API.",
+      "details": [["Manifest pattern", "manifests/05-maas-models/<model>/llm/model.yaml"]]
+    },
+    "n_obs": {
+      "title": "Observability (Phase 7, optional)",
+      "description": "Tempo (traces), OTel Collector, Loki (logs), and the Cluster Observability Operator (dashboards). See install-flow.html for the full phase sequence.",
+      "details": [["Manifest area", "manifests/07-observability/"]]
+    },
+    "n_ext2": {
+      "title": "External Models (Phase 8, optional)",
+      "description": "ExternalProvider + ExternalModel CRDs proxy requests to third-party APIs (OpenAI, Gemini, Bedrock) through the same gateway policy stack as on-cluster models.",
+      "details": [["Manifest area", "manifests/08-external-models/"]]
+    },
+    "n_oidc2": {
+      "title": "External OIDC (Phase 9, optional)",
+      "description": "Keycloak (or a corporate IdP) plus an AITenant patch so external group claims map to MaaSAuthPolicy subjects.",
+      "details": [["Manifest area", "manifests/09-external-oidc/"]]
+    }
+  },
+  "flows": {
+    "layers": {
+      "label": "System Architecture (Layers)",
+      "steps": [
+        { "text": "1. Cluster-admin installs OLM operators cluster-wide", "mode": "arrow", "from": "admin", "to": "c_olm", "color": "#58a6ff", "num": 1, "glow": "c_olm" },
+        { "text": "2. rhods-operator installed — provides DataScienceCluster/DSCInitialization CRDs", "mode": "lightup", "target": "op_rhods", "badge": 2 },
+        { "text": "3. RHCL bundle installed — Authorino + Limitador + DNS operator (Kuadrant control plane)", "mode": "lightup", "target": "op_rhcl", "badge": 3 },
+        { "text": "4. cert-manager + OpenShift Serverless installed", "mode": "lightup", "target": "op_certmgr", "badge": 4 },
+        { "text": "5. LeaderWorkerSet + OpenShift Pipelines installed", "mode": "lightup", "target": "op_lws", "badge": 5 },
+        { "text": "6. Admin applies DSCInitialization and DataScienceCluster", "mode": "arrow", "from": "admin", "to": "n_dsc", "color": "#d2a8ff", "num": 6, "glow": "c_dsc" },
+        { "text": "7. DSCInitialization reconciled — namespaces, monitoring, trusted CA", "mode": "lightup", "target": "n_dsci", "badge": 7 },
+        { "text": "8. DataScienceCluster reconciled — spec.components{ aigateway, kserve, ogx, mlflowoperator, ... }", "mode": "lightup", "target": "n_dsc", "badge": 8 },
+        { "text": "9. rhods-operator provisions each component as a Module, batched by runlevel", "mode": "arrow", "from": "n_dsc", "to": "c_modules", "color": "#ffa657", "num": 9, "glow": "c_modules" },
+        { "text": "10. Runlevel 32 batch: aigateway provisions together with...", "mode": "lightup", "target": "m_aigateway", "badge": 10 },
+        { "text": "11. ...mlflowoperator...", "mode": "lightup", "target": "m_mlflow", "badge": 11 },
+        { "text": "12. ...and ogx — all three must succeed together or the whole batch aborts", "mode": "lightup", "target": "m_ogx", "badge": 12 },
+        { "text": "13. Other modules (kserve, dashboard, workbenches, modelregistry, ray, trustyai) reconcile independently, outside that batch", "mode": "lightup", "target": "m_kserve", "badge": 13 },
+        { "text": "14. aigateway module stands up the MaaS control plane", "mode": "arrow", "from": "m_aigateway", "to": "c_maasctrl", "color": "#39c5cf", "num": 14, "glow": "c_maasctrl" },
+        { "text": "15. maas-controller deploys in redhat-ods-applications", "mode": "lightup", "target": "n_maascontroller", "badge": 15 },
+        { "text": "16. maas-controller auto-creates the Config/AITenant CR in models-as-a-service", "mode": "lightup", "target": "n_config", "badge": 16 },
+        { "text": "17. maas-api deploys in redhat-ai-gateway-infra...", "mode": "lightup", "target": "n_maasapi", "badge": 17 },
+        { "text": "18. ...and connects to PostgreSQL for API-key storage", "mode": "arrow", "from": "n_maasapi", "to": "n_postgres", "color": "#39c5cf", "num": 18 },
+        { "text": "19. kserve module + a model manifest create an LLMInferenceService pod (vLLM)", "mode": "arrow", "from": "m_kserve", "to": "n_kservepod", "color": "#3fb950", "num": 19, "glow": "ns_model" },
+        { "text": "20. Kuadrant creates the Gateway, Authorino, and Limitador in openshift-ingress", "mode": "arrow", "from": "op_rhcl", "to": "c_dataplane", "color": "#3fb950", "num": 20, "glow": "c_dataplane" },
+        { "text": "21. MaaSAuthPolicy + MaaSSubscription are paired to the model (governance — full walkthrough in install-flow.html)", "mode": "lightup", "target": "n_authpolicy", "badge": 21 },
+        { "text": "22. MaaSModelRef → Ready. The stack is now serving inference traffic end-to-end", "mode": "lightup", "target": "n_mmr", "badge": "R" },
+        { "text": "23. Caller can now send authenticated inference requests through the gateway", "mode": "arrow", "from": "c_dataplane", "to": "caller", "color": "#3fb950", "num": 23 }
+      ]
+    },
+    "batch-failure": {
+      "label": "Real Incident: Runlevel Batch Failure",
+      "steps": [
+        { "text": "1. Admin enables ogx (Managed) for GenAI Studio / Playground", "mode": "arrow", "from": "admin", "to": "m_ogx", "color": "#58a6ff", "num": 1 },
+        { "text": "2. But a legacy, deprecated field (llamastackoperator, superseded by ogx) is still Managed too — left over, or defaulted elsewhere on the cluster", "mode": "lightup", "target": "m_ogx", "badge": "!", "errColor": "#f85149" },
+        { "text": "3. Operator rejects the ogx module: \"LlamaStackOperator is set to Managed; it has been deprecated, set it to Removed before enabling OGX\"", "mode": "lightup", "target": "m_ogx", "badge": "\u2717", "errColor": "#f85149" },
+        { "text": "4. That validation error aborts the ENTIRE runlevel-32 batch — not just ogx", "mode": "arrow", "from": "m_ogx", "to": "c_batch32", "color": "#f85149", "num": 4, "glow": "c_batch32" },
+        { "text": "5. aigateway never installs its CRDs: \"module CRDs not yet available, requesting requeue\" — forever", "mode": "lightup", "target": "m_aigateway", "badge": "\u2717", "errColor": "#f85149" },
+        { "text": "6. mlflowoperator is stuck the same way", "mode": "lightup", "target": "m_mlflow", "badge": "\u2717", "errColor": "#f85149" },
+        { "text": "7. maas-api deployment never appears — even though modelsAsAService shows Managed", "mode": "lightup", "target": "n_maasapi", "badge": "\u2717", "errColor": "#f85149" },
+        { "text": "8. Applying MaaSModelRef fails: \"no matches for kind MaaSModelRef ... ensure CRDs are installed first\"", "mode": "lightup", "target": "n_mmr", "badge": "\u2717", "errColor": "#f85149" },
+        { "text": "9. Fix: explicitly set the legacy llamastackoperator field to Removed (oc patch datasciencecluster default-dsc ...)", "mode": "arrow", "from": "admin", "to": "m_ogx", "color": "#3fb950", "num": 9 },
+        { "text": "10. Batch succeeds — aigateway, mlflowoperator, and ogx all reconcile within ~60-90s", "mode": "lightup", "target": "m_ogx", "badge": "\u2713" },
+        { "text": "11. maas-api deploys immediately; health endpoint returns 200. See Issue 14 in 10-post-upgrade-troubleshooting.adoc", "mode": "lightup", "target": "n_maasapi", "badge": "\u2713" }
+      ]
+    },
+    "request-path": {
+      "label": "Runtime Request Path (condensed)",
+      "steps": [
+        { "text": "1. Caller sends a request with an sk-oai-* API key", "mode": "arrow", "from": "caller", "to": "n_gateway", "color": "#3fb950", "num": 1 },
+        { "text": "2. Gateway (Envoy) routes to Authorino for auth", "mode": "arrow", "from": "n_gateway", "to": "n_authorino", "color": "#3fb950", "num": 2 },
+        { "text": "3. Authorino calls maas-api to validate the key hash", "mode": "arrow", "from": "n_authorino", "to": "n_maasapi", "color": "#3fb950", "num": 3 },
+        { "text": "4. maas-api looks up the salted hash in PostgreSQL", "mode": "arrow", "from": "n_maasapi", "to": "n_postgres", "color": "#3fb950", "num": 4 },
+        { "text": "5. Authorino checks the MaaSAuthPolicy — is this identity allowed to call this model?", "mode": "lightup", "target": "n_authpolicy", "badge": 5 },
+        { "text": "6. Limitador checks the MaaSSubscription rate limit / token budget", "mode": "arrow", "from": "n_authorino", "to": "n_limitador", "color": "#3fb950", "num": 6 },
+        { "text": "7. Within limits — the priority-resolved subscription applies (see install-flow.html Tiers & Priority)", "mode": "lightup", "target": "n_subscription", "badge": 7 },
+        { "text": "8. Request forwarded to the model pod (vLLM)", "mode": "arrow", "from": "n_limitador", "to": "n_kservepod", "color": "#3fb950", "num": 8 },
+        { "text": "9. Completion streams back to the caller. For the full 33-step version with IPP plugins and external providers, see flow.html", "mode": "arrow", "from": "n_kservepod", "to": "caller", "color": "#3fb950", "num": 9 }
+      ]
+    }
+  },
+  "flowOrder": ["layers", "batch-failure", "request-path"],
+  "defaultFlow": "layers",
+  "legend": [
+    { "color": "#58a6ff", "label": "OLM Operators" },
+    { "color": "#d2a8ff", "label": "Cluster-Scoped Config (DSCI/DSC)" },
+    { "color": "#ffa657", "label": "Component Modules" },
+    { "color": "#f85149", "label": "Runlevel batch / failure" },
+    { "color": "#39c5cf", "label": "MaaS Control Plane" },
+    { "color": "#3fb950", "label": "Data Plane (runtime)" },
+    { "color": "#6e7681", "label": "Optional Extensions" },
+    { "color": "#8b949e", "label": "Reference / CRD groups" }
+  ]
+};
+
+await viz.load(diagram);
+
+const cvs = document.getElementById('fs-canvas');
+cvs.addEventListener('mousemove', e => {
+  const rect = cvs.getBoundingClientRect();
+  const eng = viz._engine;
+  const mx = (e.clientX - rect.left - eng._ox) / eng._sc;
+  const my = (e.clientY - rect.top - eng._oy) / eng._sc;
+  let hit = false;
+  for (const [k, n] of Object.entries(eng.state.nodes)) {
+    if (n.type === 'boundary' || n.type === 'container') continue;
+    if (eng.state.tooltips[k] && mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h) {
+      hit = true;
+      break;
+    }
+  }
+  cvs.style.cursor = hit ? 'pointer' : 'default';
+});
+
+viz.state.loopMode = true;
+viz.play();
+</script>
+</body>
+</html>

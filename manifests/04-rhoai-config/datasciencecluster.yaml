@@ -34,6 +34,16 @@ spec:
     # -- OGX (required for GenAI Studio / Playground) --
     ogx:
       managementState: Managed
+    # -- LlamaStack Operator: DEPRECATED, replaced by ogx above. Must be explicitly
+    #    Removed - leaving it Managed (or unset, if the DSC already exists with the
+    #    field defaulted to Managed) makes the operator reject the ogx module with
+    #    "LlamaStackOperator is set to Managed; it has been deprecated, set it to
+    #    Removed before enabling OGX". That failure aborts the entire module-provisioning
+    #    batch at runlevel 32, which also blocks aigateway/mlflowoperator from ever
+    #    installing their CRDs - so maas-api never deploys and MaaSModelRef/etc. CRDs
+    #    never appear, even though modelsAsAService shows Managed. --
+    llamastackoperator:
+      managementState: Removed
     # -- MLflow Operator --
     mlflowoperator:
       managementState: Managed
