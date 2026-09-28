@@ -131,7 +131,7 @@ The field remains respected at least through 3.6."
 
 This warning is **expected** at this point. Both old and new paths coexist through 3.6, so {maas} continues to work while both are present.
 
-After you have confirmed that `aigateway.modelsAsAService` is working (<<verification,Step 10>>), you can silence the warning by setting the old field to `Removed`:
+After you have confirmed that `aigateway.modelsAsAService` is working (<<verification,Step 11>>), you can silence the warning by setting the old field to `Removed`:
 
 [source,bash]
 ----
@@ -211,7 +211,70 @@ oc get httproute -n redhat-ai-gateway-infra -o wide
 
 If HTTPRoutes show `NotAccepted`, see xref:10-post-upgrade-troubleshooting.adoc#issue-3[Issue 3: MaaS Gateway Namespace Label] for diagnosis steps.
 
-== Step 8: Migrate ExternalModels (if applicable)
+[[llmisvc-migration]]
+== Step 8: Migrate LLMInferenceServices to Body-Based Routing (BBR)
+
+In 3.5, the MaaS gateway enables body-based routing (BBR) by default: clients call `/v1/chat/completions` with the model in the request body instead of the path-based `/llm/{model-namespace}/{model-name}` URL. However, this only applies to *new* LLMInferenceServices. LLMInferenceServices that existed before the upgrade are not automatically re-rendered against the new serving presets - the operator pins the preset on each LLMInferenceService via the `serving.kserve.io/config-llm-template` status annotation, so existing instances deliberately keep their old configuration to avoid spurious rollouts. Upgraded models keep serving the old path-based endpoint, and BBR requests against them fail. If you expect to take advantage of the new feature, you must trigger the update from the pinned presets.
+
+List all LLMInferenceServices; every one that existed before the upgrade is affected:
+
+[source,bash]
+----
+oc get llminferenceservice -A
+----
+
+Migrate each LLMInferenceService using one of the following paths.
+
+.Path A: Delete and let the operator re-reconcile
+
+Delete the LLMInferenceService and re-create it from your manifest or GitOps repository. The operator re-renders it against the latest presets, including the new BBR HTTPRoute and all other policy changes:
+
+[source,bash]
+----
+oc delete llminferenceservice <name> -n <namespace>
+# Re-create it from your manifest or GitOps repository
+oc apply -f <llminferenceservice>.yaml -n <namespace>
+----
+
+WARNING: Deleting the LLMInferenceService guarantees downtime: the model is unavailable until the operator recreates the service and the replacement pod is Ready.
+
+.Path B: Remove the pinned status annotation
+
+Remove the pinned preset annotation from the status subresource to trigger a reconcile against the latest presets without recreating the custom resource:
+
+[source,bash]
+----
+oc patch llminferenceservice <name> -n <namespace> --subresource=status --type=json \
+  -p '[{"op":"remove","path":"/status/annotations/serving.kserve.io~1config-llm-template"}]'
+----
+
+WARNING: This path might still come with downtime: if the latest presets change more than the HTTPRoute and gateway policy objects, the underlying deployments roll. Whether users observe downtime depends on your ability to perform a rolling update - you need enough spare cluster capacity to run the old and new pods side by side.
+
+NOTE: The status patch is an out-of-band change that GitOps does not track, so the resource drifts until the next sync. If you manage LLMInferenceServices with OpenShift GitOps or a similar tool, Path A fits your workflow more naturally.
+
+Verify BBR works against each migrated model:
+
+[source,bash]
+----
+MAAS_HOST=$(oc get gateway maas-default-gateway -n openshift-ingress \
+  -o jsonpath='{.spec.listeners[?(@.name=="https")].hostname}')
+API_KEY=$(oc whoami -t)
+
+# Get the model ID (canonical form for body-based routing)
+MODEL_ID=$(curl -sk "https://${MAAS_HOST}/v1/models" \
+  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].id')
+
+# Send a chat completion request (body-based routing)
+curl -sk "https://${MAAS_HOST}/v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"model\": \"${MODEL_ID}\",
+    \"messages\": [{\"role\": \"user\", \"content\": \"Hello!\"}]
+  }"
+----
+
+== Step 9: Migrate ExternalModels (if applicable)
 
 If you have ExternalModel resources (third-party LLM APIs like OpenAI, Bedrock, Gemini), they need manual migration. The old `ExternalModel` CRD under `maas.opendatahub.io/v1alpha1` is not auto-migrated to the new `ExternalProvider` CRD under `inference.opendatahub.io/v1alpha1`.
 
@@ -253,7 +316,7 @@ oc delete externalmodel.maas.opendatahub.io openai -n <model-namespace>
 
 WARNING: The 3.5 `ExternalProvider` CRD has a stricter validation regex on `spec.auth.secretRef.name` that does not allow dots. If your secret names contain dots (e.g. `glm5.1-w8a8-key`), you must rename them first. See xref:10-post-upgrade-troubleshooting.adoc#issue-2[Issue 2: ExternalModel Migration - Secret Names with Dots] for details.
 
-== Step 9: Update OdhDashboardConfig
+== Step 10: Update OdhDashboardConfig
 
 The `maasAuthPolicies` flag was removed from the `OdhDashboardConfig` CRD in 3.5. The admission webhook rejects any manifest that includes it.
 
@@ -274,7 +337,7 @@ oc patch odhdashboardconfig odh-dashboard-config -n redhat-ods-applications --ty
 ----
 
 [[verification]]
-== Step 10: Verification Checklist
+== Step 11: Verification Checklist
 
 Run through these checks to confirm the migration is complete:
 
@@ -302,6 +365,10 @@ Expected: `True`
 | `CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')` +
 `curl -sk "https://maas.${CLUSTER_DOMAIN}/maas-api/health"` +
 Expected: `{"status":"healthy"}`
+
+| BBR works against pre-3.5 models
+| `/v1/chat/completions` request per the <<llmisvc-migration,Step 8>> verification +
+Expected: JSON completion response
 
 | Regular user sees AI asset endpoints
 | Log into the {rhoai} Dashboard as a non-admin user and verify the *AI asset endpoints* page is visible under Gen AI studio
