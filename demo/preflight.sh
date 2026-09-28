@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-flight for all four demos. Read-only: creates no users, applies no YAML.
+# Pre-flight checks for MaaS demos. Read-only: creates no users, applies no YAML.
 #
 # Checks that every identity can authenticate AND resolves the subscription its
 # demo depends on - the two things that actually break between sessions.
@@ -8,8 +8,22 @@
 # an idle period while it reopens its database connection, and you do not want
 # that on your first click.
 #
-# Usage:  ./preflight.sh
+# Usage:
+#   ./preflight.sh                        # check all demos
+#   ./preflight.sh user-level-rate-limiting
+#   ./preflight.sh oidc-authentication
+#   ./preflight.sh jwks-cache
+#   ./preflight.sh service-account-access
 set -uo pipefail
+
+FILTER="${1:-}"
+VALID_DEMOS="user-level-rate-limiting oidc-authentication jwks-cache service-account-access"
+if [ -n "$FILTER" ] && ! echo "$VALID_DEMOS" | grep -qw "$FILTER"; then
+  echo "Unknown demo: '$FILTER'"
+  echo "Valid values: $VALID_DEMOS"
+  exit 1
+fi
+run_demo() { [ -z "$FILTER" ] || [ "$FILTER" = "$1" ]; }
 
 PASS=0; FAIL=0
 ok(){   printf '  \033[32mPASS\033[0m  %s\n' "$*"; PASS=$((PASS+1)); }
@@ -59,6 +73,7 @@ check() {   # check <label> <token> <expected-subscription>
 }
 
 # ------------------------------------------------- 1. user-level rate limiting ---
+if run_demo "user-level-rate-limiting"; then
 hr "1. user-level-rate-limiting  (OpenShift users)"
 for pair in "alice:demo-alice-gold" "bob:demo-bob-throttled" "carol:demo-team-standard"; do
   U="${pair%%:*}"; WANT="${pair##*:}"
@@ -68,8 +83,10 @@ for pair in "alice:demo-alice-gold" "bob:demo-bob-throttled" "carol:demo-team-st
     bad "$U cannot log in (password? htpasswd IdP removed?)"
   fi
 done
+fi
 
 # ------------------------------------------------------ 2. oidc authentication ---
+if run_demo "oidc-authentication"; then
 hr "2. oidc-authentication  (Keycloak identities)"
 if [ -z "$ISSUER" ]; then
   bad "MaaS has no OIDC issuer configured — run oidc-authentication/setup-oidc-demo.sh"
@@ -84,8 +101,10 @@ else
     [ -n "$T" ] && check "$U" "$T" "$WANT" || bad "$U could not get a token from Keycloak"
   done
 fi
+fi
 
 # -------------------------------------------------------------- 3. jwks cache ---
+if run_demo "jwks-cache"; then
 hr "3. jwks-cache  (signature verification)"
 if [ -n "$ISSUER" ]; then
   T=$(curl -sSk -m 20 -X POST "$ISSUER/protocol/openid-connect/token" -d grant_type=password \
@@ -110,8 +129,10 @@ print("%s.%s.%s" % (h, e(json.dumps(c).encode()), s))' 2>/dev/null)
 else
   bad "skipped: no OIDC issuer configured"
 fi
+fi
 
 # --------------------------------------------------- 4. service account access ---
+if run_demo "service-account-access"; then
 hr "4. service-account-access  (in-cluster workloads)"
 for pair in "batch-scorer:sa-batch-scorer-tier" "report-writer:sa-report-writer-tier"; do
   SA="${pair%%:*}"; WANT="${pair##*:}"
@@ -123,6 +144,7 @@ if R=$(oc get route model-client -n maas-clients -o jsonpath='{.spec.host}' 2>/d
   [ "$A" = "200" ] && ok "in-cluster app reachable: https://${R}" || bad "app returned HTTP ${A}"
 else
   bad "model-client route missing — run service-account-access/setup-demo.sh"
+fi
 fi
 
 # ------------------------------------------------------------------- summary ---
