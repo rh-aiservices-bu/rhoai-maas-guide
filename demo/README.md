@@ -26,9 +26,10 @@ runbook and a talk track, and a teardown script.
 
 Read-only — it creates nothing and applies no YAML. It confirms every identity
 can authenticate and resolves the subscription its demo expects, and sends a
-warm-up request so the first click of the demo is a warm one.
+warm-up request so the first click of the demo is a warm one. Pass a demo name
+as an argument to check only that demo's section.
 
-Expect `16 passed, 0 failed`.
+Expect `16 passed, 0 failed` when running all demos.
 
 Setup is applied once, ahead of time; the demos themselves only read. The single
 exception is `jwks-cache/prove-cached.sh`, which applies a NetworkPolicy as the
