@@ -29,10 +29,13 @@ echo "MaaS:    $MAAS"
 
 # ---------------------------------------------------------------- platform ---
 hr "Platform"
-[ "$(oc get maasmodelref facebook-opt-125m-simulated -n llm -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = "True" ] \
-  && ok "model facebook-opt-125m-simulated is Ready" || bad "model is not Ready"
+READY_MODEL=$(oc get maasmodelref -n llm \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
+  2>/dev/null | awk '$2=="True"{print $1}' | head -1)
+[ -n "$READY_MODEL" ] \
+  && ok "model ready: $READY_MODEL" || bad "no ready MaaSModelRef in llm ns"
 [ "$(oc get pods -n llm --no-headers 2>/dev/null | grep -c '1/1')" -ge 1 ] \
-  && ok "model pod running" || bad "model pod not running"
+  && ok "model pod running" || bad "model pod not running (llm ns)"
 oc get deployment maas-api -n redhat-ai-gateway-infra >/dev/null 2>&1 \
   && ok "maas-api deployed" || bad "maas-api missing"
 
