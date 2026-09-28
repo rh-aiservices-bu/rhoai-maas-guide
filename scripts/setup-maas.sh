@@ -557,8 +557,16 @@ if should_run 2; then
 
     # Step 4: Gateway
     if [ "$HAS_GATEWAY" = true ]; then
-        log_info "Gateway maas-default-gateway already exists, skipping"
-    else
+        EXISTING_GW_HOSTNAME=$(oc get gateway maas-default-gateway -n openshift-ingress \
+            -o jsonpath='{.spec.listeners[0].hostname}' 2>/dev/null || echo "")
+        if [ "$EXISTING_GW_HOSTNAME" != "$MAAS_HOSTNAME" ]; then
+            log_warn "Gateway hostname mismatch (existing: '${EXISTING_GW_HOSTNAME}', expected: '${MAAS_HOSTNAME}') — re-applying"
+            HAS_GATEWAY=false
+        else
+            log_info "Gateway maas-default-gateway already exists with correct hostname, skipping"
+        fi
+    fi
+    if [ "$HAS_GATEWAY" = false ]; then
         log_step "Rendering and applying Gateway..."
         GATEWAY_TEMPLATE="$MANIFESTS_DIR/02-platform-config/gateway.yaml.tmpl"
         if [ ! -f "$GATEWAY_TEMPLATE" ]; then
