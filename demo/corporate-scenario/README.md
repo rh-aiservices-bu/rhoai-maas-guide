@@ -85,7 +85,10 @@ cd demo/corporate-scenario
 
 # 1. Build the environment: 14 users, 7 groups, htpasswd IdP, cloud-models
 #    namespace, six LLMInferenceServices, MaaS CRDs (model refs, auth
-#    policies, subscriptions). DEMO_PASSWORD='...' skips the interactive prompt.
+#    policies, subscriptions) - plus the tech preview dashboard features
+#    (Gen AI Studio playground, AI assets, agents catalog, guardrails, MCP)
+#    and the playground backend ConfigMap. DEMO_PASSWORD='...' skips the
+#    interactive prompt.
 ./setup-demo.sh
 
 # 2. Walk the video beats from the CLI (scenes 3-5)
@@ -97,12 +100,26 @@ cd demo/corporate-scenario
 # 4. Prove the whole 7x6 matrix holds
 ./verify-fa-cap.sh
 
-# 5. Tear everything down
+# 5. (optional, from the repo root) observability: Loki + tracing + the usage
+#    dashboards (tokens, and dollars where the platform reports pricing)
+cd ../.. && ./scripts/setup-maas.sh --from-phase 7 --with-observability && cd demo/corporate-scenario
+
+# 6. Tear everything down
 ./cleanup-demo.sh
 ```
 
 NOTE: the oauth pods restart after the identity provider is added. Wait about a
 minute before logging in as the demo users.
+
+The dashboard features `setup-demo.sh` enables are tech preview / dev preview
+surfaces: Gen AI Studio (the playground), AI assets with custom endpoints, the
+agents catalog and agent ops, guardrails configuration, MCP catalog and
+registry, external models and vector stores, tool calling, observability
+dashboard, llm-d templates, vLLM deployment on MaaS, prompt management and the
+connection test. The dashboard restarts once if any flag changed - the oauth
+and dashboard pods need about a minute before the Playground works. The flags
+and the playground ConfigMap are RHOAI configuration: `cleanup-demo.sh` leaves
+them in place.
 
 Representative output from `run-demo.sh`:
 

@@ -47,14 +47,14 @@ group_for() {
 }
 
 ns_for() {
-  case "$MODEL" in
+  case "$1" in
     gpt-oss-120b|kimi-k3|nemotron-lightning)  echo "llm" ;;
     *)                                        echo "cloud-models" ;;
   esac
 }
 
 served_for() {
-  case "$MODEL" in
+  case "$1" in
     gpt-oss-120b)        echo "gpt-oss/120b" ;;
     kimi-k3)             echo "kimi/k3" ;;
     nemotron-lightning)  echo "nemotron/3.5-lightning" ;;
@@ -66,7 +66,7 @@ served_for() {
 
 GROUP=$(group_for)
 [ -n "$GROUP" ] || { echo "USER_NAME '$USER_NAME' is not a division user (sales-1, branch-1, credit-1, dev-1, it-1, risk-1, marketing-1)"; exit 1; }
-NS=$(ns_for); SERVED=$(served_for)
+NS=$(ns_for "$MODEL"); SERVED=$(served_for "$MODEL")
 ENDPOINT="${H}/${NS}/${MODEL}/v1/chat/completions"
 
 # Read the model's hourly cap straight from the live subscription
@@ -128,16 +128,38 @@ fi
 echo
 echo "=== 429 on ${MODEL} - quota genuinely exhausted (${burned} tokens burned) ==="
 
-# --- the guardrail: on-prem is untouched ---
+# --- the guardrail: another model from the same division still generates ---
+# For IT this is the on-prem GPT-OSS 120B (scene 6: switch the dropdown and
+# continue). Divisions with a single model have no fallback to prove.
 
-FALLBACK_CODE=$(curl -sk --max-time 30 -o "$TMP/fb" -w "%{http_code}" \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -X POST \
-  -d '{"model":"gpt-oss/120b","messages":[{"role":"user","content":"Keep going."}],"max_tokens":8}' \
-  "${H}/llm/gpt-oss-120b/v1/chat/completions")
-if [ "$FALLBACK_CODE" = "200" ]; then
-  echo "=== on-prem GPT-OSS 120B still generates (200) - switch the dropdown and continue ==="
+fallback_for() {
+  local allowed
+  case "$USER_NAME" in
+    it-1)        allowed="gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
+    dev-1)       allowed="gpt-oss-120b kimi-k3 nemotron-lightning" ;;
+    sales-1)     allowed="claude-opus-5-1" ;;
+    branch-1|credit-1|risk-1) allowed="gpt-oss-120b" ;;
+    marketing-1) allowed="claude-opus-5-1 gemini-3-pro" ;;
+    *)           allowed="" ;;
+  esac
+  for m in $allowed; do [ "$m" != "$MODEL" ] && { echo "$m"; return; }; done
+  echo ""
+}
+
+FB=$(fallback_for)
+if [ -n "$FB" ]; then
+  FB_NS=$(ns_for "$FB"); FB_SERVED=$(served_for "$FB")
+  FALLBACK_CODE=$(curl -sk --max-time 30 -o "$TMP/fb" -w "%{http_code}" \
+    -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -X POST \
+    -d "{\"model\":\"${FB_SERVED}\",\"messages\":[{\"role\":\"user\",\"content\":\"Keep going.\"}],\"max_tokens\":8}" \
+    "${H}/${FB_NS}/${FB}/v1/chat/completions")
+  if [ "$FALLBACK_CODE" = "200" ]; then
+    echo "=== ${FB} still generates (200) - switch the dropdown and continue ==="
+  else
+    echo "WARNING: fallback ${FB} returned ${FALLBACK_CODE} (expected 200)"
+  fi
 else
-  echo "WARNING: on-prem fallback returned ${FALLBACK_CODE} (expected 200)"
+  echo "No alternate model for this division - fallback proof skipped."
 fi
 
 # --- next hourly boundary (estimate; window alignment is platform-internal) ---

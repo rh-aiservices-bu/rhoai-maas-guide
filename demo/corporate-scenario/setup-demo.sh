@@ -192,6 +192,49 @@ if [ -n "$CONFLICTS" ]; then
   echo "  The Fed Aura subscriptions also use priority 30. Higher priority wins."
 fi
 
+
+# --- tech preview dashboard features (playground, AI assets) ---
+
+echo "==> Configuring tech preview dashboard features (playground, AI assets)"
+NEED_RESTART=0
+
+# The Gen AI Studio playground reads this ConfigMap at boot; without it the
+# Playground page hangs on Loading (the /gen-ai/api/v1/aaa/mcps call 404s).
+if ! oc get cm gen-ai-aa-mcp-servers -n redhat-ods-applications >/dev/null 2>&1; then
+  echo "  creating gen-ai-aa-mcp-servers ConfigMap"
+  oc create -f - <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gen-ai-aa-mcp-servers
+  namespace: redhat-ods-applications
+data:
+  mcp_servers.json: "[]"
+EOF
+  NEED_RESTART=1
+fi
+
+TP_FLAGS="genAiStudio genAiTracing promptManagement globalProjectPrompts aiAssetCustomEndpoints agentsCatalog agentOps agentConfigManagement modelAsService vLLMDeploymentOnMaaS llmGatewayField llmdTemplates guardrails toolCalling externalModels externalVectorStores mcpCatalog mcpRegistry observabilityDashboard deploymentWizardYAMLViewer connectionTest projectRBAC roleManagement featureStoreAdmin trainingJobs enablement"
+NEED_PATCH=0
+for flag in $TP_FLAGS; do
+  val=$(oc get odhdashboardconfig odh-dashboard-config -n redhat-ods-applications \
+    -o jsonpath="{.spec.dashboardConfig.$flag}" 2>/dev/null || echo "")
+  [ "$val" != "true" ] && NEED_PATCH=1
+done
+if [ "$NEED_PATCH" = "1" ]; then
+  echo "  enabling tech preview flags in odh-dashboard-config"
+  oc patch odhdashboardconfig odh-dashboard-config -n redhat-ods-applications --type=merge \
+    -p '{"spec":{"dashboardConfig":{"genAiStudio":true,"genAiTracing":true,"promptManagement":true,"globalProjectPrompts":true,"aiAssetCustomEndpoints":true,"agentsCatalog":true,"agentOps":true,"agentConfigManagement":true,"modelAsService":true,"vLLMDeploymentOnMaaS":true,"llmGatewayField":true,"llmdTemplates":true,"guardrails":true,"toolCalling":true,"externalModels":true,"externalVectorStores":true,"mcpCatalog":true,"mcpRegistry":true,"observabilityDashboard":true,"deploymentWizardYAMLViewer":true,"connectionTest":true,"projectRBAC":true,"roleManagement":true,"featureStoreAdmin":true,"trainingJobs":true,"enablement":true}}}'
+  NEED_RESTART=1
+fi
+
+if [ "$NEED_RESTART" = "1" ]; then
+  echo "  restarting the dashboard to pick up the changes"
+  oc rollout restart deploy/rhods-dashboard -n redhat-ods-applications
+  oc rollout status deploy/rhods-dashboard -n redhat-ods-applications --timeout=300s >/dev/null 2>&1 || true
+else
+  echo "  already configured, skipping"
+fi
 # --- summary ---
 
 echo
