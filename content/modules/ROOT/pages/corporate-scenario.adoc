@@ -66,7 +66,7 @@ On screen: admin side of the dashboard. Two cuts:
 * The subscription list - one per division, human-readable names, visible per-model hourly limits, and a description of what the tier is for.
 * The usage dashboard - consumption per model across the bank. Tokens first; dollars where the platform reports model pricing (see the xref:#the_dollar_display[branch] below).
 
-The CIO owns this beat: caps encode the cost model, on-prem is sunk cost, cloud is rented - and spend is visible in dollars.
+The CIO owns this beat: caps encode the cost model, on-prem is CAPEX (hardware already paid for), cloud is rented - and spend is visible in dollars.
 
 === Scene 5 - The developer's day (2:45-3:15)
 
@@ -130,7 +130,7 @@ Total dialogue budget: ~5 minutes, ~700 spoken words. Lines below are cues, not 
 
 *CIO:* My view. Each division has one subscription with per-model hourly caps. The caps encode the cost model, not the technology.
 
-*Engineer:* On-prem is a sunk cost - we own the GPUs - so those caps are generous. Cloud is rented, so they are tight. IT runs the platform, so it gets roughly five times the standard caps.
+*Engineer:* On-prem is CAPEX - hardware already paid for, we own the GPUs - so those caps are generous. Cloud is rented, so they are tight. IT runs the platform, so it gets roughly five times the standard caps.
 
 *CIO:* And spend shows in dollars, not just tokens.
 
@@ -144,7 +144,7 @@ Total dialogue budget: ~5 minutes, ~700 spoken words. Lines below are cues, not 
 
 *Engineer:* Fifty-five minutes of real work later: Claude's hourly budget is gone. That 429 is earned, not staged.
 
-*CIO:* So the work moves. On-prem is sunk cost - the fallback has room to run.
+*CIO:* So the work moves. On-prem is CAPEX - the fallback has room to run.
 
 *Engineer:* (switches the dropdown to GPT-OSS 120B; generation continues)
 
@@ -382,7 +382,7 @@ Auth policies grant, per division, exactly the models in the matrix. Everything 
 | -
 |===
 
-The philosophy, and the line to say out loud: *caps are a property of cost, not of capability.* On-prem models run on GPUs the bank already bought - sunk cost - so their caps are generous. Cloud models are rented per token - so their caps are tight. IT gets roughly five times the standard caps because it runs the platform and the pilots.
+The philosophy, and the line to say out loud: *caps are a property of cost, not of capability.* On-prem models run on GPUs the bank already bought - CAPEX - so their caps are generous. Cloud models are rented per token - so their caps are tight. IT gets roughly five times the standard caps because it runs the platform and the pilots.
 
 Each division gets ONE `MaaSSubscription` covering all of its models, and priority 30 so the division tier outranks any shipped default subscription (see the xref:#workshop-extensions[appendix] for how the shipped tiers interact). Users mint their own API keys.
 

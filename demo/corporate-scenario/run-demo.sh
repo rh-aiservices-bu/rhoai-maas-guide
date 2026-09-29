@@ -163,7 +163,7 @@ oc get maassubscription -n models-as-a-service -o json 2>/dev/null | jq -r '
     (.spec.modelRefs[] | "    \(.name) (\(.namespace)): \(.tokenRateLimits[0].limit) tokens / \(.tokenRateLimits[0].window)")' \
   || echo "  (oc query failed - run as cluster-admin)"
 echo
-echo "  On-prem (llm namespace) caps are generous - the GPUs are sunk cost."
+echo "  On-prem (llm namespace) caps are generous - the GPUs are CAPEX."
 echo "  Cloud (cloud-models namespace) caps are tight - rented per token."
 
 # ============================================================
@@ -180,10 +180,12 @@ if [ -n "$DEV1_KEY" ]; then
   echo "  Kimi K3 endpoint:     ${H}/llm/kimi-k3/v1/chat/completions"
   echo "  GPT-OSS 120B:         ${H}/llm/gpt-oss-120b/v1/chat/completions"
   echo
+  echo "  Note: the dropdown lists full model IDs (publishers/<namespace>/models/<served-name>) -"
+  echo "        requests to the root /v1 endpoint must use those, not the bare served name."
   echo "  Live token meter (input and output counted):"
   curl -sk --max-time 30 -H "Authorization: Bearer $DEV1_KEY" \
     -H "Content-Type: application/json" -X POST \
-    -d "{\"model\":\"kimi/k3\",\"messages\":[{\"role\":\"user\",\"content\":\"Explain rate limits in one sentence.\"}],\"max_tokens\":24}" \
+    -d "{\"model\":\"publishers/llm/models/kimi/k3\",\"messages\":[{\"role\":\"user\",\"content\":\"Explain rate limits in one sentence.\"}],\"max_tokens\":24}" \
     "${H}/v1/chat/completions" \
     | jq -r '"    prompt=\(.usage.prompt_tokens // 0) completion=\(.usage.completion_tokens // 0) total=\(.usage.total_tokens // 0) tokens"' 2>/dev/null
 else

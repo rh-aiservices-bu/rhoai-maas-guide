@@ -1,7 +1,7 @@
 # Fed Aura Capital: one subscription per division
 #
 # Caps are a property of cost, not of capability: on-prem models run on GPUs the
-# bank already bought (sunk cost), so their caps are generous; cloud models are
+# bank already bought (CAPEX), so their caps are generous; cloud models are
 # rented per token, so their caps are tight. IT gets roughly five times the
 # standard caps because it runs the platform and the pilots.
 #

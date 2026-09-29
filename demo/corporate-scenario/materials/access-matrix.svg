@@ -143,7 +143,7 @@
 
   <!-- legend -->
   <rect x="400" y="1008" width="26" height="14" rx="4" fill="#251B0C" stroke="#B8842F"/>
-  <text x="438" y="1022" class="legend">on-prem cap — generous (sunk cost)</text>
+  <text x="438" y="1022" class="legend">on-prem cap — generous (CAPEX)</text>
   <rect x="800" y="1008" width="26" height="14" rx="4" fill="#0F2233" stroke="#2F6E9E"/>
   <text x="838" y="1022" class="legend">cloud cap — tight (pay-per-use)</text>
   <text x="1200" y="1022" class="legend">—  no access · hidden from catalog</text>
