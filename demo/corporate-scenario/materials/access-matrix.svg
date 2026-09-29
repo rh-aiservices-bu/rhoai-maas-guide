@@ -20,10 +20,10 @@
   <!-- header -->
   <text x="70" y="84" class="eyebrow">FED AURA CAPITAL</text>
   <text x="70" y="146" class="title">The access matrix</text>
-  <text x="70" y="190" class="sub">Per-model hourly caps by division — everything else is hidden from the catalog (403 at the API).</text>
+  <text x="70" y="190" class="sub">Per-model hourly caps by division — everything else is hidden from the catalog.</text>
 
   <!-- column groups -->
-  <text x="751" y="246" text-anchor="middle" class="grp" fill="#F2A93B">ON-PREM — COMPANY GPUS (SUNK COST)</text>
+  <text x="751" y="246" text-anchor="middle" class="grp" fill="#F2A93B">ON-PREM — COMPANY GPUS (CAPEX)</text>
   <line x1="390" y1="258" x2="1112" y2="258" stroke="#F2A93B" stroke-width="2" stroke-opacity="0.45"/>
   <text x="1489" y="246" text-anchor="middle" class="grp" fill="#4EA8DE">CLOUD — RENTED, PAY-PER-USE</text>
   <line x1="1128" y1="258" x2="1850" y2="258" stroke="#4EA8DE" stroke-width="2" stroke-opacity="0.45"/>

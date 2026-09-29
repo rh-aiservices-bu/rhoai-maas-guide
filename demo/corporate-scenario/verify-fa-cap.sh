@@ -4,8 +4,8 @@
 # Tests:
 #   1. Access control - the full 7x6 matrix (division x model): allow/deny per cell
 #   2. Rate limiting   - burn Marketing's Gemini 3 Pro hourly cap (50K/h), expect 429
-#   3. Key multiplication - a second key shares the first key's exhausted quota
-#                        (limits are per subscription, not per credential)
+#   3. Key multiplication - a second key shares the user's exhausted quota
+#                        (the cap is per user, not per credential)
 #   4. Config drift    - subscription caps match the access matrix
 #
 # Usage:
@@ -112,6 +112,22 @@ fire_one() {
   echo "$code"
 }
 
+# Mint with retry: POST /v1/api-keys can transiently fail right after rollout
+# (AUTH_FAILURE "Exception thrown while generating token")
+mint_key() {
+  local token="$1" name="$2" resp key
+  for attempt in 1 2 3; do
+    resp=$(curl -sk --max-time 30 -H "Authorization: Bearer $token" \
+      -H "Content-Type: application/json" -X POST \
+      -d "{\"name\":\"${name}\",\"description\":\"verify\",\"expiresIn\":\"8h\"}" \
+      "${H}/maas-api/v1/api-keys")
+    key=$(echo "$resp" | jq -r '.key // empty')
+    [ -n "$key" ] && { echo "$key"; return 0; }
+    sleep 5
+  done
+  return 1
+}
+
 # ========================================
 echo "=== 1. Access control (7 divisions x 6 models = 42 tests) ==="
 # ========================================
@@ -185,35 +201,44 @@ fi
 
 # ==============================================
 echo ""
-echo "=== 3. Key multiplication (1 test) ==="
+echo "=== 3. Key multiplication (2 tests) ==="
 # ==============================================
-# Minting a second key must NOT reset the quota: limits are per subscription.
+# Minting a second key must NOT reset the quota: the cap is per user.
 # Only meaningful once the shared quota is exhausted by the rate-limit test.
 
 if [ "$LIMITED" = "1" ]; then
+  # marketing-1's quota is exhausted by the rate-limit test. A second key for
+  # the SAME user shares it: the cap is per user (all of a user's keys share one
+  # bucket), not per credential. Minting needs the user's OpenShift token, not
+  # an API key.
+  KUBECONFIG="$TMP/marketing-1-second.kubeconfig" oc login -u "marketing-1" -p "$DEMO_PASSWORD" --server="$API" \
+    --insecure-skip-tls-verify=true >/dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    TOKEN_M1=$(KUBECONFIG="$TMP/marketing-1-second.kubeconfig" oc whoami -t)
+    K1B=$(mint_key "$TOKEN_M1" "marketing1-key2")
+    if [ -n "$K1B" ]; then
+      code_k1b=$(fire_one "$K1B" "gemini-3-pro")
+      check "marketing-1 second key shares the exhausted quota" "429" "$code_k1b"
+    else
+      echo "  SKIP  could not mint a second key for marketing-1"
+      SKIP=$((SKIP+1))
+    fi
+  else
+    echo "  SKIP  marketing-1 login failed"
+    SKIP=$((SKIP+1))
+  fi
+  # A different user in the same division gets their own budget: the cap is
+  # per user, not pooled per division.
   KUBECONFIG="$TMP/marketing-2.kubeconfig" oc login -u "marketing-2" -p "$DEMO_PASSWORD" --server="$API" \
     --insecure-skip-tls-verify=true >/dev/null 2>&1
   if [ $? -eq 0 ]; then
     TOKEN2=$(KUBECONFIG="$TMP/marketing-2.kubeconfig" oc whoami -t)
-    RESP1=$(curl -sk --max-time 30 -H "Authorization: Bearer $TOKEN2" \
-      -H "Content-Type: application/json" -X POST \
-      -d '{"name":"marketing2-key1","description":"verify","expiresIn":"8h"}' \
-      "${H}/maas-api/v1/api-keys")
-    K1=$(echo "$RESP1" | jq -r '.key // empty')
-    RESP2=$(curl -sk --max-time 30 -H "Authorization: Bearer $TOKEN2" \
-      -H "Content-Type: application/json" -X POST \
-      -d '{"name":"marketing2-key2","description":"verify","expiresIn":"8h"}' \
-      "${H}/maas-api/v1/api-keys")
-    K2=$(echo "$RESP2" | jq -r '.key // empty')
-    if [ -n "$K1" ] && [ -n "$K2" ]; then
-      # Both keys address the same exhausted quota: a per-credential limit would
-      # give key-2 fresh budget (200); per-subscription means 429.
-      code_k1=$(fire_one "$K1" "gemini-3-pro")
+    K2=$(mint_key "$TOKEN2" "marketing2-verify")
+    if [ -n "$K2" ]; then
       code_k2=$(fire_one "$K2" "gemini-3-pro")
-      check "marketing-2 key-1 hits the exhausted quota" "429" "$code_k1"
-      check "marketing-2 key-2 shares it (no quota reset)" "429" "$code_k2"
+      check "marketing-2 (same division) has own budget" "200" "$code_k2"
     else
-      echo "  SKIP  could not mint two keys for marketing-2"
+      echo "  SKIP  could not mint a key for marketing-2"
       SKIP=$((SKIP+1))
     fi
   else
@@ -222,7 +247,7 @@ if [ "$LIMITED" = "1" ]; then
   fi
 else
   echo "  SKIP  quota not exhausted (rate-limit test skipped or failed)"
-  SKIP=$((SKIP+1))
+  SKIP=$((SKIP+2))
 fi
 
 # ==========================================
