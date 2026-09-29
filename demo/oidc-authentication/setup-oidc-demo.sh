@@ -96,11 +96,11 @@ if [ -n "$_KC_ADMIN_PASS" ]; then
     -d "username=${_KC_ADMIN_USER}" -d "password=${_KC_ADMIN_PASS}" \
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || echo "")
   _REALM_OK=$(curl -sSk -H "Authorization: Bearer ${_AT}" \
-    "https://${KC_HOST}/admin/realms/maas" \
-    | python3 -c 'import sys,json; d=json.load(sys.stdin); print("ok" if d.get("realm") else "no")' \
+    "https://${KC_HOST}/admin/realms/maas/groups" \
+    | python3 -c 'import sys,json; d=json.load(sys.stdin); print("ok" if isinstance(d,list) else "no")' \
     2>/dev/null || echo "no")
   if [ "$_REALM_OK" != "ok" ]; then
-    echo "    realm not yet visible in Keycloak admin API — restart the pod to pick it up:"
+    echo "    maas realm groups not accessible in Keycloak admin API — restart the pod to pick it up:"
     echo "      oc delete pod -n ${KC_NS} -l app=keycloak --grace-period=0"
     echo "    Then re-run this script."
     exit 1

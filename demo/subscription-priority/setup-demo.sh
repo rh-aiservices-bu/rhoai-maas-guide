@@ -68,12 +68,24 @@ AT=$(curl -sSk -X POST "${KC}/realms/master/protocol/openid-connect/token" \
 api() { curl -sSk -H "Authorization: Bearer ${AT}" -H 'Content-Type: application/json' "$@"; }
 
 # --- groups -----------------------------------------------------------------
+# Verify admin API access before proceeding — Keycloak may still be loading
+# the realm after a fresh import and return 403 briefly. Retry a few times.
 echo "==> Groups"
+_API_READY=false
+for _i in $(seq 1 6); do
+  _CHECK=$(api "${KC}/admin/realms/${REALM}/groups" \
+    | python3 -c 'import sys,json; d=json.load(sys.stdin); print("ok" if isinstance(d,list) else "no")' 2>/dev/null || echo "no")
+  if [ "$_CHECK" = "ok" ]; then _API_READY=true; break; fi
+  echo "   Keycloak admin API not ready yet (attempt ${_i}/6) — retrying in 10s..."
+  sleep 10
+done
+[ "$_API_READY" = true ] || { echo "   Keycloak admin API still not accessible after 60s — re-run this script in a moment"; exit 1; }
+
 declare -a KC_GROUP_IDS=()
 for G in "${KC_GROUPS[@]}"; do
   api -o /dev/null -X POST "${KC}/admin/realms/${REALM}/groups" -d "{\"name\":\"${G}\"}" >/dev/null 2>&1
   GID=$(api "${KC}/admin/realms/${REALM}/groups?search=${G}" \
-    | python3 -c "import sys,json; g=[x for x in json.load(sys.stdin) if x['name']=='${G}']; print(g[0]['id'] if g else '')")
+    | python3 -c "import sys,json; d=json.load(sys.stdin); g=[x for x in d if isinstance(d,list) and x['name']=='${G}']; print(g[0]['id'] if g else '')")
   [ -n "$GID" ] || { echo "   could not create or find group ${G}"; exit 1; }
   KC_GROUP_IDS+=("$GID")
   echo "   ${G}"
