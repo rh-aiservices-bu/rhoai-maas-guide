@@ -81,6 +81,35 @@ KC_HOST=$(oc get keycloak "$KC_NAME" -n "$KC_NS" -o jsonpath='{.spec.hostname.ho
 ISSUER="https://${KC_HOST}/realms/maas"
 echo "==> Issuer: ${ISSUER}"
 
+# --- 2b. verify the realm is live in the admin API ----------------------------
+# The KeycloakRealmImport CR being Done means the realm was written to the
+# database, but a running Keycloak pod does not always reload it without a
+# restart (observed on clusters where Keycloak was already serving another
+# realm before this import). Fail fast with a clear fix rather than guessing.
+_KC_ADMIN_USER=$(oc get secret keycloak-initial-admin -n "$KC_NS" \
+  -o jsonpath='{.data.username}' 2>/dev/null | base64 -d)
+_KC_ADMIN_PASS=$(oc get secret keycloak-initial-admin -n "$KC_NS" \
+  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
+if [ -n "$_KC_ADMIN_PASS" ]; then
+  _AT=$(curl -sSk -X POST "https://${KC_HOST}/realms/master/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id=admin-cli \
+    -d "username=${_KC_ADMIN_USER}" -d "password=${_KC_ADMIN_PASS}" \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || echo "")
+  _REALM_OK=$(curl -sSk -H "Authorization: Bearer ${_AT}" \
+    "https://${KC_HOST}/admin/realms/maas" \
+    | python3 -c 'import sys,json; d=json.load(sys.stdin); print("ok" if d.get("realm") else "no")' \
+    2>/dev/null || echo "no")
+  if [ "$_REALM_OK" != "ok" ]; then
+    echo "    realm not yet visible in Keycloak admin API — restart the pod to pick it up:"
+    echo "      oc delete pod -n ${KC_NS} -l app=keycloak --grace-period=0"
+    echo "    Then re-run this script."
+    exit 1
+  fi
+  echo "    realm accessible"
+  echo "    (if the maas realm is not visible in the Keycloak admin UI,"
+  echo "     a pod restart usually fixes it: oc delete pod -n ${KC_NS} -l app=keycloak)"
+fi
+
 echo "==> Checking the discovery document is reachable"
 CODE=$(curl -sSk -o /dev/null -w '%{http_code}' "${ISSUER}/.well-known/openid-configuration" || echo 000)
 [ "$CODE" = "200" ] || { echo "    discovery returned HTTP ${CODE} - aborting"; exit 1; }
