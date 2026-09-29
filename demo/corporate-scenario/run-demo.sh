@@ -107,13 +107,13 @@ login_and_key() {
 
 allowed_for() {
   case "$1" in
-    sales-1)     echo "claude-opus-5-1" ;;
-    branch-1)    echo "gpt-oss-120b" ;;
-    credit-1)    echo "gpt-oss-120b" ;;
+    sales-1)     echo "claude-opus-5-1 gpt-oss-120b nemotron-lightning terra-large-context" ;;
+    branch-1)    echo "gpt-oss-120b nemotron-lightning" ;;
+    credit-1)    echo "gpt-oss-120b nemotron-lightning" ;;
     dev-1)       echo "gpt-oss-120b kimi-k3 nemotron-lightning" ;;
     it-1)        echo "gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
-    risk-1)      echo "gpt-oss-120b" ;;
-    marketing-1) echo "claude-opus-5-1 gemini-3-pro" ;;
+    risk-1)      echo "gpt-oss-120b nemotron-lightning" ;;
+    marketing-1) echo "claude-opus-5-1 gemini-3-pro gpt-oss-120b nemotron-lightning" ;;
   esac
 }
 
@@ -156,11 +156,11 @@ done
 printf '\n============================================================\n'
 printf '=== Scene 4 - the admin view: caps are a property of cost ===\n'
 printf '============================================================\n'
-echo "  One subscription per division, per-model hourly limits:"
+echo "  One subscription per division, per-model limits (hourly + monthly):"
 oc get maassubscription -n models-as-a-service -o json 2>/dev/null | jq -r '
   .items[] | select(.metadata.name | startswith("fedaura-"))
   | "  \(.metadata.name):",
-    (.spec.modelRefs[] | "    \(.name) (\(.namespace)): \(.tokenRateLimits[0].limit) tokens / \(.tokenRateLimits[0].window)")' \
+    (.spec.modelRefs[] | "    \(.name) (\(.namespace)): " + ([.tokenRateLimits[] | "\(.limit) tokens / \(.window)"] | join(" + ")))' \
   || echo "  (oc query failed - run as cluster-admin)"
 echo
 echo "  On-prem (llm namespace) caps are generous - the GPUs are CAPEX."

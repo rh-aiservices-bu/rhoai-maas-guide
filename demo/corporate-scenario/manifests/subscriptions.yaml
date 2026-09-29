@@ -17,7 +17,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Sales Division"
-    openshift.io/description: "Public-facing: cloud general purpose (Claude Opus 5.1), 250K tokens/hour"
+    openshift.io/description: "Public-facing: cloud general purpose (Claude Opus 5.1 250K/h, Terra 100K/h), on-prem general purpose (GPT-OSS 120B 2M/h, Nemotron 30B 1M/h)"
 spec:
   owner:
     groups:
@@ -29,6 +29,29 @@ spec:
       tokenRateLimits:
         - limit: 250000
           window: 1h
+        - limit: 10000000
+          window: 720h
+    - name: gpt-oss-120b
+      namespace: llm
+      tokenRateLimits:
+        - limit: 2000000
+          window: 1h
+        - limit: 1000000000
+          window: 720h
+    - name: nemotron-lightning
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000000
+          window: 1h
+        - limit: 500000000
+          window: 720h
+    - name: terra-large-context
+      namespace: cloud-models
+      tokenRateLimits:
+        - limit: 100000
+          window: 1h
+        - limit: 20000000
+          window: 720h
   priority: 30
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
@@ -38,7 +61,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Branch Division"
-    openshift.io/description: "Public-facing: on-prem general purpose (GPT-OSS 120B), 2M tokens/hour"
+    openshift.io/description: "Public-facing: on-prem general purpose (GPT-OSS 120B 2M/h, Nemotron 30B 1M/h)"
 spec:
   owner:
     groups:
@@ -50,6 +73,15 @@ spec:
       tokenRateLimits:
         - limit: 2000000
           window: 1h
+        - limit: 1000000000
+          window: 720h
+    - name: nemotron-lightning
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000000
+          window: 1h
+        - limit: 500000000
+          window: 720h
   priority: 30
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
@@ -59,7 +91,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Credit / Loans Division"
-    openshift.io/description: "Sensitive: on-prem general purpose (GPT-OSS 120B), 2M tokens/hour"
+    openshift.io/description: "Sensitive: on-prem general purpose (GPT-OSS 120B 2M/h, Nemotron 30B 1M/h)"
 spec:
   owner:
     groups:
@@ -71,6 +103,15 @@ spec:
       tokenRateLimits:
         - limit: 2000000
           window: 1h
+        - limit: 1000000000
+          window: 720h
+    - name: nemotron-lightning
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000000
+          window: 1h
+        - limit: 500000000
+          window: 720h
   priority: 30
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
@@ -80,7 +121,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Developers"
-    openshift.io/description: "Technical: on-prem general + code models, 2M and 1M tokens/hour"
+    openshift.io/description: "Technical: on-prem general purpose (GPT-OSS 120B 2M/h, Nemotron 30B 1M/h) and code (Kimi K3 1M/h)"
 spec:
   owner:
     groups:
@@ -92,16 +133,22 @@ spec:
       tokenRateLimits:
         - limit: 2000000
           window: 1h
+        - limit: 1000000000
+          window: 720h
     - name: kimi-k3
       namespace: llm
       tokenRateLimits:
         - limit: 1000000
           window: 1h
+        - limit: 500000000
+          window: 720h
     - name: nemotron-lightning
       namespace: llm
       tokenRateLimits:
         - limit: 1000000
           window: 1h
+        - limit: 500000000
+          window: 720h
   priority: 30
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
@@ -111,7 +158,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - IT Division"
-    openshift.io/description: "Runs the platform and the pilots - all six models, ~5x standard caps"
+    openshift.io/description: "Runs the platform and the pilots - all six models at 5x standard hourly caps: GPT-OSS 120B 10M/h, Kimi K3 5M/h, Nemotron 30B 5M/h, Claude Opus 5.1 1.25M/h, Gemini 3 Pro 250K/h, Terra 500K/h"
 spec:
   owner:
     groups:
@@ -123,31 +170,43 @@ spec:
       tokenRateLimits:
         - limit: 10000000
           window: 1h
+        - limit: 1000000000
+          window: 720h
     - name: kimi-k3
       namespace: llm
       tokenRateLimits:
         - limit: 5000000
           window: 1h
+        - limit: 1000000000
+          window: 720h
     - name: nemotron-lightning
       namespace: llm
       tokenRateLimits:
         - limit: 5000000
           window: 1h
+        - limit: 1000000000
+          window: 720h
     - name: claude-opus-5-1
       namespace: cloud-models
       tokenRateLimits:
         - limit: 1250000
           window: 1h
+        - limit: 50000000
+          window: 720h
     - name: gemini-3-pro
       namespace: cloud-models
       tokenRateLimits:
         - limit: 250000
           window: 1h
+        - limit: 10000000
+          window: 720h
     - name: terra-large-context
       namespace: cloud-models
       tokenRateLimits:
         - limit: 500000
           window: 1h
+        - limit: 100000000
+          window: 720h
   priority: 30
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
@@ -157,7 +216,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Risk Division"
-    openshift.io/description: "Sensitive: on-prem general purpose (GPT-OSS 120B), 2M tokens/hour"
+    openshift.io/description: "Sensitive: on-prem general purpose (GPT-OSS 120B 2M/h, Nemotron 30B 1M/h)"
 spec:
   owner:
     groups:
@@ -169,6 +228,15 @@ spec:
       tokenRateLimits:
         - limit: 2000000
           window: 1h
+        - limit: 1000000000
+          window: 720h
+    - name: nemotron-lightning
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000000
+          window: 1h
+        - limit: 500000000
+          window: 720h
   priority: 30
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
@@ -178,7 +246,7 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Marketing Division"
-    openshift.io/description: "Public-facing: cloud general purpose + image model, 250K and 50K tokens/hour"
+    openshift.io/description: "Public-facing: cloud general purpose (Claude Opus 5.1 250K/h, Gemini 3 Pro 50K/h), on-prem general purpose (GPT-OSS 120B 2M/h, Nemotron 30B 1M/h)"
 spec:
   owner:
     groups:
@@ -190,9 +258,27 @@ spec:
       tokenRateLimits:
         - limit: 250000
           window: 1h
+        - limit: 10000000
+          window: 720h
     - name: gemini-3-pro
       namespace: cloud-models
       tokenRateLimits:
         - limit: 50000
           window: 1h
+        - limit: 2000000
+          window: 720h
+    - name: gpt-oss-120b
+      namespace: llm
+      tokenRateLimits:
+        - limit: 2000000
+          window: 1h
+        - limit: 1000000000
+          window: 720h
+    - name: nemotron-lightning
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000000
+          window: 1h
+        - limit: 500000000
+          window: 720h
   priority: 30

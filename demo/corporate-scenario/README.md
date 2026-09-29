@@ -24,15 +24,15 @@ are generous. Cloud models are rented per token - so their caps are tight. IT
 gets roughly five times the standard caps because it runs the platform and the
 pilots.
 
-| Division | GPT-OSS 120B | Kimi K3 | Nemotron Lightning 30B | Claude Opus 5.1 | Gemini 3 Pro | Terra |
+| Division | GPT-OSS 120B | Kimi K3 | Nemotron 30B | Claude Opus 5.1 | Gemini 3 Pro | Terra |
 |----------|--------------|---------|------------------------|-----------------|--------------|-------|
-| **Sales** | - | - | - | 250K/h | - | - |
-| **Branch** | 2M/h | - | - | - | - | - |
-| **Credit / Loans** | 2M/h | - | - | - | - | - |
+| **Sales** | 2M/h | - | 1M/h | 250K/h | - | 100K/h |
+| **Branch** | 2M/h | - | 1M/h | - | - | - |
+| **Credit / Loans** | 2M/h | - | 1M/h | - | - | - |
 | **Developers** | 2M/h | 1M/h | 1M/h | - | - | - |
 | **IT** | 10M/h | 5M/h | 5M/h | 1.25M/h | 250K/h | 500K/h |
-| **Risk** | 2M/h | - | - | - | - | - |
-| **Marketing** | - | - | - | 250K/h | 50K/h | - |
+| **Risk** | 2M/h | - | 1M/h | - | - | - |
+| **Marketing** | 2M/h | - | 1M/h | 250K/h | 50K/h | - |
 
 Each division gets ONE `MaaSSubscription` covering all of its allowed models.
 Users mint their own API keys; every key a user holds carries the division tier.
@@ -51,9 +51,9 @@ uses the namespace, which is how on-prem and cloud are visually separated:
 |--------------|------|-----------|---------------------|-------------|
 | GPT-OSS 120B | General purpose | `llm` (on-prem) | `gpt-oss-120b` | `gpt-oss/120b` |
 | Kimi K3 | Code | `llm` (on-prem) | `kimi-k3` | `kimi/k3` |
-| Nemotron Lightning 30B | General purpose, lighter/faster | `llm` (on-prem) | `nemotron-lightning` | `nemotron/3.5-lightning` |
+| Nemotron 30B | General purpose, lighter/faster | `llm` (on-prem) | `nemotron-lightning` | `nemotron/3.5-lightning` |
 | Claude Opus 5.1 | General purpose | `cloud-models` (cloud) | `claude-opus-5-1` | `claude/opus-5.1` |
-| Gemini 3 Pro | Image generation / multimodal | `cloud-models` (cloud) | `gemini-3-pro` | `gemini/3-pro` |
+| Gemini 3 Pro | General purpose, multimodal | `cloud-models` (cloud) | `gemini-3-pro` | `gemini/3-pro` |
 | Terra | Large-context general | `cloud-models` (cloud) | `terra-large-context` | `terra/large-context` |
 
 The on-prem display names are real open-weight models published at
@@ -88,8 +88,8 @@ cd demo/corporate-scenario
 #    policies, subscriptions) - plus the tech preview dashboard features
 #    (Gen AI Studio playground, AI assets, agents catalog, guardrails, MCP)
 #    and the playground backend ConfigMap. DEMO_PASSWORD='...' skips the
-#    interactive prompt.
-./setup-demo.sh
+#    interactive prompt. Also hides the base guide's simulator model by
+#    deleting the shipped simulator-access policy (cleanup restores it).
 
 # 2. Walk the video beats from the CLI (scenes 3-5)
 ./run-demo.sh
@@ -127,50 +127,53 @@ Representative output from `run-demo.sh`:
 === sales-1 (fedaura-sales) ===
   Visible models:
     publishers/cloud-models/models/claude/opus-5.1
-    publishers/llm/models/facebook/opt-125m
+    publishers/cloud-models/models/terra/large-context
+    publishers/llm/models/gpt-oss/120b
+    publishers/llm/models/nemotron/3.5-lightning
   Resolved subscription: fedaura-sales
   One inference per allowed model:
-    claude-opus-5-1        200 OK  (5 tokens)
+    claude-opus-5-1        200 OK  (3 tokens)
+    gpt-oss-120b           200 OK  (3 tokens)
+    nemotron-lightning     200 OK  (4 tokens)
+    terra-large-context    200 OK  (2 tokens)
 
 === dev-1 (fedaura-developers) ===
   Visible models:
-    publishers/llm/models/facebook/opt-125m
     publishers/llm/models/gpt-oss/120b
     publishers/llm/models/kimi/k3
     publishers/llm/models/nemotron/3.5-lightning
   Resolved subscription: fedaura-developers
   One inference per allowed model:
-    gpt-oss-120b           200 OK  (3 tokens)
-    kimi-k3                200 OK  (3 tokens)
-    nemotron-lightning     200 OK  (8 tokens)
+    gpt-oss-120b           200 OK  (5 tokens)
+    kimi-k3                200 OK  (2 tokens)
+    nemotron-lightning     200 OK  (3 tokens)
 
 === it-1 (fedaura-it) ===
   Visible models:
     publishers/cloud-models/models/claude/opus-5.1
     publishers/cloud-models/models/gemini/3-pro
     publishers/cloud-models/models/terra/large-context
-    publishers/llm/models/facebook/opt-125m
     publishers/llm/models/gpt-oss/120b
     publishers/llm/models/kimi/k3
     publishers/llm/models/nemotron/3.5-lightning
   Resolved subscription: fedaura-it
   One inference per allowed model:
-    gpt-oss-120b           200 OK  (4 tokens)
-    kimi-k3                200 OK  (8 tokens)
-    nemotron-lightning     200 OK  (6 tokens)
-    claude-opus-5-1        200 OK  (8 tokens)
+    gpt-oss-120b           200 OK  (3 tokens)
+    kimi-k3                200 OK  (2 tokens)
+    nemotron-lightning     200 OK  (9 tokens)
+    claude-opus-5-1        200 OK  (4 tokens)
     gemini-3-pro           200 OK  (3 tokens)
-    terra-large-context    200 OK  (2 tokens)
+    terra-large-context    200 OK  (5 tokens)
 
 === Scene 4 - the admin view: caps are a property of cost ===
-  One subscription per division, per-model hourly limits:
+  One subscription per division, per-model limits (hourly + monthly):
   fedaura-developers:
-    gpt-oss-120b (llm): 2000000 tokens / 1h
-    kimi-k3 (llm): 1000000 tokens / 1h
-    nemotron-lightning (llm): 1000000 tokens / 1h
+    gpt-oss-120b (llm): 2000000 tokens / 1h + 1000000000 tokens / 720h
+    kimi-k3 (llm): 1000000 tokens / 1h + 500000000 tokens / 720h
+    nemotron-lightning (llm): 1000000 tokens / 1h + 500000000 tokens / 720h
   fedaura-marketing:
-    claude-opus-5-1 (cloud-models): 250000 tokens / 1h
-    gemini-3-pro (cloud-models): 50000 tokens / 1h
+    claude-opus-5-1 (cloud-models): 250000 tokens / 1h + 10000000 tokens / 720h
+    gemini-3-pro (cloud-models): 50000 tokens / 1h + 2000000 tokens / 720h
   ...
 
 === Scene 5 - the developer's day: copy URL + key ===
@@ -179,7 +182,7 @@ Representative output from `run-demo.sh`:
   API key (dev-1):      sk-oai-...
   Kimi K3 endpoint:     https://maas.<domain>/llm/kimi-k3/v1/chat/completions
   Live token meter (input and output counted):
-    prompt=7 completion=8 total=15 tokens
+    prompt=7 completion=24 total=31 tokens
 ```
 
 **Two model-ID details the IDE scene depends on:**
@@ -187,11 +190,13 @@ Representative output from `run-demo.sh`:
 - The catalog lists full tenancy-prefixed IDs
   (`publishers/<namespace>/models/<served-name>`). Requests to the root
   `/v1/chat/completions` endpoint must use those, not the bare served name.
-- The base guide's simulator model (`facebook/opt-125m`) stays visible to every
-  authenticated user via the shipped `simulator-access` policy. Division keys
-  calling it get a clean 403 - no division subscription covers it - so the
-  matrix at the API level stays exact. For the video, the presenter simply does
-  not select it.
+- The base guide's simulator model (`facebook/opt-125m`) stays deployed - it is
+  the `setup-maas.sh` health proxy - but `setup-demo.sh` deletes the shipped
+  `simulator-access` policy, so it never appears in a division catalog.
+  Division keys calling it directly get a clean 403 - no auth policy grants it -
+  so the matrix at the API level stays exact. Re-running `setup-maas.sh` or the
+  base guide's `verify.sh` re-creates the policy; re-run `./setup-demo.sh` to
+  hide it again. `cleanup-demo.sh` restores the policy.
 
 ## Talk track
 
@@ -253,13 +258,15 @@ appear in their catalog and API calls return 403. There is one policy per
 division, granting exactly the models in the matrix above.
 
 The base guide's shipped `simulator-access` policy grants `system:authenticated`
-access to `facebook-opt-125m-simulated`; the Fed Aura policies add
-group-specific access to the six fake models without touching it.
+access to `facebook-opt-125m-simulated`. `setup-demo.sh` deletes it so the base
+simulator never shows in a Fed Aura catalog; the Fed Aura policies add
+group-specific access to the six fake models, and `cleanup-demo.sh` restores the
+shipped policy.
 
 ### MaaSSubscription - how much they can spend
 
 Each division gets ONE `MaaSSubscription` covering all of its models, with
-per-model token rate limits and hourly windows (`window: 1h`). When a user
+per-model token rate limits with hourly (`window: 1h`) and monthly (`window: 720h`) windows. When a user
 mints an API key, the platform resolves the highest-priority subscription they
 match and attaches it - so every key they hold gives access to all models in
 the subscription.
@@ -285,10 +292,10 @@ not pooled per division. (`verify-fa-cap.sh` proves both behaviors.)
 
 | Test | What it proves |
 |------|----------------|
-| Access control (42 tests) | Full 7x6 matrix: 15 allow, 27 deny |
+| Access control (42 tests) | Full 7x6 matrix: 23 allow, 19 deny |
 | Rate limiting (1 test) | Marketing's Gemini 3 Pro hits 429 at its 50K/h cap - real exhaustion, not a mock |
 | Key multiplication (2 tests) | A second key shares the user's exhausted quota; a second user in the same division gets their own budget |
-| Config drift (16 tests) | All 15 subscription caps match the matrix; all windows are hourly |
+| Config drift (24 tests) | All 23 subscription caps match the matrix; every modelRef has hourly + monthly windows |
 
 `SKIP_RATE_LIMIT=1` skips the ~1-2 minute quota burn (the rate-limit and
 key-multiplication tests then report SKIP).
@@ -301,7 +308,7 @@ demo/corporate-scenario/
   setup-demo.sh          # create users, groups, IdP, models, MaaS CRDs
   run-demo.sh            # video beats CLI - catalogs, admin view, IDE config
   warmup-cloud-quota.sh  # burn a cloud model's hourly quota for a real 429
-  verify-fa-cap.sh       # automated verification (61 tests)
+  verify-fa-cap.sh       # automated verification (69 tests)
   cleanup-demo.sh        # tear down all demo resources
   manifests/
     namespace-cloud-models.yaml

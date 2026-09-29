@@ -98,7 +98,7 @@
 
   <!-- RIGHT: the two estates -->
   <rect class="panel" x="1350" y="210" width="500" height="700" rx="16"/>
-  <text x="1380" y="252" class="colhdr">MODEL ESTATES</text>
+  <text x="1380" y="252" class="colhdr">WHERE MODELS RUN</text>
 
   <!-- on-prem estate -->
   <rect class="card" x="1380" y="276" width="440" height="290" rx="12"/>
@@ -110,17 +110,17 @@
   <circle cx="1422" cy="452" r="6" class="onprem"/>
   <text x="1444" y="460" class="model">Kimi K3</text>
   <circle cx="1422" cy="504" r="6" class="onprem"/>
-  <text x="1444" y="512" class="model">Nemotron Lightning 30B</text>
+  <text x="1444" y="512" class="model">Nemotron 30B</text>
 
   <!-- cloud estate -->
   <rect class="card" x="1380" y="596" width="440" height="290" rx="12"/>
   <rect class="cloud" x="1380" y="596" width="6" height="290" rx="3"/>
-  <text x="1410" y="642" class="esttl" fill="#4EA8DE">Cloud / SaaS</text>
+  <text x="1410" y="642" class="esttl" fill="#4EA8DE">Cloud</text>
   <text x="1410" y="672" class="h2">external SaaS · pay-per-use</text>
   <circle cx="1422" cy="720" r="6" class="cloud"/>
   <text x="1444" y="728" class="model">Claude Opus 5.1</text>
   <circle cx="1422" cy="772" r="6" class="cloud"/>
-  <text x="1444" y="780" class="model">Gemini 3 Pro (image)</text>
+  <text x="1444" y="780" class="model">Gemini 3 Pro</text>
   <circle cx="1422" cy="824" r="6" class="cloud"/>
   <text x="1444" y="832" class="model">Terra</text>
 

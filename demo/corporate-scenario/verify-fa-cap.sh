@@ -6,7 +6,7 @@
 #   2. Rate limiting   - burn Marketing's Gemini 3 Pro hourly cap (50K/h), expect 429
 #   3. Key multiplication - a second key shares the user's exhausted quota
 #                        (the cap is per user, not per credential)
-#   4. Config drift    - subscription caps match the access matrix
+#   4. Config drift    - subscription caps match the access matrix (hourly + monthly windows)
 #
 # Usage:
 #   ./verify-fa-cap.sh
@@ -70,13 +70,13 @@ served_for() {
 
 allowed_for() {
   case "$1" in
-    sales-1)     echo "claude-opus-5-1" ;;
-    branch-1)    echo "gpt-oss-120b" ;;
-    credit-1)    echo "gpt-oss-120b" ;;
+    sales-1)     echo "claude-opus-5-1 gpt-oss-120b nemotron-lightning terra-large-context" ;;
+    branch-1)    echo "gpt-oss-120b nemotron-lightning" ;;
+    credit-1)    echo "gpt-oss-120b nemotron-lightning" ;;
     dev-1)       echo "gpt-oss-120b kimi-k3 nemotron-lightning" ;;
     it-1)        echo "gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
-    risk-1)      echo "gpt-oss-120b" ;;
-    marketing-1) echo "claude-opus-5-1 gemini-3-pro" ;;
+    risk-1)      echo "gpt-oss-120b nemotron-lightning" ;;
+    marketing-1) echo "claude-opus-5-1 gemini-3-pro gpt-oss-120b nemotron-lightning" ;;
   esac
 }
 
@@ -252,7 +252,7 @@ fi
 
 # ==========================================
 echo ""
-echo "=== 4. Config drift (16 tests) ==="
+echo "=== 4. Config drift (24 tests) ==="
 # ==========================================
 # Subscription caps must match the access matrix.
 
@@ -270,8 +270,13 @@ check_cap() {
 }
 
 check_cap "fedaura-sales"      "claude-opus-5-1"     "250000"
+check_cap "fedaura-sales"      "gpt-oss-120b"        "2000000"
+check_cap "fedaura-sales"      "nemotron-lightning"  "1000000"
+check_cap "fedaura-sales"      "terra-large-context" "100000"
 check_cap "fedaura-branch"     "gpt-oss-120b"        "2000000"
+check_cap "fedaura-branch"     "nemotron-lightning"  "1000000"
 check_cap "fedaura-credit"     "gpt-oss-120b"        "2000000"
+check_cap "fedaura-credit"     "nemotron-lightning"  "1000000"
 check_cap "fedaura-developers" "gpt-oss-120b"        "2000000"
 check_cap "fedaura-developers" "kimi-k3"             "1000000"
 check_cap "fedaura-developers" "nemotron-lightning"  "1000000"
@@ -282,13 +287,16 @@ check_cap "fedaura-it"         "claude-opus-5-1"     "1250000"
 check_cap "fedaura-it"         "gemini-3-pro"        "250000"
 check_cap "fedaura-it"         "terra-large-context" "500000"
 check_cap "fedaura-risk"       "gpt-oss-120b"        "2000000"
+check_cap "fedaura-risk"       "nemotron-lightning"  "1000000"
 check_cap "fedaura-marketing"  "claude-opus-5-1"     "250000"
 check_cap "fedaura-marketing"  "gemini-3-pro"        "50000"
+check_cap "fedaura-marketing"  "gpt-oss-120b"        "2000000"
+check_cap "fedaura-marketing"  "nemotron-lightning"  "1000000"
 
 WINDOWS=$(oc get maassubscription -n models-as-a-service -o json 2>/dev/null \
   | jq -r '[.items[] | select(.metadata.name | startswith("fedaura-"))
-           | .spec.modelRefs[].tokenRateLimits[].window] | unique | join(",")' 2>/dev/null)
-check "all Fed Aura rate-limit windows are hourly" "1h" "$WINDOWS"
+           | .spec.modelRefs[].tokenRateLimits | map(.window)] | unique | tostring' 2>/dev/null)
+check "every modelRef has hourly then monthly windows" '[["1h","720h"]]' "$WINDOWS"
 
 # --- summary ---
 echo ""

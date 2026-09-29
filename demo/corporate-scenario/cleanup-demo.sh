@@ -2,9 +2,10 @@
 # Remove everything setup-demo.sh created.
 #
 # Deletes CRs before namespaces to avoid finalizer blocks.
-# Nothing from the base guide is touched: the base simulator model
-# (facebook-opt-125m-simulated), its auth policy, and the shipped subscriptions
-# stay exactly as setup-maas.sh left them.
+# The base simulator model (facebook-opt-125m-simulated) and the shipped
+# subscriptions stay exactly as setup-maas.sh left them. setup-demo.sh removes
+# the shipped simulator-access policy to hide the base model from the demo
+# catalogs - this script restores it from the repo's shipped manifest.
 #
 # Usage:
 #   ./cleanup-demo.sh
@@ -35,6 +36,8 @@ oc delete -f "${DIR}/manifests/subscriptions.yaml" --ignore-not-found 2>&1 | sed
 
 echo "==> Removing auth policies"
 oc delete -f "${DIR}/manifests/auth-policies.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
+echo "==> Restoring the shipped simulator-access policy (hidden by setup-demo.sh)"
+oc apply -f "${DIR}/../../manifests/05-maas-models/simulator/maas/maas-auth-policy.yaml" 2>&1 | sed 's/^/  /' || true
 
 echo "==> Removing MaaSModelRef resources"
 oc delete -f "${DIR}/manifests/maas-models.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
@@ -74,4 +77,5 @@ echo
 echo "Identity providers now:"
 oc get oauth cluster -o jsonpath='{range .spec.identityProviders[*]}  {.name} ({.type}){"\n"}{end}'
 echo
-echo "Cleanup complete. The base guide's simulator model and subscriptions were not touched."
+echo "Cleanup complete. The base guide's simulator model and subscriptions were not touched;"
+echo "the shipped simulator-access policy was restored."

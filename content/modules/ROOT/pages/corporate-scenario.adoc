@@ -53,7 +53,7 @@ The engineer owns this beat: one gateway in front of everything, and nothing byp
 
 === Scene 3 - The catalog is the policy (1:15-1:55)
 
-On screen: the {rhoai} Dashboard model catalog. One full login as a developer, then a three-way split-screen card (~8s): the developer's catalog (coding models + general purpose), the marketer's (general purpose + image model), the credit officer's (one on-prem general model).
+On screen: the {rhoai} Dashboard model catalog. One full login as a developer, then a three-way split-screen card (~8s): the developer's catalog (coding models + general purpose), the marketer's (general purpose, on-prem and cloud), the credit officer's (two on-prem general models).
 
 One login establishes the mechanic; the split screen carries the comparison. No repeated logins - login cycles are dead air.
 
@@ -63,7 +63,7 @@ The platform hides what a user cannot access. No "request access" button, no gre
 
 On screen: admin side of the dashboard. Two cuts:
 
-* The subscription list - one per division, human-readable names, visible per-model hourly limits, and a description of what the tier is for.
+* The subscription list - one per division, human-readable names, visible per-model hourly and monthly limits, and a description of what the tier is for.
 * The usage dashboard - consumption per model across the bank. Tokens first; dollars where the platform reports model pricing (see the xref:#the_dollar_display[branch] below).
 
 The CIO owns this beat: caps encode the cost model, on-prem is CAPEX (hardware already paid for), cloud is rented - and spend is visible in dollars.
@@ -120,15 +120,15 @@ Total dialogue budget: ~5 minutes, ~700 spoken words. Lines below are cues, not 
 
 === Scene 3 - The catalog is the policy
 
-*Engineer:* Watch the policy become visible. I log in as a developer: GPT-OSS, Kimi K3, and Nemotron Lightning 30B. Nothing else exists from this seat.
+*Engineer:* Watch the policy become visible. I log in as a developer: GPT-OSS, Kimi K3, and Nemotron 30B. Nothing else exists from this seat.
 
-*CIO:* A marketer sees Claude plus Gemini for images. A credit officer gets one on-prem model - GPT-OSS - customer data never leaves. The policy is per division, and it lives in the platform, not in a wiki page.
+*CIO:* Different work, different models. A marketer sees Claude, Gemini, GPT-OSS, and Nemotron. A credit officer gets two on-prem models - GPT-OSS and Nemotron - customer data never leaves. The policy is per division, and it lives in the platform, not in a wiki page.
 
 *Engineer:* No greyed-out rows, no request-access button. The catalog is the policy - and the same login that opens the dashboard authorizes every API call.
 
 === Scene 4 - The admin view
 
-*CIO:* My view. Each division has one subscription with per-model hourly caps. The caps encode the cost model, not the technology.
+*CIO:* My view. Each division has one subscription with per-model hourly and monthly caps. The caps encode the cost model, not the technology.
 
 *Engineer:* On-prem is CAPEX - hardware already paid for, we own the GPUs - so those caps are generous. Cloud is rented, so they are tight. IT runs the platform, so it gets roughly five times the standard caps.
 
@@ -323,20 +323,20 @@ Seven OpenShift groups, one per division, each with two htpasswd users (the seco
 Auth policies grant, per division, exactly the models in the matrix. Everything else is hidden from the catalog - and 403 at the API if addressed directly.
 
 |===
-| Division | GPT-OSS 120B | Kimi K3 | Nemotron Lightning 30B | Claude Opus 5.1 | Gemini 3 Pro | Terra
+| Division | GPT-OSS 120B | Kimi K3 | Nemotron 30B | Claude Opus 5.1 | Gemini 3 Pro | Terra
 
 | Sales
+| 2M/h
 | -
-| -
-| -
+| 1M/h
 | 250K/h
 | -
-| -
+| 100K/h
 
 | Local Branches
 | 2M/h
 | -
-| -
+| 1M/h
 | -
 | -
 | -
@@ -344,7 +344,7 @@ Auth policies grant, per division, exactly the models in the matrix. Everything 
 | Credit / Loans
 | 2M/h
 | -
-| -
+| 1M/h
 | -
 | -
 | -
@@ -368,21 +368,21 @@ Auth policies grant, per division, exactly the models in the matrix. Everything 
 | Risk
 | 2M/h
 | -
-| -
+| 1M/h
 | -
 | -
 | -
 
 | Marketing
+| 2M/h
 | -
-| -
-| -
+| 1M/h
 | 250K/h
 | 50K/h
 | -
 |===
 
-The philosophy, and the line to say out loud: *caps are a property of cost, not of capability.* On-prem models run on GPUs the bank already bought - CAPEX - so their caps are generous. Cloud models are rented per token - so their caps are tight. IT gets roughly five times the standard caps because it runs the platform and the pilots.
+The philosophy, and the line to say out loud: *caps are a property of cost, not of capability.* On-prem models run on GPUs the bank already bought - CAPEX - so their caps are generous. Cloud models are rented per token - so their caps are tight. Monthly the gap is starker: on-prem gets about a hundred times the cloud budget. IT gets roughly five times the standard caps because it runs the platform and the pilots.
 
 Each division gets ONE `MaaSSubscription` covering all of its models, and priority 30 so the division tier outranks any shipped default subscription (see the xref:#workshop-extensions[appendix] for how the shipped tiers interact). Users mint their own API keys.
 
@@ -402,7 +402,7 @@ All under `demo/corporate-scenario/`:
 | Burns down the cloud model's hourly quota until the next rate-limit window boundary. This is what makes scene 6 true: the 429 on camera is a real, earned exhaustion of a real cap.
 
 | `verify-fa-cap.sh`
-| The Fed Aura Capital test suite: the full 7x6 access matrix (allow/deny per cell), rate-limit behavior on the cloud models, key multiplication (limits are per subscription, not per credential), and config-drift checks that subscription caps match the matrix above.
+| The Fed Aura Capital test suite: the full 7x6 access matrix (allow/deny per cell), rate-limit behavior on the cloud models, key multiplication (limits are per subscription, not per credential), and config-drift checks that subscription caps match the matrix above (hourly and monthly windows).
 
 | `cleanup-demo.sh`
 | Tears everything down - CRDs, services, namespace, groups, users, identity provider. Nothing from the base guide is touched.

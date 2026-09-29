@@ -5,16 +5,17 @@
 # directly.
 #
 # Access matrix (hourly token caps live in subscriptions.yaml):
-#   gpt-oss-120b            branch, credit, developers, IT, risk
+#   gpt-oss-120b            sales, branch, credit, developers, IT, risk, marketing
 #   kimi-k3                 developers, IT
-#   nemotron-lightning      developers, IT
+#   nemotron-lightning      sales, branch, credit, developers, IT, risk, marketing
 #   claude-opus-5-1         sales, IT, marketing
 #   gemini-3-pro            IT, marketing
-#   terra-large-context     IT
+#   terra-large-context     sales, IT
 #
-# NOTE: the base guide's simulator model (facebook/opt-125m-simulated) keeps its
-# shipped simulator-access policy for system:authenticated - this file does not
-# touch it.
+# NOTE: the base guide's simulator model (facebook/opt-125m-simulated) is hidden
+# from the demo catalogs: setup-demo.sh removes the shipped simulator-access
+# policy (system:authenticated) right after applying this file; cleanup-demo.sh
+# restores it.
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
 kind: MaaSAuthPolicy
@@ -23,10 +24,16 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Sales Division"
-    openshift.io/description: "Sales may call Claude Opus 5.1 (cloud)"
+    openshift.io/description: "Sales may call Claude Opus 5.1, Terra (cloud) and GPT-OSS 120B, Nemotron 30B (on-prem)"
 spec:
   modelRefs:
     - name: claude-opus-5-1
+      namespace: cloud-models
+    - name: gpt-oss-120b
+      namespace: llm
+    - name: nemotron-lightning
+      namespace: llm
+    - name: terra-large-context
       namespace: cloud-models
   subjects:
     groups:
@@ -40,10 +47,12 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Branch Division"
-    openshift.io/description: "Branch may call GPT-OSS 120B (on-prem)"
+    openshift.io/description: "Branch may call GPT-OSS 120B, Nemotron 30B (on-prem)"
 spec:
   modelRefs:
     - name: gpt-oss-120b
+      namespace: llm
+    - name: nemotron-lightning
       namespace: llm
   subjects:
     groups:
@@ -57,10 +66,12 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Credit / Loans Division"
-    openshift.io/description: "Credit may call GPT-OSS 120B (on-prem)"
+    openshift.io/description: "Credit may call GPT-OSS 120B, Nemotron 30B (on-prem)"
 spec:
   modelRefs:
     - name: gpt-oss-120b
+      namespace: llm
+    - name: nemotron-lightning
       namespace: llm
   subjects:
     groups:
@@ -122,10 +133,12 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Risk Division"
-    openshift.io/description: "Risk may call GPT-OSS 120B (on-prem)"
+    openshift.io/description: "Risk may call GPT-OSS 120B, Nemotron 30B (on-prem)"
 spec:
   modelRefs:
     - name: gpt-oss-120b
+      namespace: llm
+    - name: nemotron-lightning
       namespace: llm
   subjects:
     groups:
@@ -139,13 +152,17 @@ metadata:
   namespace: models-as-a-service
   annotations:
     openshift.io/display-name: "Fed Aura - Marketing Division"
-    openshift.io/description: "Marketing may call Claude Opus 5.1 and Gemini 3 Pro (cloud)"
+    openshift.io/description: "Marketing may call Claude Opus 5.1, Gemini 3 Pro (cloud) and GPT-OSS 120B, Nemotron 30B (on-prem)"
 spec:
   modelRefs:
     - name: claude-opus-5-1
       namespace: cloud-models
     - name: gemini-3-pro
       namespace: cloud-models
+    - name: gpt-oss-120b
+      namespace: llm
+    - name: nemotron-lightning
+      namespace: llm
   subjects:
     groups:
       - name: fedaura-marketing

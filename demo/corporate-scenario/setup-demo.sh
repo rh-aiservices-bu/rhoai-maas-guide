@@ -15,6 +15,9 @@
 #
 # Deploys six simulator-backed models (3 on-prem in llm, 3 cloud in cloud-models)
 # and applies the MaaS governance CRDs (model refs, auth policies, subscriptions).
+# The base guide's simulator model (facebook-opt-125m-simulated) stays deployed -
+# its shipped simulator-access policy is removed so it never shows in a Fed Aura
+# catalog; cleanup-demo.sh restores the policy.
 #
 # Usage:
 #   ./setup-demo.sh                         # password prompted, or set DEMO_PASSWORD
@@ -156,6 +159,12 @@ oc apply -f "${DIR}/manifests/maas-models.yaml"
 
 echo "==> Applying auth policies"
 oc apply -f "${DIR}/manifests/auth-policies.yaml"
+# Hide the base guide's simulator model: remove the shipped simulator-access
+# policy (grants system:authenticated). The model itself stays deployed - it is
+# the setup-maas.sh health proxy checked above - but with no auth policy it is
+# invisible in every Fed Aura catalog and 403s when addressed directly.
+echo "==> Hiding the base simulator model (removing shipped simulator-access policy)"
+oc delete maasauthpolicy simulator-access -n models-as-a-service --ignore-not-found
 
 echo "==> Applying subscriptions"
 oc apply -f "${DIR}/manifests/subscriptions.yaml"
@@ -248,6 +257,7 @@ done
 echo
 echo "Models:"
 oc get maasmodelref -A --no-headers 2>/dev/null | awk '{printf "  %-35s %-20s %s\n", $2, $1, $5}'
+echo "  (facebook-opt-125m-simulated is the base guide's health model - hidden from demo catalogs)"
 echo
 echo "Subscriptions:"
 oc get maassubscription -n models-as-a-service --no-headers 2>/dev/null | awk '{printf "  %-25s prio=%s\n", $1, $4}'

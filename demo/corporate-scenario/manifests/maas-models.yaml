@@ -36,7 +36,7 @@ metadata:
   name: nemotron-lightning
   namespace: llm
   annotations:
-    openshift.io/display-name: "Nemotron Lightning 30B"
+    openshift.io/display-name: "Nemotron 30B"
     openshift.io/description: "On-prem general purpose, lighter and faster (real deployment: RedHatAI NVIDIA-Nemotron-3.5-Lightning-30B-A3B)"
 spec:
   modelRef:
@@ -63,7 +63,7 @@ metadata:
   namespace: cloud-models
   annotations:
     openshift.io/display-name: "Gemini 3 Pro"
-    openshift.io/description: "Cloud-hosted image generation / multimodal model (simulator for demo)"
+    openshift.io/description: "Cloud-hosted general purpose, multimodal model (simulator for demo)"
 spec:
   modelRef:
     kind: LLMInferenceService

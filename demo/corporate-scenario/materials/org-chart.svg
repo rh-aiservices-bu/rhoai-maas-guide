@@ -49,7 +49,7 @@
     <rect class="node" x="80" y="404" width="270" height="212" rx="14"/>
     <text x="215" y="458" text-anchor="middle" class="div">Sales</text>
     <text x="215" y="536" text-anchor="middle" class="head">30,000</text>
-    <text x="215" y="570" text-anchor="middle" class="pct">37.5%</text>
+    <text x="215" y="570" text-anchor="middle" class="pct">38%</text>
     <rect x="155" y="580" width="120" height="34" rx="17" fill="#F2A93B" fill-opacity="0.15"/>
     <text x="215" y="603" text-anchor="middle" class="pilltx" fill="#F2A93B">public-facing</text>
   </g>
@@ -69,7 +69,7 @@
     <rect class="node" x="676" y="404" width="270" height="212" rx="14"/>
     <text x="811" y="458" text-anchor="middle" class="div">Credit / Loans</text>
     <text x="811" y="536" text-anchor="middle" class="head">10,000</text>
-    <text x="811" y="570" text-anchor="middle" class="pct">12.5%</text>
+    <text x="811" y="570" text-anchor="middle" class="pct">13%</text>
     <rect x="751" y="580" width="120" height="34" rx="17" fill="#F04438" fill-opacity="0.15"/>
     <text x="811" y="603" text-anchor="middle" class="pilltx" fill="#F04438">sensitive</text>
   </g>
@@ -79,7 +79,7 @@
     <rect class="node" x="974" y="404" width="270" height="212" rx="14"/>
     <text x="1109" y="458" text-anchor="middle" class="div">IT</text>
     <text x="1109" y="536" text-anchor="middle" class="head">5,000</text>
-    <text x="1109" y="570" text-anchor="middle" class="pct">6.25%</text>
+    <text x="1109" y="570" text-anchor="middle" class="pct">6%</text>
     <rect x="1049" y="580" width="120" height="34" rx="17" fill="#57C39A" fill-opacity="0.15"/>
     <text x="1109" y="603" text-anchor="middle" class="pilltx" fill="#57C39A">technical</text>
   </g>
@@ -99,7 +99,7 @@
     <rect class="node" x="1570" y="404" width="270" height="212" rx="14"/>
     <text x="1705" y="458" text-anchor="middle" class="div">Marketing</text>
     <text x="1705" y="536" text-anchor="middle" class="head">3,000</text>
-    <text x="1705" y="570" text-anchor="middle" class="pct">3.75%</text>
+    <text x="1705" y="570" text-anchor="middle" class="pct">4%</text>
     <rect x="1645" y="580" width="120" height="34" rx="17" fill="#F2A93B" fill-opacity="0.15"/>
     <text x="1705" y="603" text-anchor="middle" class="pilltx" fill="#F2A93B">public-facing</text>
   </g>
@@ -128,19 +128,19 @@
   <!-- legend -->
   <text x="84" y="668" class="lgtitle">Share of headcount — 80,000 total</text>
   <circle cx="96" cy="707" r="6" fill="#F2A93B"/>
-  <text x="114" y="714" class="lgname">Sales <tspan class="lgval">30,000 · 37.5%</tspan></text>
+  <text x="114" y="714" class="lgname">Sales <tspan class="lgval">30,000 · 38%</tspan></text>
   <circle cx="96" cy="755" r="6" fill="#F7C56B"/>
   <text x="114" y="762" class="lgname">Local Branches <tspan class="lgval">20,000 · 25%</tspan></text>
   <circle cx="96" cy="803" r="6" fill="#F04438"/>
-  <text x="114" y="810" class="lgname">Credit / Loans <tspan class="lgval">10,000 · 12.5%</tspan></text>
+  <text x="114" y="810" class="lgname">Credit / Loans <tspan class="lgval">10,000 · 13%</tspan></text>
   <circle cx="96" cy="851" r="6" fill="#57C39A"/>
   <text x="114" y="858" class="lgname">Developers <tspan class="lgval">8,000 · 10%</tspan></text>
   <circle cx="530" cy="707" r="6" fill="#8FDDBB"/>
-  <text x="548" y="714" class="lgname">IT <tspan class="lgval">5,000 · 6.25%</tspan></text>
+  <text x="548" y="714" class="lgname">IT <tspan class="lgval">5,000 · 6%</tspan></text>
   <circle cx="530" cy="755" r="6" fill="#FF8A7A"/>
   <text x="548" y="762" class="lgname">Risk <tspan class="lgval">4,000 · 5%</tspan></text>
   <circle cx="530" cy="803" r="6" fill="#FFDFA0"/>
-  <text x="548" y="810" class="lgname">Marketing <tspan class="lgval">3,000 · 3.75%</tspan></text>
+  <text x="548" y="810" class="lgname">Marketing <tspan class="lgval">3,000 · 4%</tspan></text>
 
   <!-- sensitivity legend -->
   <circle cx="96" cy="920" r="6" fill="#F2A93B"/>

@@ -20,7 +20,7 @@
   <!-- header -->
   <text x="70" y="84" class="eyebrow">FED AURA CAPITAL</text>
   <text x="70" y="146" class="title">The access matrix</text>
-  <text x="70" y="190" class="sub">Per-model hourly caps by division — everything else is hidden from the catalog.</text>
+  <text x="70" y="190" class="sub">Per-model hourly token caps by division — everything else is hidden from the catalog.</text>
 
   <!-- column groups -->
   <text x="751" y="246" text-anchor="middle" class="grp" fill="#F2A93B">ON-PREM — COMPANY GPUS (CAPEX)</text>
@@ -31,25 +31,25 @@
   <!-- column headers -->
   <text x="505"  y="300" text-anchor="middle" class="model">GPT-OSS 120B</text>
   <text x="751"  y="300" text-anchor="middle" class="model">Kimi K3</text>
-  <text x="997"  y="300" text-anchor="middle" class="model">Nemotron Lightning 30B</text>
+  <text x="997"  y="300" text-anchor="middle" class="model">Nemotron 30B</text>
   <text x="1243" y="300" text-anchor="middle" class="model">Claude Opus 5.1</text>
-  <text x="1489" y="300" text-anchor="middle" class="model">Gemini 3 Pro (image)</text>
+  <text x="1489" y="300" text-anchor="middle" class="model">Gemini 3 Pro</text>
   <text x="1735" y="300" text-anchor="middle" class="model">Terra</text>
 
   <!-- Sales -->
   <text x="356" y="383" text-anchor="end" class="rowlbl">Sales</text>
-  <rect x="390" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="505" y="381" text-anchor="middle" class="nocap">—</text>
+  <rect x="390" y="334" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="505" y="381" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
   <rect x="636" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="751" y="381" text-anchor="middle" class="nocap">—</text>
-  <rect x="882" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="997" y="381" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="334" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="997" y="381" text-anchor="middle" class="cap" fill="#FFC96B">1M/h</text>
   <rect x="1128" y="334" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
   <text x="1243" y="381" text-anchor="middle" class="cap" fill="#7CC4EE">250K/h</text>
   <rect x="1374" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="1489" y="381" text-anchor="middle" class="nocap">—</text>
-  <rect x="1620" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="1735" y="381" text-anchor="middle" class="nocap">—</text>
+  <rect x="1620" y="334" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
+  <text x="1735" y="381" text-anchor="middle" class="cap" fill="#7CC4EE">100K/h</text>
 
   <!-- Local Branches -->
   <text x="356" y="476" text-anchor="end" class="rowlbl">Local Branches</text>
@@ -57,8 +57,8 @@
   <text x="505" y="474" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
   <rect x="636" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="751" y="474" text-anchor="middle" class="nocap">—</text>
-  <rect x="882" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="997" y="474" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="427" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="997" y="474" text-anchor="middle" class="cap" fill="#FFC96B">1M/h</text>
   <rect x="1128" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="1243" y="474" text-anchor="middle" class="nocap">—</text>
   <rect x="1374" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
@@ -72,8 +72,8 @@
   <text x="505" y="567" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
   <rect x="636" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="751" y="567" text-anchor="middle" class="nocap">—</text>
-  <rect x="882" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="997" y="567" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="520" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="997" y="567" text-anchor="middle" class="cap" fill="#FFC96B">1M/h</text>
   <rect x="1128" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="1243" y="567" text-anchor="middle" class="nocap">—</text>
   <rect x="1374" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
@@ -117,8 +117,8 @@
   <text x="505" y="846" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
   <rect x="636" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="751" y="846" text-anchor="middle" class="nocap">—</text>
-  <rect x="882" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="997" y="846" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="799" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="997" y="846" text-anchor="middle" class="cap" fill="#FFC96B">1M/h</text>
   <rect x="1128" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="1243" y="846" text-anchor="middle" class="nocap">—</text>
   <rect x="1374" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
@@ -128,12 +128,12 @@
 
   <!-- Marketing -->
   <text x="356" y="941" text-anchor="end" class="rowlbl">Marketing</text>
-  <rect x="390" y="892" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="505" y="939" text-anchor="middle" class="nocap">—</text>
+  <rect x="390" y="892" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="505" y="939" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
   <rect x="636" y="892" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
   <text x="751" y="939" text-anchor="middle" class="nocap">—</text>
-  <rect x="882" y="892" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
-  <text x="997" y="939" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="892" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="997" y="939" text-anchor="middle" class="cap" fill="#FFC96B">1M/h</text>
   <rect x="1128" y="892" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
   <text x="1243" y="939" text-anchor="middle" class="cap" fill="#7CC4EE">250K/h</text>
   <rect x="1374" y="892" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
@@ -147,5 +147,5 @@
   <rect x="800" y="1008" width="26" height="14" rx="4" fill="#0F2233" stroke="#2F6E9E"/>
   <text x="838" y="1022" class="legend">cloud cap — tight (pay-per-use)</text>
   <text x="1200" y="1022" class="legend">—  no access · hidden from catalog</text>
-  <text x="1560" y="1022" class="legend">IT ≈ 5× standard caps</text>
+  <text x="1560" y="1022" class="legend">IT — about 5× the other caps</text>
 </svg>
