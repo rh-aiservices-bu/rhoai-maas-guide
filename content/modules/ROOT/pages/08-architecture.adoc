@@ -134,4 +134,5 @@ Corrected two-stage IPP (pre/post Kuadrant), WasmPlugin CRs, ExternalProvider/Ex
 
 * link:https://opendatahub-io.github.io/models-as-a-service/latest/concepts/architecture/[Upstream MaaS Architecture]
 * link:{attachmentsdir}/flow.html[RHOAI 3.5 Flow Visualizer (two-stage IPP)]
+* link:{attachmentsdir}/install-flow.html[Install & Configuration Visualizer] - animated walkthrough of the phase sequence, the most common ordering mistake, governance pairing, and tiers/priority
 * link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[RHOAI 3.5 MaaS Official Docs]
