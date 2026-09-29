@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- M4 - Access matrix (division x model, hourly caps). Source of truth: [[the_access_matrix]] in content/modules/ROOT/pages/corporate-scenario.adoc — keep in sync. 1920x1080. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <style>
+    .bg     { fill:#0A0F1C; }
+    .eyebrow{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; font-weight:700; letter-spacing:4px; fill:#F04438; }
+    .title  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:56px; font-weight:700; fill:#E9EEF6; }
+    .sub    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:22px; fill:#8C99AF; }
+    .grp    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:17px; font-weight:700; letter-spacing:1px; }
+    .model  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:24px; font-weight:700; fill:#E9EEF6; }
+    .rowlbl { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:26px; font-weight:700; fill:#E9EEF6; }
+    .cap    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:26px; font-weight:700; }
+    .nocap  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#37456B; }
+    .legend { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:19px; fill:#8C99AF; }
+  </style>
+
+  <!-- backdrop -->
+  <rect class="bg" width="1920" height="1080"/>
+
+  <!-- header -->
+  <text x="70" y="84" class="eyebrow">FED AURA CAPITAL</text>
+  <text x="70" y="146" class="title">The access matrix</text>
+  <text x="70" y="190" class="sub">Per-model hourly caps by division — everything else is hidden from the catalog (403 at the API).</text>
+
+  <!-- column groups -->
+  <text x="751" y="246" text-anchor="middle" class="grp" fill="#F2A93B">ON-PREM — COMPANY GPUS (SUNK COST)</text>
+  <line x1="390" y1="258" x2="1112" y2="258" stroke="#F2A93B" stroke-width="2" stroke-opacity="0.45"/>
+  <text x="1489" y="246" text-anchor="middle" class="grp" fill="#4EA8DE">CLOUD — RENTED, PAY-PER-USE</text>
+  <line x1="1128" y1="258" x2="1850" y2="258" stroke="#4EA8DE" stroke-width="2" stroke-opacity="0.45"/>
+
+  <!-- column headers -->
+  <text x="505"  y="300" text-anchor="middle" class="model">GPT-OSS 120B</text>
+  <text x="751"  y="300" text-anchor="middle" class="model">Kimi K3</text>
+  <text x="997"  y="300" text-anchor="middle" class="model">Nemotron Lightning 30B</text>
+  <text x="1243" y="300" text-anchor="middle" class="model">Claude Opus 5.1</text>
+  <text x="1489" y="300" text-anchor="middle" class="model">Gemini 3 Pro (image)</text>
+  <text x="1735" y="300" text-anchor="middle" class="model">Terra</text>
+
+  <!-- Sales -->
+  <text x="356" y="383" text-anchor="end" class="rowlbl">Sales</text>
+  <rect x="390" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="505" y="381" text-anchor="middle" class="nocap">—</text>
+  <rect x="636" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="751" y="381" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="997" y="381" text-anchor="middle" class="nocap">—</text>
+  <rect x="1128" y="334" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
+  <text x="1243" y="381" text-anchor="middle" class="cap" fill="#7CC4EE">250K/h</text>
+  <rect x="1374" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1489" y="381" text-anchor="middle" class="nocap">—</text>
+  <rect x="1620" y="334" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1735" y="381" text-anchor="middle" class="nocap">—</text>
+
+  <!-- Local Branches -->
+  <text x="356" y="476" text-anchor="end" class="rowlbl">Local Branches</text>
+  <rect x="390" y="427" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="505" y="474" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
+  <rect x="636" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="751" y="474" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="997" y="474" text-anchor="middle" class="nocap">—</text>
+  <rect x="1128" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1243" y="474" text-anchor="middle" class="nocap">—</text>
+  <rect x="1374" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1489" y="474" text-anchor="middle" class="nocap">—</text>
+  <rect x="1620" y="427" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1735" y="474" text-anchor="middle" class="nocap">—</text>
+
+  <!-- Credit / Loans -->
+  <text x="356" y="569" text-anchor="end" class="rowlbl">Credit / Loans</text>
+  <rect x="390" y="520" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="505" y="567" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
+  <rect x="636" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="751" y="567" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="997" y="567" text-anchor="middle" class="nocap">—</text>
+  <rect x="1128" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1243" y="567" text-anchor="middle" class="nocap">—</text>
+  <rect x="1374" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1489" y="567" text-anchor="middle" class="nocap">—</text>
+  <rect x="1620" y="520" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1735" y="567" text-anchor="middle" class="nocap">—</text>
+
+  <!-- Developers -->
+  <text x="356" y="662" text-anchor="end" class="rowlbl">Developers</text>
+  <rect x="390" y="613" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="505" y="660" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
+  <rect x="636" y="613" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="751" y="660" text-anchor="middle" class="cap" fill="#FFC96B">1M/h</text>
+  <rect x="882" y="613" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="997" y="660" text-anchor="middle" class="cap" fill="#FFC96B">1M/h</text>
+  <rect x="1128" y="613" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1243" y="660" text-anchor="middle" class="nocap">—</text>
+  <rect x="1374" y="613" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1489" y="660" text-anchor="middle" class="nocap">—</text>
+  <rect x="1620" y="613" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1735" y="660" text-anchor="middle" class="nocap">—</text>
+
+  <!-- IT -->
+  <text x="356" y="755" text-anchor="end" class="rowlbl">IT</text>
+  <rect x="390" y="706" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="505" y="753" text-anchor="middle" class="cap" fill="#FFC96B">10M/h</text>
+  <rect x="636" y="706" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="751" y="753" text-anchor="middle" class="cap" fill="#FFC96B">5M/h</text>
+  <rect x="882" y="706" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="997" y="753" text-anchor="middle" class="cap" fill="#FFC96B">5M/h</text>
+  <rect x="1128" y="706" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
+  <text x="1243" y="753" text-anchor="middle" class="cap" fill="#7CC4EE">1.25M/h</text>
+  <rect x="1374" y="706" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
+  <text x="1489" y="753" text-anchor="middle" class="cap" fill="#7CC4EE">250K/h</text>
+  <rect x="1620" y="706" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
+  <text x="1735" y="753" text-anchor="middle" class="cap" fill="#7CC4EE">500K/h</text>
+
+  <!-- Risk -->
+  <text x="356" y="848" text-anchor="end" class="rowlbl">Risk</text>
+  <rect x="390" y="799" width="230" height="80" rx="12" fill="#251B0C" stroke="#B8842F" stroke-width="1.5"/>
+  <text x="505" y="846" text-anchor="middle" class="cap" fill="#FFC96B">2M/h</text>
+  <rect x="636" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="751" y="846" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="997" y="846" text-anchor="middle" class="nocap">—</text>
+  <rect x="1128" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1243" y="846" text-anchor="middle" class="nocap">—</text>
+  <rect x="1374" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1489" y="846" text-anchor="middle" class="nocap">—</text>
+  <rect x="1620" y="799" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1735" y="846" text-anchor="middle" class="nocap">—</text>
+
+  <!-- Marketing -->
+  <text x="356" y="941" text-anchor="end" class="rowlbl">Marketing</text>
+  <rect x="390" y="892" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="505" y="939" text-anchor="middle" class="nocap">—</text>
+  <rect x="636" y="892" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="751" y="939" text-anchor="middle" class="nocap">—</text>
+  <rect x="882" y="892" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="997" y="939" text-anchor="middle" class="nocap">—</text>
+  <rect x="1128" y="892" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
+  <text x="1243" y="939" text-anchor="middle" class="cap" fill="#7CC4EE">250K/h</text>
+  <rect x="1374" y="892" width="230" height="80" rx="12" fill="#0F2233" stroke="#2F6E9E" stroke-width="1.5"/>
+  <text x="1489" y="939" text-anchor="middle" class="cap" fill="#7CC4EE">50K/h</text>
+  <rect x="1620" y="892" width="230" height="80" rx="12" fill="#0F1626" stroke="#1B2540"/>
+  <text x="1735" y="939" text-anchor="middle" class="nocap">—</text>
+
+  <!-- legend -->
+  <rect x="400" y="1008" width="26" height="14" rx="4" fill="#251B0C" stroke="#B8842F"/>
+  <text x="438" y="1022" class="legend">on-prem cap — generous (sunk cost)</text>
+  <rect x="800" y="1008" width="26" height="14" rx="4" fill="#0F2233" stroke="#2F6E9E"/>
+  <text x="838" y="1022" class="legend">cloud cap — tight (pay-per-use)</text>
+  <text x="1200" y="1022" class="legend">—  no access · hidden from catalog</text>
+  <text x="1560" y="1022" class="legend">IT ≈ 5× standard caps</text>
+</svg>

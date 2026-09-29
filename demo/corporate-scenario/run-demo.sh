@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Corporate scenario: demonstrate differentiated model access and rate limits.
+# Fed Aura Capital: walk the video beats from the CLI.
 #
-# Runs one user per division (sales-1, eng-1, prod-1) through:
-#   1. Model visibility - which models each division can see
-#   2. Inference on allowed models - proving access + showing rate limits
-#   3. Denied model access - proving 403 for unauthorized models
+# Scene 3 - the catalog is the policy: per-division catalog visibility
+#           (one user per division; every model their division is entitled to)
+# Scene 4 - the admin view: the subscription list with per-model hourly caps
+# Scene 5 - the developer's day: the exact base URL + API key the IDE scene needs
+#
+# One inference request is fired per allowed model - enough to show access and
+# the live token meter, not enough to dent the hourly caps. Rate-limit behavior
+# (scene 6's real 429) is produced by ./warmup-cloud-quota.sh and verified by
+# ./verify-fa-cap.sh.
 #
 # Usage:
-#   ./run-demo.sh [requests_per_model]       # default 8
-#   DEMO_PASSWORD='...' ./run-demo.sh 12
+#   ./run-demo.sh
+#   DEMO_PASSWORD='...' ./run-demo.sh
 set -uo pipefail
 
-N=${1:-8}
+# Models: resource:namespace:served-name (bash 3 compat - plain vars)
+MODELS="gpt-oss-120b:llm:gpt-oss/120b kimi-k3:llm:kimi/k3 nemotron-lightning:llm:nemotron/3.5-lightning claude-opus-5-1:cloud-models:claude/opus-5.1 gemini-3-pro:cloud-models:gemini/3-pro terra-large-context:cloud-models:terra/large-context"
 
-# Models: plain variables instead of associative arrays (bash 3 compat)
-GENERAL_RESOURCE="facebook-opt-125m-simulated"
-GENERAL_SERVED="facebook/opt-125m"
-GENERAL_NS="llm"
-
-DEEPSEEK_RESOURCE="deepseek-r2-llmd"
-DEEPSEEK_SERVED="deepseek/deepseek-r2"
-DEEPSEEK_NS="llm"
-
-GEMINI_RESOURCE="gemini-flash-cloud"
-GEMINI_SERVED="google/gemini-flash"
-GEMINI_NS="cloud-models"
+GPT_OSS_NS=llm;          GPT_OSS_RES=gpt-oss-120b;          GPT_OSS_SERVED=gpt-oss/120b
+KIMI_NS=llm;             KIMI_RES=kimi-k3;                  KIMI_SERVED=kimi/k3
+NEMO_NS=llm;             NEMO_RES=nemotron-lightning;       NEMO_SERVED=nemotron/3.5-lightning
+OPUS_NS=cloud-models;    OPUS_RES=claude-opus-5-1;          OPUS_SERVED=claude/opus-5.1
+GEMINI_NS=cloud-models;  GEMINI_RES=gemini-3-pro;           GEMINI_SERVED=gemini/3-pro
+TERRA_NS=cloud-models;   TERRA_RES=terra-large-context;     TERRA_SERVED=terra/large-context
 
 oc whoami >/dev/null 2>&1 || { echo "not logged in to a cluster"; exit 1; }
 API=$(oc whoami --show-server)
@@ -37,46 +37,51 @@ fi
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 echo "MaaS endpoint: $H"
-echo "Requests per model: $N"
+echo
 
-# Warm-up: absorb stale-connection 500
+# Warm-up: absorb stale-connection 500 / pod-restart transients
 curl -sk --max-time 30 -o /dev/null -H "Authorization: Bearer $(oc whoami -t)" \
   "${H}/maas-api/v1/models" 2>/dev/null || true
 
-fire_burst() {
-  local key="$1" endpoint="$2" model_served="$3" count="$4"
-  local ok=0 lim=0 other=0 tok=0
-  for _ in $(seq 1 "$count"); do
-    code=$(curl -sk --max-time 30 -o "$TMP/r" -w "%{http_code}" \
-      -H "Authorization: Bearer $key" -H "Content-Type: application/json" -X POST \
-      -d "{\"model\":\"${model_served}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4}" \
-      "$endpoint")
-    if [ "$code" = "500" ]; then
-      code=$(curl -sk --max-time 30 -o "$TMP/r" -w "%{http_code}" \
-        -H "Authorization: Bearer $key" -H "Content-Type: application/json" -X POST \
-        -d "{\"model\":\"${model_served}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4}" \
-        "$endpoint")
-    fi
-    case "$code" in
-      200) ok=$((ok+1)); tok=$((tok + $(jq -r '.usage.total_tokens // 0' "$TMP/r" 2>/dev/null))) ;;
-      429) lim=$((lim+1)) ;;
-      *)   other=$((other+1)) ;;
-    esac
-  done
-  printf '    %s requests -> %s ok / %s rate-limited / %s other  (%s tokens)\n' \
-    "$count" "$ok" "$lim" "$other" "$tok"
+served_for() {
+  case "$1" in
+    gpt-oss-120b)        echo "$GPT_OSS_SERVED" ;;
+    kimi-k3)             echo "$KIMI_SERVED" ;;
+    nemotron-lightning)  echo "$NEMO_SERVED" ;;
+    claude-opus-5-1)     echo "$OPUS_SERVED" ;;
+    gemini-3-pro)        echo "$GEMINI_SERVED" ;;
+    terra-large-context) echo "$TERRA_SERVED" ;;
+  esac
 }
 
-fire_denied() {
-  local key="$1" endpoint="$2" model_served="$3" label="$4"
+ns_for() {
+  case "$1" in
+    gpt-oss-120b|kimi-k3|nemotron-lightning)  echo "llm" ;;
+    *)                                        echo "cloud-models" ;;
+  esac
+}
+
+fire_one() {
+  local key="$1" model="$2"
+  local ns res served endpoint code
+  ns=$(ns_for "$model"); res="$model"; served=$(served_for "$model")
+  endpoint="${H}/${ns}/${res}/v1/chat/completions"
   code=$(curl -sk --max-time 30 -o "$TMP/r" -w "%{http_code}" \
     -H "Authorization: Bearer $key" -H "Content-Type: application/json" -X POST \
-    -d "{\"model\":\"${model_served}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4}" \
+    -d "{\"model\":\"${served}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":8}" \
     "$endpoint")
-  if [ "$code" = "403" ]; then
-    printf '    %s: 403 Forbidden (expected)\n' "$label"
+  if [ "$code" = "500" ]; then
+    code=$(curl -sk --max-time 30 -o "$TMP/r" -w "%{http_code}" \
+      -H "Authorization: Bearer $key" -H "Content-Type: application/json" -X POST \
+      -d "{\"model\":\"${served}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":8}" \
+      "$endpoint")
+  fi
+  local toks
+  toks=$(jq -r '.usage.total_tokens // 0' "$TMP/r" 2>/dev/null || echo 0)
+  if [ "$code" = "200" ]; then
+    printf '    %-22s 200 OK  (%s tokens)\n' "$model" "$toks"
   else
-    printf '    %s: %s (expected 403!)\n' "$label" "$code"
+    printf '    %-22s %s (expected 200!)\n' "$model" "$code"
   fi
 }
 
@@ -100,57 +105,92 @@ login_and_key() {
   return 0
 }
 
-# --- sales-1 ---
-printf '\n============================\n'
-printf '=== sales-1 (corp-sales) ===\n'
-printf '============================\n'
+allowed_for() {
+  case "$1" in
+    sales-1)     echo "claude-opus-5-1" ;;
+    branch-1)    echo "gpt-oss-120b" ;;
+    credit-1)    echo "gpt-oss-120b" ;;
+    dev-1)       echo "gpt-oss-120b kimi-k3 nemotron-lightning" ;;
+    it-1)        echo "gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
+    risk-1)      echo "gpt-oss-120b" ;;
+    marketing-1) echo "claude-opus-5-1 gemini-3-pro" ;;
+  esac
+}
 
-login_and_key "sales-1" || exit 1
+group_for() {
+  case "$1" in
+    sales-1)     echo "fedaura-sales" ;;
+    branch-1)    echo "fedaura-branch" ;;
+    credit-1)    echo "fedaura-credit" ;;
+    dev-1)       echo "fedaura-developers" ;;
+    it-1)        echo "fedaura-it" ;;
+    risk-1)      echo "fedaura-risk" ;;
+    marketing-1) echo "fedaura-marketing" ;;
+  esac
+}
 
-echo "  General purpose (on-prem):"
-fire_burst "$KEY" "${H}/${GENERAL_NS}/${GENERAL_RESOURCE}/v1/chat/completions" "${GENERAL_SERVED}" "$N"
+# ============================================================
+# Scene 3 - the catalog is the policy (one user per division)
+# ============================================================
 
-echo "  DeepSeek R2 (on-prem):"
-fire_denied "$KEY" "${H}/${DEEPSEEK_NS}/${DEEPSEEK_RESOURCE}/v1/chat/completions" "${DEEPSEEK_SERVED}" "deepseek-r2-llmd"
+DEV1_KEY=""
+for user in sales-1 branch-1 credit-1 dev-1 it-1 risk-1 marketing-1; do
+  grp=$(group_for "$user")
+  printf '\n==============================\n'
+  printf '=== %s (%s) ===\n' "$user" "$grp"
+  printf '==============================\n'
 
-echo "  Gemini Flash (cloud):"
-fire_denied "$KEY" "${H}/${GEMINI_NS}/${GEMINI_RESOURCE}/v1/chat/completions" "${GEMINI_SERVED}" "gemini-flash-cloud"
+  login_and_key "$user" || continue
+  if [ "$user" = "dev-1" ]; then DEV1_KEY="$KEY"; fi
 
-# --- eng-1 ---
-printf '\n====================================\n'
-printf '=== eng-1 (corp-engineering) ===\n'
-printf '====================================\n'
+  echo "  One inference per allowed model:"
+  for model in $(allowed_for "$user"); do
+    fire_one "$KEY" "$model"
+  done
+done
 
-login_and_key "eng-1" || exit 1
+# ============================================================
+# Scene 4 - the admin view (subscription list + hourly caps)
+# ============================================================
 
-echo "  General purpose (on-prem):"
-fire_burst "$KEY" "${H}/${GENERAL_NS}/${GENERAL_RESOURCE}/v1/chat/completions" "${GENERAL_SERVED}" "$N"
+printf '\n============================================================\n'
+printf '=== Scene 4 - the admin view: caps are a property of cost ===\n'
+printf '============================================================\n'
+echo "  One subscription per division, per-model hourly limits:"
+oc get maassubscription -n models-as-a-service -o json 2>/dev/null | jq -r '
+  .items[] | select(.metadata.name | startswith("fedaura-"))
+  | "  \(.metadata.name):",
+    (.spec.modelRefs[] | "    \(.name) (\(.namespace)): \(.tokenRateLimits[0].limit) tokens / \(.tokenRateLimits[0].window)")' \
+  || echo "  (oc query failed - run as cluster-admin)"
+echo
+echo "  On-prem (llm namespace) caps are generous - the GPUs are sunk cost."
+echo "  Cloud (cloud-models namespace) caps are tight - rented per token."
 
-echo "  DeepSeek R2 (on-prem):"
-fire_burst "$KEY" "${H}/${DEEPSEEK_NS}/${DEEPSEEK_RESOURCE}/v1/chat/completions" "${DEEPSEEK_SERVED}" "$N"
+# ============================================================
+# Scene 5 - the developer's day (the IDE integration, copy-and-paste)
+# ============================================================
 
-echo "  Gemini Flash (cloud) - expect rate limiting at ~20 tokens/min:"
-fire_burst "$KEY" "${H}/${GEMINI_NS}/${GEMINI_RESOURCE}/v1/chat/completions" "${GEMINI_SERVED}" "$N"
+printf '\n============================================================\n'
+printf '=== Scene 5 - the developer'\''s day: copy URL + key ===\n'
+printf '============================================================\n'
+if [ -n "$DEV1_KEY" ]; then
+  echo "  Provider name:        Red Hat AI"
+  echo "  Base URL:             ${H}/v1"
+  echo "  API key (dev-1):      ${DEV1_KEY}"
+  echo "  Kimi K3 endpoint:     ${H}/llm/kimi-k3/v1/chat/completions"
+  echo "  GPT-OSS 120B:         ${H}/llm/gpt-oss-120b/v1/chat/completions"
+  echo
+  echo "  Live token meter (input and output counted):"
+  curl -sk --max-time 30 -H "Authorization: Bearer $DEV1_KEY" \
+    -H "Content-Type: application/json" -X POST \
+    -d "{\"model\":\"kimi/k3\",\"messages\":[{\"role\":\"user\",\"content\":\"Explain rate limits in one sentence.\"}],\"max_tokens\":24}" \
+    "${H}/v1/chat/completions" \
+    | jq -r '"    prompt=\(.usage.prompt_tokens // 0) completion=\(.usage.completion_tokens // 0) total=\(.usage.total_tokens // 0) tokens"' 2>/dev/null
+else
+  echo "  dev-1 login failed - re-run to capture the scene 5 URL + key"
+fi
 
-# --- prod-1 ---
-printf '\n================================\n'
-printf '=== prod-1 (corp-products) ===\n'
-printf '================================\n'
-
-login_and_key "prod-1" || exit 1
-
-echo "  General purpose (on-prem):"
-fire_burst "$KEY" "${H}/${GENERAL_NS}/${GENERAL_RESOURCE}/v1/chat/completions" "${GENERAL_SERVED}" "$N"
-
-echo "  DeepSeek R2 (on-prem):"
-fire_burst "$KEY" "${H}/${DEEPSEEK_NS}/${DEEPSEEK_RESOURCE}/v1/chat/completions" "${DEEPSEEK_SERVED}" "$N"
-
-echo "  Gemini Flash (cloud):"
-fire_denied "$KEY" "${H}/${GEMINI_NS}/${GEMINI_RESOURCE}/v1/chat/completions" "${GEMINI_SERVED}" "gemini-flash-cloud"
-
-# --- summary ---
-printf '\n=== Summary ===\n'
-echo "Expected behavior:"
-echo "  sales-1:  sees 1 model, general OK, deepseek 403, gemini 403"
-echo "  eng-1:    sees 3 models, general OK, deepseek OK, gemini rate-limited (~20 tok/min)"
-echo "  prod-1:   sees 2 models, general OK, deepseek OK, gemini 403"
+printf '\n=== Next ===\n'
+echo "  ./warmup-cloud-quota.sh   # prepare scene 6 - burn IT's Opus quota for a real 429"
+echo "  ./verify-fa-cap.sh        # prove the whole 7x6 matrix holds"
+echo "  ./cleanup-demo.sh         # when done"

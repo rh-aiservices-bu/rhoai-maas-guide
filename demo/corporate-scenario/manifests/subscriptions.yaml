@@ -1,86 +1,198 @@
-# Corporate scenario: one subscription per division
+# Fed Aura Capital: one subscription per division
 #
-# Each division gets a single subscription covering all models they can access,
-# with per-model token rate limits. This means one API key per user gives access
-# to all their models - no need to mint separate keys per model.
+# Caps are a property of cost, not of capability: on-prem models run on GPUs the
+# bank already bought (sunk cost), so their caps are generous; cloud models are
+# rented per token, so their caps are tight. IT gets roughly five times the
+# standard caps because it runs the platform and the pilots.
 #
-# Priority 30 outranks the shipped simulator-free (10) and simulator-premium (20)
-# subscriptions, both of which target system:authenticated.
+# Each division gets ONE subscription covering all of its models, and priority 30
+# so the division tier outranks the shipped simulator-free (10) and
+# simulator-premium (20) subscriptions, both targeting system:authenticated.
+# Users mint their own API keys; every key they hold carries the division tier.
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
 kind: MaaSSubscription
 metadata:
-  name: corp-sales
+  name: fedaura-sales
   namespace: models-as-a-service
   annotations:
-    openshift.io/display-name: "Corporate - Sales Division"
-    openshift.io/description: "Sales: general purpose model only, 500 tokens/min"
+    openshift.io/display-name: "Fed Aura - Sales Division"
+    openshift.io/description: "Public-facing: cloud general purpose (Claude Opus 5.1), 250K tokens/hour"
 spec:
   owner:
     groups:
-      - name: corp-sales
+      - name: fedaura-sales
     users: []
   modelRefs:
-    - name: facebook-opt-125m-simulated
-      namespace: llm
-      tokenRateLimits:
-        - limit: 500
-          window: 1m
-  priority: 30
----
-apiVersion: maas.opendatahub.io/v1alpha1
-kind: MaaSSubscription
-metadata:
-  name: corp-engineering
-  namespace: models-as-a-service
-  annotations:
-    openshift.io/display-name: "Corporate - Engineering Division"
-    openshift.io/description: "Engineering: all models, highest on-prem limits, capped cloud"
-spec:
-  owner:
-    groups:
-      - name: corp-engineering
-    users: []
-  modelRefs:
-    - name: facebook-opt-125m-simulated
-      namespace: llm
-      tokenRateLimits:
-        - limit: 500
-          window: 1m
-    - name: deepseek-r2-llmd
-      namespace: llm
-      tokenRateLimits:
-        - limit: 1000
-          window: 1m
-    - name: gemini-flash-cloud
+    - name: claude-opus-5-1
       namespace: cloud-models
       tokenRateLimits:
-        - limit: 20
-          window: 1m
+        - limit: 250000
+          window: 1h
   priority: 30
 ---
 apiVersion: maas.opendatahub.io/v1alpha1
 kind: MaaSSubscription
 metadata:
-  name: corp-products
+  name: fedaura-branch
   namespace: models-as-a-service
   annotations:
-    openshift.io/display-name: "Corporate - Products Division"
-    openshift.io/description: "Products: general purpose + code model, 500 tokens/min each"
+    openshift.io/display-name: "Fed Aura - Branch Division"
+    openshift.io/description: "Public-facing: on-prem general purpose (GPT-OSS 120B), 2M tokens/hour"
 spec:
   owner:
     groups:
-      - name: corp-products
+      - name: fedaura-branch
     users: []
   modelRefs:
-    - name: facebook-opt-125m-simulated
+    - name: gpt-oss-120b
       namespace: llm
       tokenRateLimits:
-        - limit: 500
-          window: 1m
-    - name: deepseek-r2-llmd
+        - limit: 2000000
+          window: 1h
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: fedaura-credit
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Fed Aura - Credit / Loans Division"
+    openshift.io/description: "Sensitive: on-prem general purpose (GPT-OSS 120B), 2M tokens/hour"
+spec:
+  owner:
+    groups:
+      - name: fedaura-credit
+    users: []
+  modelRefs:
+    - name: gpt-oss-120b
       namespace: llm
       tokenRateLimits:
-        - limit: 500
-          window: 1m
+        - limit: 2000000
+          window: 1h
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: fedaura-developers
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Fed Aura - Developers"
+    openshift.io/description: "Technical: on-prem general + code models, 2M and 1M tokens/hour"
+spec:
+  owner:
+    groups:
+      - name: fedaura-developers
+    users: []
+  modelRefs:
+    - name: gpt-oss-120b
+      namespace: llm
+      tokenRateLimits:
+        - limit: 2000000
+          window: 1h
+    - name: kimi-k3
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000000
+          window: 1h
+    - name: nemotron-lightning
+      namespace: llm
+      tokenRateLimits:
+        - limit: 1000000
+          window: 1h
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: fedaura-it
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Fed Aura - IT Division"
+    openshift.io/description: "Runs the platform and the pilots - all six models, ~5x standard caps"
+spec:
+  owner:
+    groups:
+      - name: fedaura-it
+    users: []
+  modelRefs:
+    - name: gpt-oss-120b
+      namespace: llm
+      tokenRateLimits:
+        - limit: 10000000
+          window: 1h
+    - name: kimi-k3
+      namespace: llm
+      tokenRateLimits:
+        - limit: 5000000
+          window: 1h
+    - name: nemotron-lightning
+      namespace: llm
+      tokenRateLimits:
+        - limit: 5000000
+          window: 1h
+    - name: claude-opus-5-1
+      namespace: cloud-models
+      tokenRateLimits:
+        - limit: 1250000
+          window: 1h
+    - name: gemini-3-pro
+      namespace: cloud-models
+      tokenRateLimits:
+        - limit: 250000
+          window: 1h
+    - name: terra-large-context
+      namespace: cloud-models
+      tokenRateLimits:
+        - limit: 500000
+          window: 1h
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: fedaura-risk
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Fed Aura - Risk Division"
+    openshift.io/description: "Sensitive: on-prem general purpose (GPT-OSS 120B), 2M tokens/hour"
+spec:
+  owner:
+    groups:
+      - name: fedaura-risk
+    users: []
+  modelRefs:
+    - name: gpt-oss-120b
+      namespace: llm
+      tokenRateLimits:
+        - limit: 2000000
+          window: 1h
+  priority: 30
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSSubscription
+metadata:
+  name: fedaura-marketing
+  namespace: models-as-a-service
+  annotations:
+    openshift.io/display-name: "Fed Aura - Marketing Division"
+    openshift.io/description: "Public-facing: cloud general purpose + image model, 250K and 50K tokens/hour"
+spec:
+  owner:
+    groups:
+      - name: fedaura-marketing
+    users: []
+  modelRefs:
+    - name: claude-opus-5-1
+      namespace: cloud-models
+      tokenRateLimits:
+        - limit: 250000
+          window: 1h
+    - name: gemini-3-pro
+      namespace: cloud-models
+      tokenRateLimits:
+        - limit: 50000
+          window: 1h
   priority: 30

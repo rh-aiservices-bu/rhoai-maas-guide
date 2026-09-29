@@ -44,7 +44,7 @@ Expected result: 16 passed, 0 failed. The script also warms up `maas-api` to abs
 | link:{repo-url}/tree/main/demo/service-account-access[README]
 
 | Fed Aura Capital Scenario
-| Bank-level model governance: seven Fed Aura Capital divisions (Sales, Branch, Credit, Developers, IT, Risk, Marketing), six on-prem + cloud models, differentiated access and per-model hourly caps. Production guide for the 3.6 product video: video structure, talk track, artwork, demo environment, and workshop extensions. *Recommended starting point for enterprise demos.*
+| Bank-level model governance: seven Fed Aura Capital divisions (Sales, Local Branches, Credit, Developers, IT, Risk, Marketing), six on-prem + cloud models, differentiated access and per-model hourly caps. Production guide for the 3.6 product video: video structure, talk track, artwork, demo environment, and workshop extensions. *Recommended starting point for enterprise demos.*
 | xref:corporate-scenario.adoc[Full Guide] / link:{repo-url}/tree/main/demo/corporate-scenario[Scripts]
 |===
 

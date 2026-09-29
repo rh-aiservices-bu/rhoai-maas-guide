@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Set up the corporate scenario demo: three divisions, three models, differentiated
-# access and rate limits.
+# Set up the Fed Aura Capital demo: seven divisions, six fake models, hourly caps.
 #
-# Creates six htpasswd users across three groups:
-#   corp-sales:       sales-1, sales-2
-#   corp-engineering: eng-1, eng-2
-#   corp-products:    prod-1, prod-2
+# A fully working, CPU-only replica of the Fed Aura Capital setup. Every "model"
+# is the llm-d inference simulator with a convincing name - no real models, no GPUs.
 #
-# Deploys two additional simulator-backed models alongside the existing general-purpose
-# model (facebook-opt-125m-simulated) and applies MaaS governance CRDs.
+# Creates 14 htpasswd users across seven groups (2 per division):
+#   fedaura-sales:      sales-1, sales-2
+#   fedaura-branch:     branch-1, branch-2
+#   fedaura-credit:     credit-1, credit-2
+#   fedaura-developers: dev-1, dev-2
+#   fedaura-it:         it-1, it-2
+#   fedaura-risk:       risk-1, risk-2
+#   fedaura-marketing:  marketing-1, marketing-2
+#
+# Deploys six simulator-backed models (3 on-prem in llm, 3 cloud in cloud-models)
+# and applies the MaaS governance CRDs (model refs, auth policies, subscriptions).
 #
 # Usage:
 #   ./setup-demo.sh                         # password prompted, or set DEMO_PASSWORD
@@ -19,18 +25,30 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+GROUP_SALES=fedaura-sales
+GROUP_BRANCH=fedaura-branch
+GROUP_CREDIT=fedaura-credit
+GROUP_DEVELOPERS=fedaura-developers
+GROUP_IT=fedaura-it
+GROUP_RISK=fedaura-risk
+GROUP_MARKETING=fedaura-marketing
+
 USERS_SALES=(sales-1 sales-2)
-USERS_ENG=(eng-1 eng-2)
-USERS_PROD=(prod-1 prod-2)
-ALL_USERS=("${USERS_SALES[@]}" "${USERS_ENG[@]}" "${USERS_PROD[@]}")
+USERS_BRANCH=(branch-1 branch-2)
+USERS_CREDIT=(credit-1 credit-2)
+USERS_DEVELOPERS=(dev-1 dev-2)
+USERS_IT=(it-1 it-2)
+USERS_RISK=(risk-1 risk-2)
+USERS_MARKETING=(marketing-1 marketing-2)
+ALL_USERS=("${USERS_SALES[@]}" "${USERS_BRANCH[@]}" "${USERS_CREDIT[@]}" \
+  "${USERS_DEVELOPERS[@]}" "${USERS_IT[@]}" "${USERS_RISK[@]}" "${USERS_MARKETING[@]}")
 
-GROUP_SALES=corp-sales
-GROUP_ENG=corp-engineering
-GROUP_PROD=corp-products
-
-SECRET=corp-demo-htpasswd
-IDP=corp-demo
+SECRET=fedaura-htpasswd
+IDP=fedaura-demo
 WORKDIR=${WORKDIR:-$(mktemp -d)}
+
+# Models: name:namespace pairs
+MODELS="gpt-oss-120b:llm kimi-k3:llm nemotron-lightning:llm claude-opus-5-1:cloud-models gemini-3-pro:cloud-models terra-large-context:cloud-models"
 
 # --- prerequisites ---
 
@@ -67,7 +85,7 @@ oc get oauth cluster -o yaml > "${WORKDIR}/oauth-cluster.backup.yaml"
 # --- htpasswd users ---
 
 echo "==> Generating htpasswd for: ${ALL_USERS[*]}"
-HT="${WORKDIR}/corp-demo.htpasswd"
+HT="${WORKDIR}/fedaura-demo.htpasswd"
 htpasswd -c -B -b "$HT" "${ALL_USERS[0]}" "$DEMO_PASSWORD" >/dev/null 2>&1
 for u in "${ALL_USERS[@]:1}"; do htpasswd -B -b "$HT" "$u" "$DEMO_PASSWORD" >/dev/null 2>&1; done
 
@@ -84,34 +102,36 @@ fi
 
 # --- groups ---
 
+create_group() {
+  local grp="$1"; shift
+  oc adm groups new "$grp" "$@" 2>/dev/null || \
+    { for u in "$@"; do oc adm groups add-users "$grp" "$u" >/dev/null 2>&1 || true; done; }
+  echo "  ${grp}: $*"
+}
 echo "==> Creating groups"
-for grp_var in GROUP_SALES GROUP_ENG GROUP_PROD; do
-  grp="${!grp_var}"
-  case "$grp_var" in
-    GROUP_SALES) members=("${USERS_SALES[@]}") ;;
-    GROUP_ENG)   members=("${USERS_ENG[@]}") ;;
-    GROUP_PROD)  members=("${USERS_PROD[@]}") ;;
-  esac
-  oc adm groups new "$grp" "${members[@]}" 2>/dev/null || \
-    { for u in "${members[@]}"; do oc adm groups add-users "$grp" "$u" >/dev/null 2>&1 || true; done; }
-  echo "  ${grp}: ${members[*]}"
-done
+create_group "$GROUP_SALES"      "${USERS_SALES[@]}"
+create_group "$GROUP_BRANCH"     "${USERS_BRANCH[@]}"
+create_group "$GROUP_CREDIT"     "${USERS_CREDIT[@]}"
+create_group "$GROUP_DEVELOPERS" "${USERS_DEVELOPERS[@]}"
+create_group "$GROUP_IT"         "${USERS_IT[@]}"
+create_group "$GROUP_RISK"       "${USERS_RISK[@]}"
+create_group "$GROUP_MARKETING"  "${USERS_MARKETING[@]}"
 
 # --- cloud-models namespace ---
 
 echo "==> Creating cloud-models namespace"
 oc apply -f "${DIR}/manifests/namespace-cloud-models.yaml"
 
-# --- deploy new models ---
+# --- deploy fake models ---
 
 echo "==> Deploying LLMInferenceService resources"
-oc apply -f "${DIR}/manifests/model-deepseek-r2.yaml"
-oc apply -f "${DIR}/manifests/model-gemini-flash.yaml"
+oc apply -f "${DIR}/manifests/models-onprem.yaml"
+oc apply -f "${DIR}/manifests/models-cloud.yaml"
 
-echo "==> Waiting for simulator pods (up to 3 min)..."
-for ref in "deepseek-r2-llmd:llm" "gemini-flash-cloud:cloud-models"; do
+echo "==> Waiting for simulator pods (up to 5 min)..."
+for ref in $MODELS; do
   name="${ref%%:*}"; ns="${ref##*:}"
-  timeout=180; elapsed=0
+  timeout=300; elapsed=0
   while true; do
     ready=$(oc get pods -n "$ns" -l "app.kubernetes.io/name=${name}" --no-headers 2>/dev/null \
       | grep -c "Running" || true)
@@ -130,8 +150,7 @@ done
 # --- MaaSModelRef ---
 
 echo "==> Applying MaaSModelRef resources"
-oc apply -f "${DIR}/manifests/maas-model-deepseek-r2.yaml"
-oc apply -f "${DIR}/manifests/maas-model-gemini-flash.yaml"
+oc apply -f "${DIR}/manifests/maas-models.yaml"
 
 # --- auth policies and subscriptions ---
 
@@ -143,10 +162,10 @@ oc apply -f "${DIR}/manifests/subscriptions.yaml"
 
 # --- wait for MaaSModelRef Ready ---
 
-echo "==> Waiting for MaaSModelRef resources to reach Ready (up to 3 min)..."
-for ref in "deepseek-r2-llmd:llm" "gemini-flash-cloud:cloud-models"; do
+echo "==> Waiting for MaaSModelRef resources to reach Ready (up to 5 min)..."
+for ref in $MODELS; do
   name="${ref%%:*}"; ns="${ref##*:}"
-  timeout=180; elapsed=0
+  timeout=300; elapsed=0
   while true; do
     phase=$(oc get maasmodelref "$name" -n "$ns" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
     if [ "$phase" = "Ready" ]; then
@@ -166,11 +185,11 @@ done
 
 echo "==> Checking for priority conflicts"
 CONFLICTS=$(oc get maassubscription -n models-as-a-service -o json 2>/dev/null \
-  | jq -r '.items[] | select(.metadata.name | startswith("corp-") | not) | select(.spec.priority >= 30) | .metadata.name' 2>/dev/null || true)
+  | jq -r '.items[] | select(.metadata.name | startswith("fedaura-") | not) | select(.spec.priority >= 30) | .metadata.name' 2>/dev/null || true)
 if [ -n "$CONFLICTS" ]; then
-  echo "  WARNING: These non-corporate subscriptions have priority >= 30 and may interfere:"
+  echo "  WARNING: These non-Fed-Aura subscriptions have priority >= 30 and may interfere:"
   echo "$CONFLICTS" | sed 's/^/    /'
-  echo "  The corporate subscriptions also use priority 30. Higher priority wins."
+  echo "  The Fed Aura subscriptions also use priority 30. Higher priority wins."
 fi
 
 # --- summary ---
@@ -180,9 +199,8 @@ echo "Identity providers:"
 oc get oauth cluster -o jsonpath='{range .spec.identityProviders[*]}  {.name} ({.type}){"\n"}{end}'
 echo
 echo "Groups:"
-for grp in $GROUP_SALES $GROUP_ENG $GROUP_PROD; do
-  members=$(oc get group "$grp" -o jsonpath='{.users[*]}' 2>/dev/null || echo "?")
-  echo "  ${grp}: ${members}"
+for grp in "$GROUP_SALES" "$GROUP_BRANCH" "$GROUP_CREDIT" "$GROUP_DEVELOPERS" "$GROUP_IT" "$GROUP_RISK" "$GROUP_MARKETING"; do
+  oc get group "$grp" -o jsonpath='{.metadata.name}{"\n"}' 2>/dev/null || true
 done
 echo
 echo "Models:"

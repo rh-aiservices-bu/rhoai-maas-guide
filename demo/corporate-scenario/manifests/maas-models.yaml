@@ -1,0 +1,83 @@
+# Fed Aura Capital: MaaSModelRef for every fake model
+#
+# The catalog display name comes from the openshift.io/display-name annotation;
+# the served name comes from LLMInferenceService.spec.model.name. The URL path
+# uses the namespace, which is how on-prem and cloud are visually separated.
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: gpt-oss-120b
+  namespace: llm
+  annotations:
+    openshift.io/display-name: "GPT-OSS 120B"
+    openshift.io/description: "On-prem general purpose model (real deployment: RedHatAI gpt-oss-120b)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: gpt-oss-120b
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: kimi-k3
+  namespace: llm
+  annotations:
+    openshift.io/display-name: "Kimi K3"
+    openshift.io/description: "On-prem code model (real deployment: RedHatAI Kimi-K3)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: kimi-k3
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: nemotron-lightning
+  namespace: llm
+  annotations:
+    openshift.io/display-name: "Nemotron Lightning 30B"
+    openshift.io/description: "On-prem general purpose, lighter and faster (real deployment: RedHatAI NVIDIA-Nemotron-3.5-Lightning-30B-A3B)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: nemotron-lightning
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: claude-opus-5-1
+  namespace: cloud-models
+  annotations:
+    openshift.io/display-name: "Claude Opus 5.1"
+    openshift.io/description: "Cloud-hosted general purpose model (simulator for demo)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: claude-opus-5-1
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: gemini-3-pro
+  namespace: cloud-models
+  annotations:
+    openshift.io/display-name: "Gemini 3 Pro"
+    openshift.io/description: "Cloud-hosted image generation / multimodal model (simulator for demo)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: gemini-3-pro
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: terra-large-context
+  namespace: cloud-models
+  annotations:
+    openshift.io/display-name: "Terra"
+    openshift.io/description: "Cloud-hosted large-context general model (simulator for demo)"
+spec:
+  modelRef:
+    kind: LLMInferenceService
+    name: terra-large-context

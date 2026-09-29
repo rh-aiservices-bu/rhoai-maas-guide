@@ -26,7 +26,7 @@ The scale is the hook. Open on the number, not on prose: 80,000 people, seven di
 | Sales
 | 30,000
 
-| Branch
+| Local Branches
 | 20,000
 
 | Credit / Loans
@@ -78,7 +78,7 @@ This is the payoff: the whole integration is copy-and-paste. The developer never
 
 === Scene 6 - Guardrails and the scoreboard (3:15-4:35)
 
-On screen: the "55 minutes later..." cut card (asset M5), then the IT admin mid-generation: the request is rate-limited on the cloud model. The dropdown switches to the on-prem Opus 5.1 and generation continues, uninterrupted.
+On screen: the "55 minutes later..." cut card (asset M5), then the IT admin mid-generation: the request is rate-limited on Claude Opus 5.1. The dropdown switches to the on-prem GPT-OSS 120B and generation continues, uninterrupted.
 
 Then the closing beat, and the frame the video ends on: the usage dashboard across all seven divisions - tokens and dollars. The scoreboard: who is using what, what it costs, one gate.
 
@@ -120,9 +120,9 @@ Total dialogue budget: ~5 minutes, ~700 spoken words. Lines below are cues, not 
 
 === Scene 3 - The catalog is the policy
 
-*Engineer:* Watch the policy become visible. I log in as a developer: the coding models plus general purpose. Nothing else exists from this seat.
+*Engineer:* Watch the policy become visible. I log in as a developer: GPT-OSS, Kimi K3, and Nemotron Lightning 30B. Nothing else exists from this seat.
 
-*CIO:* A marketer sees the public general model plus the image model. A credit officer gets one on-prem general model - customer data never leaves. The policy is per division, and it lives in the platform, not in a wiki page.
+*CIO:* A marketer sees Claude plus Gemini for images. A credit officer gets one on-prem model - GPT-OSS - customer data never leaves. The policy is per division, and it lives in the platform, not in a wiki page.
 
 *Engineer:* No greyed-out rows, no request-access button. The catalog is the policy - and the same login that opens the dashboard authorizes every API call.
 
@@ -142,17 +142,17 @@ Total dialogue budget: ~5 minutes, ~700 spoken words. Lines below are cues, not 
 
 === Scene 6 - Guardrails and the scoreboard
 
-*Engineer:* Fifty-five minutes of real work later: the cloud model's hourly budget is gone. That 429 is earned, not staged.
+*Engineer:* Fifty-five minutes of real work later: Claude's hourly budget is gone. That 429 is earned, not staged.
 
 *CIO:* So the work moves. On-prem is sunk cost - the fallback has room to run.
 
-*Engineer:* (switches the dropdown to Opus 5.1; generation continues)
+*Engineer:* (switches the dropdown to GPT-OSS 120B; generation continues)
 
 *CIO:* (on the scoreboard) One gateway. Policy decides. The work keeps moving.
 
 == Materials
 
-Five assets go into the video. Each is a hand-editable SVG under `demo/corporate-scenario/materials/` plus this content spec. Render to PNG at 1920x1080 for the edit.
+Five assets go into the video. Each is a hand-editable SVG under `demo/corporate-scenario/materials/` plus this content spec. Render to PNG at 1920x1080 for the edit. `content/modules/ROOT/assets/images/` holds only symlinks to those SVGs - the `materials/` files are the single source of truth, so edit only there.
 
 * M1 - CIO email: `cio-email.svg`
 * M2 - Architecture diagram: `architecture.svg`
@@ -167,7 +167,7 @@ A mock email client window, from the CIO of Fed Aura Capital to all employees. S
 Content (keep under 120 words):
 
 ----
-From:    CIO Office <cio@fedaurocapital.example>
+From:    CIO Office <cio@fedauracapital.example>
 Subject: One gateway for all AI - effective next month
 
 Team,
@@ -177,13 +177,15 @@ the Red Hat AI Gateway. No more personal subscriptions to external
 chatbots or coding assistants - we cannot see them, we cannot control
 them, and we are paying for them twice.
 
-What you get: the models your division is allowed, one login, one key,
-and a fair share of our capacity. On-prem models have room to run;
-cloud models are budgeted. IT will contact each division with its
-catalog.
+What you get: the models your division is allowed, one login, an API
+key that works for all of them, and a fair share of our capacity.
+On-prem models have room to run; cloud models are budgeted. IT will
+contact each division with its catalog.
 
 If it isn't in the gateway, it isn't company AI.
 ----
+
+image::cio-email.svg[M1 - the CIO email announcing the gateway,width=100%]
 
 === M2 - Architecture diagram
 
@@ -191,15 +193,19 @@ Three columns, left to right:
 
 * *Left*: Fed Aura Capital - 80,000 employees, seven division icons, one label: "all users, apps, and agents".
 * *Middle*: the Red Hat AI Gateway, drawn as the only path between left and right. One arrow in, one arrow out.
-* *Right*: two estates. On-prem: GPT-OSS 120B, Opus 5.1, Luna - "company GPUs, data never leaves". Cloud: Sol, Aurora (image), Terra - "external SaaS, pay-per-use".
+* *Right*: two estates. On-prem: GPT-OSS 120B, Kimi K3, Nemotron Lightning 30B - "company GPUs, data never leaves". Cloud: Claude Opus 5.1, Gemini 3 Pro (image), Terra - "external SaaS, pay-per-use".
 
 The visual rule: there is exactly one line between the bank and any model, and it goes through the gateway.
 
+image::architecture.svg[M2 - architecture - one gate for everything,width=100%]
+
 === M3 - Org chart and headcount
 
-A flat org chart (bank, then seven boxes) with headcount and percent per division, using the scene 1 table (Sales 30,000 / Branch 20,000 / Credit 10,000 / Developers 8,000 / IT 5,000 / Risk 4,000 / Marketing 3,000). Total labeled 80,000. This is the opening asset.
+A dual org chart: a hierarchical view (bank, then six divisions, with Developers nested under IT) plus a pie of headcount share per division, using the scene 1 table (Sales 30,000 / Local Branches 20,000 / Credit 10,000 / Developers 8,000 / IT 5,000 / Risk 4,000 / Marketing 3,000). Total labeled 80,000. This is the opening asset.
 
-Optionally annotate each box with its data-sensitivity class: *public-facing* (Sales, Marketing, Branch), *sensitive* (Credit, Risk), *technical* (Developers, IT).
+Each box carries its data-sensitivity class: *public-facing* (Sales, Marketing, Local Branches), *sensitive* (Credit, Risk), *technical* (Developers, IT).
+
+image::org-chart.svg[M3 - Fed Aura Capital org chart (hierarchy and headcount split),width=100%]
 
 === M4 - Access matrix
 
@@ -207,9 +213,13 @@ A 7x6 grid: divisions as rows, the six models as columns, a filled cell where ac
 
 This is the "policy at a glance" frame; it can also serve as the style reference for the scene 4 cost overlay and the scene 6 scoreboard ending.
 
+image::access-matrix.svg[M4 - the access matrix - hourly caps per division,width=100%]
+
 === M5 - Cut card
 
 Full-frame, dark, three words with ellipsis: "55 minutes later...". Matches the video's title-card typography. No logo, no other text.
+
+image::cut-card.svg[M5 - the 55 minutes later cut card,width=100%]
 
 == The demo environment
 
@@ -235,29 +245,29 @@ Six `LLMInferenceService`s, all served by `llm-d-inference-sim` (CPU-only). The 
 | `gpt-oss-120b`
 | `gpt-oss/120b`
 
-| Opus 5.1
+| Kimi K3
 | Code
 | `llm` (on-prem)
-| `opus-5-1`
-| `opus/5.1`
+| `kimi-k3`
+| `kimi/k3`
 
-| Luna
-| Code, lighter/faster
+| Nemotron Lightning 30B
+| General purpose, lighter/faster
 | `llm` (on-prem)
-| `luna-code`
-| `luna/code`
+| `nemotron-lightning`
+| `nemotron/3.5-lightning`
 
-| Sol
+| Claude Opus 5.1
 | General purpose
 | `cloud-models`
-| `sol-general`
-| `sol/general`
+| `claude-opus-5-1`
+| `claude/opus-5.1`
 
-| Aurora
+| Gemini 3 Pro
 | Image generation / multimodal
 | `cloud-models`
-| `aurora-image`
-| `aurora/image`
+| `gemini-3-pro`
+| `gemini/3-pro`
 
 | Terra
 | Large-context general
@@ -266,10 +276,11 @@ Six `LLMInferenceService`s, all served by `llm-d-inference-sim` (CPU-only). The 
 | `terra/large-context`
 |===
 
+On-prem display names are real open-weight models published at link:https://huggingface.co/RedHatAI[huggingface.co/RedHatAI] - `gpt-oss-120b`, `Kimi-K3`, `NVIDIA-Nemotron-3.5-Lightning-30B-A3B` - so a real deployment serves exactly these repos.
+
 The `cloud-models` namespace exists to make the "external cloud" side of the story visible in the URL and the UI, exactly as Fed Aura Capital's would.
 
-URL scheme: `\https://maas.<domain>/<namespace>/<llminferenceservice-name>/v1/chat/completions` - e.g. Opus 5.1 lives at `\https://maas.<domain>/llm/opus-5-1/v1/chat/completions`, Sol at `\https://maas.<domain>/cloud-models/sol-general/v1/chat/completions`.
-
+URL scheme: `\https://maas.<domain>/<namespace>/<llminferenceservice-name>/v1/chat/completions` - e.g. Kimi K3 lives at `\https://maas.<domain>/llm/kimi-k3/v1/chat/completions`, Claude Opus 5.1 at `\https://maas.<domain>/cloud-models/claude-opus-5-1/v1/chat/completions`.
 === The organization
 
 Seven OpenShift groups, one per division, each with two htpasswd users (the second user in each division is what makes the workshop's key-multiplication exercise possible). Identity provider: the same additive `htpasswd` setup the guide uses elsewhere - it does not touch existing providers.
@@ -277,31 +288,31 @@ Seven OpenShift groups, one per division, each with two htpasswd users (the seco
 |===
 | Group | Users | Data class
 
-| `fedauro-sales`
+| `fedaura-sales`
 | `sales-1`, `sales-2`
 | Public-facing
 
-| `fedauro-branch`
+| `fedaura-branch`
 | `branch-1`, `branch-2`
 | Public-facing
 
-| `fedauro-credit`
+| `fedaura-credit`
 | `credit-1`, `credit-2`
 | Sensitive
 
-| `fedauro-developers`
+| `fedaura-developers`
 | `dev-1`, `dev-2`
 | Technical
 
-| `fedauro-it`
+| `fedaura-it`
 | `it-1`, `it-2`
 | Technical
 
-| `fedauro-risk`
+| `fedaura-risk`
 | `risk-1`, `risk-2`
 | Sensitive
 
-| `fedauro-marketing`
+| `fedaura-marketing`
 | `marketing-1`, `marketing-2`
 | Public-facing
 |===
@@ -312,7 +323,7 @@ Seven OpenShift groups, one per division, each with two htpasswd users (the seco
 Auth policies grant, per division, exactly the models in the matrix. Everything else is hidden from the catalog - and 403 at the API if addressed directly.
 
 |===
-| Division | GPT-OSS 120B | Opus 5.1 | Luna | Sol | Aurora | Terra
+| Division | GPT-OSS 120B | Kimi K3 | Nemotron Lightning 30B | Claude Opus 5.1 | Gemini 3 Pro | Terra
 
 | Sales
 | -
@@ -322,7 +333,7 @@ Auth policies grant, per division, exactly the models in the matrix. Everything 
 | -
 | -
 
-| Branch
+| Local Branches
 | 2M/h
 | -
 | -
@@ -373,7 +384,7 @@ Auth policies grant, per division, exactly the models in the matrix. Everything 
 
 The philosophy, and the line to say out loud: *caps are a property of cost, not of capability.* On-prem models run on GPUs the bank already bought - sunk cost - so their caps are generous. Cloud models are rented per token - so their caps are tight. IT gets roughly five times the standard caps because it runs the platform and the pilots.
 
-Each division gets ONE `MaaSSubscription` covering all of its models, one API key per user, and priority 30 so the division tier outranks any shipped default subscription (see the xref:#workshop-extensions[appendix] for how the shipped tiers interact).
+Each division gets ONE `MaaSSubscription` covering all of its models, and priority 30 so the division tier outranks any shipped default subscription (see the xref:#workshop-extensions[appendix] for how the shipped tiers interact). Users mint their own API keys.
 
 === The scripts
 
@@ -445,8 +456,7 @@ The video hides unauthorized models; a workshop can also prove the enforcement. 
 [source,bash]
 ----
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $SALES_KEY" \
-  https://maas.<domain>/llm/opus-5-1/v1/chat/completions
-# 403
+  https://maas.<domain>/llm/kimi-k3/v1/chat/completions
 ----
 
 Hidden in the catalog, denied at the API - the same policy, two faces.
@@ -457,7 +467,7 @@ Governance is policy, not deployment:
 
 [source,bash]
 ----
-oc patch maassubscription fedauro-developers -n models-as-a-service --type=json \
+oc patch maassubscription fedaura-developers -n models-as-a-service --type=json \
   -p '[{"op":"replace","path":"/spec/modelRefs/1/tokenRateLimits/0/limit","value":10000000}]'
 ----
 

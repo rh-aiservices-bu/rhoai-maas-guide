@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- M2 - Architecture diagram: bank -> gateway -> two model estates. Spec: content/modules/ROOT/pages/corporate-scenario.adoc (Materials). 1920x1080. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <style>
+    .bg     { fill:#0A0F1C; }
+    .eyebrow{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; font-weight:700; letter-spacing:4px; fill:#F04438; }
+    .title  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:52px; font-weight:700; fill:#E9EEF6; }
+    .sub    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:24px; fill:#8C99AF; }
+    .panel  { fill:#141D30; stroke:#263352; stroke-width:1.5; }
+    .h1     { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:32px; font-weight:700; fill:#E9EEF6; }
+    .h2     { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#8C99AF; }
+    .colhdr { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:16px; font-weight:700; letter-spacing:2px; fill:#56678A; }
+    .chip   { fill:#1B2742; stroke:#2A3A5E; stroke-width:1; }
+    .chiptx { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#E9EEF6; }
+    .gbox   { fill:#1A0F16; stroke:#F04438; stroke-width:2.5; }
+    .gtitle { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:30px; font-weight:700; fill:#FFFFFF; }
+    .gsub   { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:18px; fill:#8C99AF; }
+    .pill   { fill:#2E1520; stroke:#F04438; stroke-width:1; }
+    .pilltx { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; font-weight:700; letter-spacing:2px; fill:#FF8A80; }
+    .card   { fill:#101828; stroke:#2A3A5E; stroke-width:1; }
+    .model  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:24px; fill:#E9EEF6; }
+    .caption{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:22px; fill:#8C99AF; }
+    .wire   { stroke:#E9EEF6; stroke-width:6; }
+    .onprem { fill:#F2A93B; }
+    .cloud  { fill:#4EA8DE; }
+    .chipdot{ fill:#F04438; }
+    .esttl  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:28px; font-weight:700; }
+  </style>
+
+  <!-- backdrop -->
+  <rect class="bg" width="1920" height="1080"/>
+
+  <!-- header -->
+  <text x="70" y="88" class="eyebrow">FED AURA CAPITAL</text>
+  <text x="70" y="144" class="title">One gate for everything</text>
+  <text x="70" y="184" class="sub">Nothing reaches a model without passing through it.</text>
+
+  <!-- LEFT: the bank -->
+  <rect class="panel" x="70" y="210" width="490" height="700" rx="16"/>
+  <text x="100" y="262" class="h1">Fed Aura Capital</text>
+  <text x="100" y="294" class="h2">80,000 employees · 7 divisions</text>
+  <text x="100" y="352" class="colhdr">ALL USERS, APPS, AND AGENTS</text>
+
+  <!-- division chips -->
+  <g>
+    <rect class="chip" x="100" y="396" width="200" height="56" rx="10"/>
+    <circle cx="122" cy="424" r="5" class="chipdot"/>
+    <text x="140" y="431" class="chiptx">Sales</text>
+
+    <rect class="chip" x="330" y="396" width="200" height="56" rx="10"/>
+    <circle cx="352" cy="424" r="5" class="chipdot"/>
+    <text x="370" y="431" class="chiptx">Local Branches</text>
+
+    <rect class="chip" x="100" y="470" width="200" height="56" rx="10"/>
+    <circle cx="122" cy="498" r="5" class="chipdot"/>
+    <text x="140" y="505" class="chiptx">Credit / Loans</text>
+
+    <rect class="chip" x="330" y="470" width="200" height="56" rx="10"/>
+    <circle cx="352" cy="498" r="5" class="chipdot"/>
+    <text x="370" y="505" class="chiptx">Developers</text>
+
+    <rect class="chip" x="100" y="544" width="200" height="56" rx="10"/>
+    <circle cx="122" cy="572" r="5" class="chipdot"/>
+    <text x="140" y="579" class="chiptx">IT</text>
+
+    <rect class="chip" x="330" y="544" width="200" height="56" rx="10"/>
+    <circle cx="352" cy="572" r="5" class="chipdot"/>
+    <text x="370" y="579" class="chiptx">Risk</text>
+
+    <rect class="chip" x="100" y="618" width="200" height="56" rx="10"/>
+    <circle cx="122" cy="646" r="5" class="chipdot"/>
+    <text x="140" y="653" class="chiptx">Marketing</text>
+  </g>
+
+  <line x1="100" y1="820" x2="530" y2="820" stroke="#223052" stroke-width="1.5"/>
+  <text x="315" y="864" text-anchor="middle" class="h2">one login · one catalog · one gateway</text>
+
+  <!-- arrow in -->
+  <line class="wire" x1="560" y1="550" x2="770" y2="550"/>
+  <polygon points="770,528 770,572 800,550" fill="#E9EEF6"/>
+
+  <!-- MIDDLE: the gateway -->
+  <rect class="gbox" x="790" y="440" width="340" height="220" rx="16"/>
+  <text x="960" y="512" text-anchor="middle" class="gtitle">Red Hat AI Gateway</text>
+  <text x="960" y="544" text-anchor="middle" class="gsub">the only path</text>
+  <g>
+    <rect class="pill" x="804" y="580" width="96" height="32" rx="16"/>
+    <text x="852" y="602" text-anchor="middle" class="pilltx">SEE</text>
+    <rect class="pill" x="912" y="580" width="96" height="32" rx="16"/>
+    <text x="960" y="602" text-anchor="middle" class="pilltx">CONTROL</text>
+    <rect class="pill" x="1020" y="580" width="96" height="32" rx="16"/>
+    <text x="1068" y="602" text-anchor="middle" class="pilltx">BILL</text>
+  </g>
+
+  <!-- arrow out -->
+  <line class="wire" x1="1130" y1="550" x2="1320" y2="550"/>
+  <polygon points="1320,528 1320,572 1352,550" fill="#E9EEF6"/>
+
+  <!-- RIGHT: the two estates -->
+  <rect class="panel" x="1350" y="210" width="500" height="700" rx="16"/>
+  <text x="1380" y="252" class="colhdr">MODEL ESTATES</text>
+
+  <!-- on-prem estate -->
+  <rect class="card" x="1380" y="276" width="440" height="290" rx="12"/>
+  <rect class="onprem" x="1380" y="276" width="6" height="290" rx="3"/>
+  <text x="1410" y="322" class="esttl" fill="#F2A93B">On-prem</text>
+  <text x="1410" y="352" class="h2">company GPUs · data never leaves</text>
+  <circle cx="1422" cy="400" r="6" class="onprem"/>
+  <text x="1444" y="408" class="model">GPT-OSS 120B</text>
+  <circle cx="1422" cy="452" r="6" class="onprem"/>
+  <text x="1444" y="460" class="model">Kimi K3</text>
+  <circle cx="1422" cy="504" r="6" class="onprem"/>
+  <text x="1444" y="512" class="model">Nemotron Lightning 30B</text>
+
+  <!-- cloud estate -->
+  <rect class="card" x="1380" y="596" width="440" height="290" rx="12"/>
+  <rect class="cloud" x="1380" y="596" width="6" height="290" rx="3"/>
+  <text x="1410" y="642" class="esttl" fill="#4EA8DE">Cloud / SaaS</text>
+  <text x="1410" y="672" class="h2">external SaaS · pay-per-use</text>
+  <circle cx="1422" cy="720" r="6" class="cloud"/>
+  <text x="1444" y="728" class="model">Claude Opus 5.1</text>
+  <circle cx="1422" cy="772" r="6" class="cloud"/>
+  <text x="1444" y="780" class="model">Gemini 3 Pro (image)</text>
+  <circle cx="1422" cy="824" r="6" class="cloud"/>
+  <text x="1444" y="832" class="model">Terra</text>
+
+  <!-- the visual rule -->
+  <text x="960" y="982" text-anchor="middle" class="caption">Exactly one line between the bank and any model — and it goes through the gateway.</text>
+</svg>

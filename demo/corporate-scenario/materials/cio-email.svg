@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- M1 - The CIO email. Spec: content/modules/ROOT/pages/corporate-scenario.adoc (Materials). 1920x1080. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <style>
+    .bg    { fill:#070B14; }
+    .win   { fill:#141C2E; stroke:#2A3550; stroke-width:1.5; }
+    .chrome{ fill:#101828; }
+    .dot   { }
+    .wt    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:18px; fill:#8C99AF; }
+    .lbl   { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#8C99AF; }
+    .val   { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:22px; fill:#E9EEF6; }
+    .addr  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#8C99AF; }
+    .subj  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:24px; font-weight:600; fill:#FFFFFF; }
+    .date  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#8C99AF; }
+    .body  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:26px; fill:#C9D3E3; }
+    .closer{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:26px; font-weight:600; fill:#FFFFFF; }
+    .rule  { stroke:#223052; stroke-width:1.5; }
+  </style>
+
+  <!-- backdrop -->
+  <rect class="bg" width="1920" height="1080"/>
+
+  <!-- mail window -->
+  <rect class="win" x="240" y="80" width="1440" height="920" rx="14"/>
+
+  <!-- window chrome -->
+  <rect class="chrome" x="240" y="80" width="1440" height="56" rx="14"/>
+  <rect class="chrome" x="240" y="120" width="1440" height="16"/>
+  <circle cx="282" cy="108" r="8" fill="#FF5F57"/>
+  <circle cx="312" cy="108" r="8" fill="#FEBC2E"/>
+  <circle cx="342" cy="108" r="8" fill="#28C840"/>
+  <text x="960" y="115" text-anchor="middle" class="wt">Mail — Inbox</text>
+
+  <!-- message header -->
+  <text x="300" y="196" class="lbl">From</text>
+  <text x="420" y="196"><tspan class="val">CIO Office</tspan><tspan class="addr" dx="10">&lt;cio@fedauracapital.example&gt;</tspan></text>
+  <text x="1620" y="196" text-anchor="end" class="date">Today, 9:02 AM</text>
+
+  <text x="300" y="238" class="lbl">To</text>
+  <text x="420" y="238" class="val">All employees</text>
+
+  <text x="300" y="280" class="lbl">Subject</text>
+  <text x="420" y="280" class="subj">One gateway for all AI - effective next month</text>
+
+  <line class="rule" x1="300" y1="312" x2="1620" y2="312"/>
+
+  <!-- body -->
+  <text x="300" y="392" class="body">Team,</text>
+
+  <text x="300" y="480" class="body">Starting next month, every AI tool in Fed Aura Capital runs through</text>
+  <text x="300" y="524" class="body">the Red Hat AI Gateway. No more personal subscriptions to external</text>
+  <text x="300" y="568" class="body">chatbots or coding assistants - we cannot see them, we cannot control</text>
+  <text x="300" y="612" class="body">them, and we are paying for them twice.</text>
+
+  <text x="300" y="678" class="body">What you get: the models your division is allowed, one login, an API</text>
+  <text x="300" y="722" class="body">key that works for all of them, and a fair share of our capacity.</text>
+  <text x="300" y="766" class="body">On-prem models have room to run; cloud models are budgeted. IT will</text>
+  <text x="300" y="810" class="body">contact each division with its catalog.</text>
+
+  <text x="300" y="876" class="closer">If it isn't in the gateway, it isn't company AI.</text>
+</svg>

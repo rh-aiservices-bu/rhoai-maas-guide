@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- M5 - "55 minutes later..." cut card. Spec: content/modules/ROOT/pages/corporate-scenario.adoc (Materials). Full-frame, dark, no logo, no other text. 1920x1080. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#101A2C"/>
+      <stop offset="100%" stop-color="#05080F"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#vignette)"/>
+  <text x="960" y="568" text-anchor="middle"
+        font-family="'Helvetica Neue',Helvetica,Arial,sans-serif"
+        font-size="124" font-weight="700" letter-spacing="2"
+        fill="#D9E1EF">55 minutes later...</text>
+</svg>

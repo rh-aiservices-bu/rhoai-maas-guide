@@ -2,7 +2,9 @@
 # Remove everything setup-demo.sh created.
 #
 # Deletes CRs before namespaces to avoid finalizer blocks.
-# Leaves the existing general-purpose model (facebook-opt-125m-simulated) untouched.
+# Nothing from the base guide is touched: the base simulator model
+# (facebook-opt-125m-simulated), its auth policy, and the shipped subscriptions
+# stay exactly as setup-maas.sh left them.
 #
 # Usage:
 #   ./cleanup-demo.sh
@@ -12,16 +14,19 @@ set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 USERS_SALES=(sales-1 sales-2)
-USERS_ENG=(eng-1 eng-2)
-USERS_PROD=(prod-1 prod-2)
-ALL_USERS=("${USERS_SALES[@]}" "${USERS_ENG[@]}" "${USERS_PROD[@]}")
+USERS_BRANCH=(branch-1 branch-2)
+USERS_CREDIT=(credit-1 credit-2)
+USERS_DEVELOPERS=(dev-1 dev-2)
+USERS_IT=(it-1 it-2)
+USERS_RISK=(risk-1 risk-2)
+USERS_MARKETING=(marketing-1 marketing-2)
+ALL_USERS=("${USERS_SALES[@]}" "${USERS_BRANCH[@]}" "${USERS_CREDIT[@]}" \
+  "${USERS_DEVELOPERS[@]}" "${USERS_IT[@]}" "${USERS_RISK[@]}" "${USERS_MARKETING[@]}")
 
-GROUP_SALES=corp-sales
-GROUP_ENG=corp-engineering
-GROUP_PROD=corp-products
+GROUPS="fedaura-sales fedaura-branch fedaura-credit fedaura-developers fedaura-it fedaura-risk fedaura-marketing"
 
-SECRET=corp-demo-htpasswd
-IDP=corp-demo
+SECRET=fedaura-htpasswd
+IDP=fedaura-demo
 
 oc whoami >/dev/null 2>&1 || { echo "not logged in to a cluster"; exit 1; }
 
@@ -32,18 +37,17 @@ echo "==> Removing auth policies"
 oc delete -f "${DIR}/manifests/auth-policies.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
 
 echo "==> Removing MaaSModelRef resources"
-oc delete -f "${DIR}/manifests/maas-model-deepseek-r2.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
-oc delete -f "${DIR}/manifests/maas-model-gemini-flash.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
+oc delete -f "${DIR}/manifests/maas-models.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
 
 echo "==> Removing LLMInferenceService resources"
-oc delete -f "${DIR}/manifests/model-deepseek-r2.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
-oc delete -f "${DIR}/manifests/model-gemini-flash.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
+oc delete -f "${DIR}/manifests/models-onprem.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
+oc delete -f "${DIR}/manifests/models-cloud.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
 
 echo "==> Removing cloud-models namespace"
 oc delete -f "${DIR}/manifests/namespace-cloud-models.yaml" --ignore-not-found 2>&1 | sed 's/^/  /'
 
 echo "==> Removing groups"
-for grp in $GROUP_SALES $GROUP_ENG $GROUP_PROD; do
+for grp in $GROUPS; do
   oc delete group "$grp" --ignore-not-found 2>&1 | sed 's/^/  /'
 done
 
@@ -70,4 +74,4 @@ echo
 echo "Identity providers now:"
 oc get oauth cluster -o jsonpath='{range .spec.identityProviders[*]}  {.name} ({.type}){"\n"}{end}'
 echo
-echo "Cleanup complete. The existing general-purpose model was not touched."
+echo "Cleanup complete. The base guide's simulator model and subscriptions were not touched."

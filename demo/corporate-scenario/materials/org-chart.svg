@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- M3 - Org chart and headcount (the opening asset): dual view - org hierarchy (Developers under IT) + headcount pie. Spec: content/modules/ROOT/pages/corporate-scenario.adoc (Materials). 1920x1080. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <style>
+    .bg     { fill:#0A0F1C; }
+    .eyebrow{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; font-weight:700; letter-spacing:4px; fill:#F04438; }
+    .title  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:58px; font-weight:700; fill:#E9EEF6; }
+    .sub    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:22px; fill:#8C99AF; }
+    .node   { fill:#141D30; stroke:#263352; stroke-width:1.5; }
+    .root1  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:30px; font-weight:700; fill:#E9EEF6; }
+    .root2  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:19px; fill:#8C99AF; }
+    .div    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:24px; font-weight:700; fill:#E9EEF6; }
+    .head   { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:46px; font-weight:700; fill:#FFFFFF; }
+    .pct    { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#8C99AF; }
+    .pilltx { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:15px; font-weight:600; }
+    .edge   { stroke:#33415F; stroke-width:2; fill:none; }
+    .lgtitle{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:22px; fill:#8C99AF; }
+    .lgname { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; font-weight:700; fill:#E9EEF6; }
+    .lgval  { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:19px; fill:#8C99AF; }
+    .legend { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:20px; fill:#8C99AF; }
+  </style>
+
+  <!-- backdrop -->
+  <rect class="bg" width="1920" height="1080"/>
+
+  <!-- header -->
+  <text x="80" y="84" class="eyebrow">FED AURA CAPITAL</text>
+  <text x="80" y="148" class="title">80,000 people. Seven divisions.</text>
+  <text x="80" y="190" class="sub">Org hierarchy and headcount split per division — Developers report to IT</text>
+
+  <!-- root node -->
+  <rect class="node" x="700" y="236" width="520" height="94" rx="14"/>
+  <text x="960" y="278" text-anchor="middle" class="root1">Fed Aura Capital</text>
+  <text x="960" y="312" text-anchor="middle" class="root2">one bank · 80,000 people</text>
+
+  <!-- tree edges -->
+  <path class="edge" d="M 960 330 V 372"/>
+  <path class="edge" d="M 215 372 H 1705"/>
+  <path class="edge" d="M 215 372 V 404"/>
+  <path class="edge" d="M 513 372 V 404"/>
+  <path class="edge" d="M 811 372 V 404"/>
+  <path class="edge" d="M 1109 372 V 404"/>
+  <path class="edge" d="M 1407 372 V 404"/>
+  <path class="edge" d="M 1705 372 V 404"/>
+  <path class="edge" d="M 1109 616 V 664"/>
+
+  <!-- Sales 30,000 -->
+  <g>
+    <rect class="node" x="80" y="404" width="270" height="212" rx="14"/>
+    <text x="215" y="458" text-anchor="middle" class="div">Sales</text>
+    <text x="215" y="536" text-anchor="middle" class="head">30,000</text>
+    <text x="215" y="570" text-anchor="middle" class="pct">37.5%</text>
+    <rect x="155" y="580" width="120" height="34" rx="17" fill="#F2A93B" fill-opacity="0.15"/>
+    <text x="215" y="603" text-anchor="middle" class="pilltx" fill="#F2A93B">public-facing</text>
+  </g>
+
+  <!-- Local Branches 20,000 -->
+  <g>
+    <rect class="node" x="378" y="404" width="270" height="212" rx="14"/>
+    <text x="513" y="458" text-anchor="middle" class="div">Local Branches</text>
+    <text x="513" y="536" text-anchor="middle" class="head">20,000</text>
+    <text x="513" y="570" text-anchor="middle" class="pct">25%</text>
+    <rect x="453" y="580" width="120" height="34" rx="17" fill="#F2A93B" fill-opacity="0.15"/>
+    <text x="513" y="603" text-anchor="middle" class="pilltx" fill="#F2A93B">public-facing</text>
+  </g>
+
+  <!-- Credit / Loans 10,000 -->
+  <g>
+    <rect class="node" x="676" y="404" width="270" height="212" rx="14"/>
+    <text x="811" y="458" text-anchor="middle" class="div">Credit / Loans</text>
+    <text x="811" y="536" text-anchor="middle" class="head">10,000</text>
+    <text x="811" y="570" text-anchor="middle" class="pct">12.5%</text>
+    <rect x="751" y="580" width="120" height="34" rx="17" fill="#F04438" fill-opacity="0.15"/>
+    <text x="811" y="603" text-anchor="middle" class="pilltx" fill="#F04438">sensitive</text>
+  </g>
+
+  <!-- IT 5,000 -->
+  <g>
+    <rect class="node" x="974" y="404" width="270" height="212" rx="14"/>
+    <text x="1109" y="458" text-anchor="middle" class="div">IT</text>
+    <text x="1109" y="536" text-anchor="middle" class="head">5,000</text>
+    <text x="1109" y="570" text-anchor="middle" class="pct">6.25%</text>
+    <rect x="1049" y="580" width="120" height="34" rx="17" fill="#57C39A" fill-opacity="0.15"/>
+    <text x="1109" y="603" text-anchor="middle" class="pilltx" fill="#57C39A">technical</text>
+  </g>
+
+  <!-- Risk 4,000 -->
+  <g>
+    <rect class="node" x="1272" y="404" width="270" height="212" rx="14"/>
+    <text x="1407" y="458" text-anchor="middle" class="div">Risk</text>
+    <text x="1407" y="536" text-anchor="middle" class="head">4,000</text>
+    <text x="1407" y="570" text-anchor="middle" class="pct">5%</text>
+    <rect x="1347" y="580" width="120" height="34" rx="17" fill="#F04438" fill-opacity="0.15"/>
+    <text x="1407" y="603" text-anchor="middle" class="pilltx" fill="#F04438">sensitive</text>
+  </g>
+
+  <!-- Marketing 3,000 -->
+  <g>
+    <rect class="node" x="1570" y="404" width="270" height="212" rx="14"/>
+    <text x="1705" y="458" text-anchor="middle" class="div">Marketing</text>
+    <text x="1705" y="536" text-anchor="middle" class="head">3,000</text>
+    <text x="1705" y="570" text-anchor="middle" class="pct">3.75%</text>
+    <rect x="1645" y="580" width="120" height="34" rx="17" fill="#F2A93B" fill-opacity="0.15"/>
+    <text x="1705" y="603" text-anchor="middle" class="pilltx" fill="#F2A93B">public-facing</text>
+  </g>
+
+  <!-- Developers 8,000 (nested under IT) -->
+  <g>
+    <rect class="node" x="974" y="664" width="270" height="180" rx="14"/>
+    <text x="1109" y="704" text-anchor="middle" class="div">Developers</text>
+    <text x="1109" y="762" text-anchor="middle" class="head">8,000</text>
+    <text x="1109" y="794" text-anchor="middle" class="pct">10%</text>
+    <rect x="1049" y="804" width="120" height="34" rx="17" fill="#57C39A" fill-opacity="0.15"/>
+    <text x="1109" y="827" text-anchor="middle" class="pilltx" fill="#57C39A">technical</text>
+  </g>
+
+  <!-- headcount pie (slices clockwise from 12 o'clock, by size) -->
+  <g stroke="#0A0F1C" stroke-width="2" stroke-linejoin="round">
+    <path d="M 1540 845 L 1540 640 A 205 205 0 0 1 1685 990 Z" fill="#F2A93B"/>
+    <path d="M 1540 845 L 1685 990 A 205 205 0 0 1 1395 990 Z" fill="#F7C56B"/>
+    <path d="M 1540 845 L 1395 990 A 205 205 0 0 1 1335 845 Z" fill="#F04438"/>
+    <path d="M 1540 845 L 1335 845 A 205 205 0 0 1 1374.2 724.5 Z" fill="#57C39A"/>
+    <path d="M 1540 845 L 1374.2 724.5 A 205 205 0 0 1 1432.9 670.2 Z" fill="#8FDDBB"/>
+    <path d="M 1540 845 L 1432.9 670.2 A 205 205 0 0 1 1492.1 645.7 Z" fill="#FF8A7A"/>
+    <path d="M 1540 845 L 1492.1 645.7 A 205 205 0 0 1 1540 640 Z" fill="#FFDFA0"/>
+  </g>
+
+  <!-- legend -->
+  <text x="84" y="668" class="lgtitle">Share of headcount — 80,000 total</text>
+  <circle cx="96" cy="707" r="6" fill="#F2A93B"/>
+  <text x="114" y="714" class="lgname">Sales <tspan class="lgval">30,000 · 37.5%</tspan></text>
+  <circle cx="96" cy="755" r="6" fill="#F7C56B"/>
+  <text x="114" y="762" class="lgname">Local Branches <tspan class="lgval">20,000 · 25%</tspan></text>
+  <circle cx="96" cy="803" r="6" fill="#F04438"/>
+  <text x="114" y="810" class="lgname">Credit / Loans <tspan class="lgval">10,000 · 12.5%</tspan></text>
+  <circle cx="96" cy="851" r="6" fill="#57C39A"/>
+  <text x="114" y="858" class="lgname">Developers <tspan class="lgval">8,000 · 10%</tspan></text>
+  <circle cx="530" cy="707" r="6" fill="#8FDDBB"/>
+  <text x="548" y="714" class="lgname">IT <tspan class="lgval">5,000 · 6.25%</tspan></text>
+  <circle cx="530" cy="755" r="6" fill="#FF8A7A"/>
+  <text x="548" y="762" class="lgname">Risk <tspan class="lgval">4,000 · 5%</tspan></text>
+  <circle cx="530" cy="803" r="6" fill="#FFDFA0"/>
+  <text x="548" y="810" class="lgname">Marketing <tspan class="lgval">3,000 · 3.75%</tspan></text>
+
+  <!-- sensitivity legend -->
+  <circle cx="96" cy="920" r="6" fill="#F2A93B"/>
+  <text x="114" y="927" class="legend">public-facing</text>
+  <circle cx="316" cy="920" r="6" fill="#F04438"/>
+  <text x="334" y="927" class="legend">sensitive</text>
+  <circle cx="516" cy="920" r="6" fill="#57C39A"/>
+  <text x="534" y="927" class="legend">technical</text>
+</svg>

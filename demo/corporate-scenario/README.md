@@ -29,7 +29,7 @@ higher limits on the code model because they use it more heavily. Sales only nee
 the general purpose model.
 
 Each division gets ONE subscription covering all their allowed models. This means
-a single API key gives a user access to everything their division is entitled to.
+any key a user mints gives access to everything their division is entitled to.
 
 ## Models
 
@@ -171,8 +171,8 @@ new models without touching the existing setup.
 
 Each division gets ONE `MaaSSubscription` covering all their allowed models,
 with per-model token rate limits. When a user mints an API key, the platform
-resolves the highest-priority subscription they match and attaches it - so one
-key gives access to all models in the subscription.
+resolves the highest-priority subscription they match and attaches it - so every
+key they hold gives access to all models in the subscription.
 
 All corporate subscriptions use priority 30 to outrank the shipped
 `simulator-premium` (priority 20, targeting `system:authenticated`). Without this,
