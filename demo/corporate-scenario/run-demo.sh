@@ -107,25 +107,25 @@ login_and_key() {
 
 allowed_for() {
   case "$1" in
-    sales-1)     echo "claude-opus-5-1 gpt-oss-120b nemotron-lightning terra-large-context" ;;
-    branch-1)    echo "gpt-oss-120b nemotron-lightning" ;;
-    credit-1)    echo "gpt-oss-120b nemotron-lightning" ;;
-    dev-1)       echo "gpt-oss-120b kimi-k3 nemotron-lightning" ;;
-    it-1)        echo "gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
-    risk-1)      echo "gpt-oss-120b nemotron-lightning" ;;
-    marketing-1) echo "claude-opus-5-1 gemini-3-pro gpt-oss-120b nemotron-lightning" ;;
+    dwight-from-sales) echo "claude-opus-5-1 gpt-oss-120b nemotron-lightning terra-large-context" ;;
+    andy-from-branch)  echo "gpt-oss-120b nemotron-lightning" ;;
+    lane-from-credit)  echo "gpt-oss-120b nemotron-lightning" ;;
+    richard-from-developers) echo "gpt-oss-120b kimi-k3 nemotron-lightning" ;;
+    gilfoyle-from-it)  echo "gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
+    toby-from-risk)    echo "gpt-oss-120b nemotron-lightning" ;;
+    don-from-marketing) echo "claude-opus-5-1 gemini-3-pro gpt-oss-120b nemotron-lightning" ;;
   esac
 }
 
 group_for() {
   case "$1" in
-    sales-1)     echo "fedaura-sales" ;;
-    branch-1)    echo "fedaura-branch" ;;
-    credit-1)    echo "fedaura-credit" ;;
-    dev-1)       echo "fedaura-developers" ;;
-    it-1)        echo "fedaura-it" ;;
-    risk-1)      echo "fedaura-risk" ;;
-    marketing-1) echo "fedaura-marketing" ;;
+    dwight-from-sales) echo "fedaura-sales" ;;
+    andy-from-branch)  echo "fedaura-branch" ;;
+    lane-from-credit)  echo "fedaura-credit" ;;
+    richard-from-developers) echo "fedaura-developers" ;;
+    gilfoyle-from-it)  echo "fedaura-it" ;;
+    toby-from-risk)    echo "fedaura-risk" ;;
+    don-from-marketing) echo "fedaura-marketing" ;;
   esac
 }
 
@@ -134,14 +134,14 @@ group_for() {
 # ============================================================
 
 DEV1_KEY=""
-for user in sales-1 branch-1 credit-1 dev-1 it-1 risk-1 marketing-1; do
+for user in dwight-from-sales andy-from-branch lane-from-credit richard-from-developers gilfoyle-from-it toby-from-risk don-from-marketing; do
   grp=$(group_for "$user")
   printf '\n==============================\n'
   printf '=== %s (%s) ===\n' "$user" "$grp"
   printf '==============================\n'
 
   login_and_key "$user" || continue
-  if [ "$user" = "dev-1" ]; then DEV1_KEY="$KEY"; fi
+  if [ "$user" = "richard-from-developers" ]; then DEV1_KEY="$KEY"; fi
 
   echo "  One inference per allowed model:"
   for model in $(allowed_for "$user"); do
@@ -176,7 +176,7 @@ printf '============================================================\n'
 if [ -n "$DEV1_KEY" ]; then
   echo "  Provider name:        Red Hat AI"
   echo "  Base URL:             ${H}/v1"
-  echo "  API key (dev-1):      ${DEV1_KEY}"
+  echo "  API key (richard-from-developers): ${DEV1_KEY}"
   echo "  Kimi K3 endpoint:     ${H}/llm/kimi-k3/v1/chat/completions"
   echo "  GPT-OSS 120B:         ${H}/llm/gpt-oss-120b/v1/chat/completions"
   echo
@@ -189,7 +189,7 @@ if [ -n "$DEV1_KEY" ]; then
     "${H}/v1/chat/completions" \
     | jq -r '"    prompt=\(.usage.prompt_tokens // 0) completion=\(.usage.completion_tokens // 0) total=\(.usage.total_tokens // 0) tokens"' 2>/dev/null
 else
-  echo "  dev-1 login failed - re-run to capture the scene 5 URL + key"
+  echo "  richard-from-developers login failed - re-run to capture the scene 5 URL + key"
 fi
 
 printf '\n=== Next ===\n'

@@ -14,13 +14,13 @@ set -uo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-USERS_SALES=(sales-1 sales-2)
-USERS_BRANCH=(branch-1 branch-2)
-USERS_CREDIT=(credit-1 credit-2)
-USERS_DEVELOPERS=(dev-1 dev-2)
-USERS_IT=(it-1 it-2)
-USERS_RISK=(risk-1 risk-2)
-USERS_MARKETING=(marketing-1 marketing-2)
+USERS_SALES=(dwight-from-sales jim-from-sales)
+USERS_BRANCH=(andy-from-branch pete-from-branch)
+USERS_CREDIT=(lane-from-credit oscar-from-credit)
+USERS_DEVELOPERS=(richard-from-developers dinesh-from-developers)
+USERS_IT=(gilfoyle-from-it jared-from-it)
+USERS_RISK=(toby-from-risk angela-from-risk)
+USERS_MARKETING=(don-from-marketing peggy-from-marketing)
 ALL_USERS=("${USERS_SALES[@]}" "${USERS_BRANCH[@]}" "${USERS_CREDIT[@]}" \
   "${USERS_DEVELOPERS[@]}" "${USERS_IT[@]}" "${USERS_RISK[@]}" "${USERS_MARKETING[@]}")
 

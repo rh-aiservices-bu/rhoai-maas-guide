@@ -5,13 +5,13 @@
 # is the llm-d inference simulator with a convincing name - no real models, no GPUs.
 #
 # Creates 14 htpasswd users across seven groups (2 per division):
-#   fedaura-sales:      sales-1, sales-2
-#   fedaura-branch:     branch-1, branch-2
-#   fedaura-credit:     credit-1, credit-2
-#   fedaura-developers: dev-1, dev-2
-#   fedaura-it:         it-1, it-2
-#   fedaura-risk:       risk-1, risk-2
-#   fedaura-marketing:  marketing-1, marketing-2
+#   fedaura-sales:      dwight-from-sales, jim-from-sales
+#   fedaura-branch:     andy-from-branch, pete-from-branch
+#   fedaura-credit:     lane-from-credit, oscar-from-credit
+#   fedaura-developers: richard-from-developers, dinesh-from-developers
+#   fedaura-it:         gilfoyle-from-it, jared-from-it
+#   fedaura-risk:       toby-from-risk, angela-from-risk
+#   fedaura-marketing:  don-from-marketing, peggy-from-marketing
 #
 # Deploys six simulator-backed models (3 on-prem in llm, 3 cloud in cloud-models)
 # and applies the MaaS governance CRDs (model refs, auth policies, subscriptions).
@@ -36,13 +36,13 @@ GROUP_IT=fedaura-it
 GROUP_RISK=fedaura-risk
 GROUP_MARKETING=fedaura-marketing
 
-USERS_SALES=(sales-1 sales-2)
-USERS_BRANCH=(branch-1 branch-2)
-USERS_CREDIT=(credit-1 credit-2)
-USERS_DEVELOPERS=(dev-1 dev-2)
-USERS_IT=(it-1 it-2)
-USERS_RISK=(risk-1 risk-2)
-USERS_MARKETING=(marketing-1 marketing-2)
+USERS_SALES=(dwight-from-sales jim-from-sales)
+USERS_BRANCH=(andy-from-branch pete-from-branch)
+USERS_CREDIT=(lane-from-credit oscar-from-credit)
+USERS_DEVELOPERS=(richard-from-developers dinesh-from-developers)
+USERS_IT=(gilfoyle-from-it jared-from-it)
+USERS_RISK=(toby-from-risk angela-from-risk)
+USERS_MARKETING=(don-from-marketing peggy-from-marketing)
 ALL_USERS=("${USERS_SALES[@]}" "${USERS_BRANCH[@]}" "${USERS_CREDIT[@]}" \
   "${USERS_DEVELOPERS[@]}" "${USERS_IT[@]}" "${USERS_RISK[@]}" "${USERS_MARKETING[@]}")
 

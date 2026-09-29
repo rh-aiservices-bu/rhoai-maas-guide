@@ -11,12 +11,12 @@
 #
 # Usage:
 #   DEMO_PASSWORD='...' ./warmup-cloud-quota.sh
-#   USER_NAME=it-1 MODEL=claude-opus-5-1 MAX_TOKENS=1000 PARALLEL=16 ./warmup-cloud-quota.sh
+#   USER_NAME=gilfoyle-from-it MODEL=claude-opus-5-1 MAX_TOKENS=1000 PARALLEL=16 ./warmup-cloud-quota.sh
 #
 # USER_NAME/MODEL must be a division/model pair from the access matrix.
 set -uo pipefail
 
-USER_NAME=${USER_NAME:-it-1}
+USER_NAME=${USER_NAME:-gilfoyle-from-it}
 MODEL=${MODEL:-claude-opus-5-1}
 MAX_TOKENS=${MAX_TOKENS:-1000}
 PARALLEL=${PARALLEL:-16}
@@ -35,13 +35,13 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 group_for() {
   case "$USER_NAME" in
-    sales-1)     echo "fedaura-sales" ;;
-    branch-1)    echo "fedaura-branch" ;;
-    credit-1)    echo "fedaura-credit" ;;
-    dev-1)       echo "fedaura-developers" ;;
-    it-1)        echo "fedaura-it" ;;
-    risk-1)      echo "fedaura-risk" ;;
-    marketing-1) echo "fedaura-marketing" ;;
+    dwight-from-sales) echo "fedaura-sales" ;;
+    andy-from-branch) echo "fedaura-branch" ;;
+    lane-from-credit) echo "fedaura-credit" ;;
+    richard-from-developers) echo "fedaura-developers" ;;
+    gilfoyle-from-it) echo "fedaura-it" ;;
+    toby-from-risk) echo "fedaura-risk" ;;
+    don-from-marketing) echo "fedaura-marketing" ;;
     *)           echo "" ;;
   esac
 }
@@ -65,7 +65,7 @@ served_for() {
 }
 
 GROUP=$(group_for)
-[ -n "$GROUP" ] || { echo "USER_NAME '$USER_NAME' is not a division user (sales-1, branch-1, credit-1, dev-1, it-1, risk-1, marketing-1)"; exit 1; }
+[ -n "$GROUP" ] || { echo "USER_NAME '$USER_NAME' is not a division user (dwight-from-sales, andy-from-branch, lane-from-credit, richard-from-developers, gilfoyle-from-it, toby-from-risk, don-from-marketing)"; exit 1; }
 NS=$(ns_for "$MODEL"); SERVED=$(served_for "$MODEL")
 ENDPOINT="${H}/${NS}/${MODEL}/v1/chat/completions"
 
@@ -135,11 +135,11 @@ echo "=== 429 on ${MODEL} - quota genuinely exhausted (${burned} tokens burned) 
 fallback_for() {
   local allowed
   case "$USER_NAME" in
-    it-1)        allowed="gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
-    dev-1)       allowed="gpt-oss-120b kimi-k3 nemotron-lightning" ;;
-    sales-1)     allowed="claude-opus-5-1" ;;
-    branch-1|credit-1|risk-1) allowed="gpt-oss-120b" ;;
-    marketing-1) allowed="claude-opus-5-1 gemini-3-pro" ;;
+    gilfoyle-from-it)        allowed="gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
+    richard-from-developers) allowed="gpt-oss-120b kimi-k3 nemotron-lightning" ;;
+    dwight-from-sales)       allowed="claude-opus-5-1 gpt-oss-120b nemotron-lightning terra-large-context" ;;
+    andy-from-branch|lane-from-credit|toby-from-risk) allowed="gpt-oss-120b nemotron-lightning" ;;
+    don-from-marketing)      allowed="claude-opus-5-1 gemini-3-pro gpt-oss-120b nemotron-lightning" ;;
     *)           allowed="" ;;
   esac
   for m in $allowed; do [ "$m" != "$MODEL" ] && { echo "$m"; return; }; done

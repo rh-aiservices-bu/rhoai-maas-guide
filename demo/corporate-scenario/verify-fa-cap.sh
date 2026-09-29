@@ -70,13 +70,13 @@ served_for() {
 
 allowed_for() {
   case "$1" in
-    sales-1)     echo "claude-opus-5-1 gpt-oss-120b nemotron-lightning terra-large-context" ;;
-    branch-1)    echo "gpt-oss-120b nemotron-lightning" ;;
-    credit-1)    echo "gpt-oss-120b nemotron-lightning" ;;
-    dev-1)       echo "gpt-oss-120b kimi-k3 nemotron-lightning" ;;
-    it-1)        echo "gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
-    risk-1)      echo "gpt-oss-120b nemotron-lightning" ;;
-    marketing-1) echo "claude-opus-5-1 gemini-3-pro gpt-oss-120b nemotron-lightning" ;;
+    dwight-from-sales) echo "claude-opus-5-1 gpt-oss-120b nemotron-lightning terra-large-context" ;;
+    andy-from-branch)  echo "gpt-oss-120b nemotron-lightning" ;;
+    lane-from-credit)  echo "gpt-oss-120b nemotron-lightning" ;;
+    richard-from-developers) echo "gpt-oss-120b kimi-k3 nemotron-lightning" ;;
+    gilfoyle-from-it)  echo "gpt-oss-120b kimi-k3 nemotron-lightning claude-opus-5-1 gemini-3-pro terra-large-context" ;;
+    toby-from-risk)    echo "gpt-oss-120b nemotron-lightning" ;;
+    don-from-marketing) echo "claude-opus-5-1 gemini-3-pro gpt-oss-120b nemotron-lightning" ;;
   esac
 }
 
@@ -132,7 +132,7 @@ mint_key() {
 echo "=== 1. Access control (7 divisions x 6 models = 42 tests) ==="
 # ========================================
 
-for user in sales-1 branch-1 credit-1 dev-1 it-1 risk-1 marketing-1; do
+for user in dwight-from-sales andy-from-branch lane-from-credit richard-from-developers gilfoyle-from-it toby-from-risk don-from-marketing; do
   KEY=$(login_and_key "$user")
   if [ -z "$KEY" ] || [ "$KEY" = "LOGIN_FAILED" ]; then
     echo "  SKIP  ${user} login/key failed"
@@ -165,7 +165,7 @@ if [ "${SKIP_RATE_LIMIT:-0}" = "1" ]; then
   echo "  SKIP  SKIP_RATE_LIMIT=1"
   SKIP=$((SKIP+2))
 else
-  KEY_M1=$(login_and_key "marketing-1" "marketing1-ratelimit")
+  KEY_M1=$(login_and_key "don-from-marketing" "don-ratelimit")
   if [ -n "$KEY_M1" ] && [ "$KEY_M1" != "LOGIN_FAILED" ]; then
     BODY='{"model":"gemini/3-pro","messages":[{"role":"user","content":"Write a long paragraph about the weather."}],"max_tokens":500}'
     ENDPOINT="${H}/cloud-models/gemini-3-pro/v1/chat/completions"
@@ -194,7 +194,7 @@ else
       echo "  (cap not exhausted after $((8*round)) requests / ~${burned} tokens)"
     fi
   else
-    echo "  SKIP  marketing-1 login failed"
+    echo "  SKIP  don-from-marketing login failed"
     SKIP=$((SKIP+1))
   fi
 fi
@@ -207,42 +207,42 @@ echo "=== 3. Key multiplication (2 tests) ==="
 # Only meaningful once the shared quota is exhausted by the rate-limit test.
 
 if [ "$LIMITED" = "1" ]; then
-  # marketing-1's quota is exhausted by the rate-limit test. A second key for
-  # the SAME user shares it: the cap is per user (all of a user's keys share one
-  # bucket), not per credential. Minting needs the user's OpenShift token, not
-  # an API key.
-  KUBECONFIG="$TMP/marketing-1-second.kubeconfig" oc login -u "marketing-1" -p "$DEMO_PASSWORD" --server="$API" \
+  # don-from-marketing's quota is exhausted by the rate-limit test. A second key
+  # for the SAME user shares it: the cap is per user (all of a user's keys share
+  # one bucket), not per credential. Minting needs the user's OpenShift token,
+  # not an API key.
+  KUBECONFIG="$TMP/don-second.kubeconfig" oc login -u "don-from-marketing" -p "$DEMO_PASSWORD" --server="$API" \
     --insecure-skip-tls-verify=true >/dev/null 2>&1
   if [ $? -eq 0 ]; then
-    TOKEN_M1=$(KUBECONFIG="$TMP/marketing-1-second.kubeconfig" oc whoami -t)
-    K1B=$(mint_key "$TOKEN_M1" "marketing1-key2")
+    TOKEN_M1=$(KUBECONFIG="$TMP/don-second.kubeconfig" oc whoami -t)
+    K1B=$(mint_key "$TOKEN_M1" "don-key2")
     if [ -n "$K1B" ]; then
       code_k1b=$(fire_one "$K1B" "gemini-3-pro")
-      check "marketing-1 second key shares the exhausted quota" "429" "$code_k1b"
+      check "don-from-marketing second key shares the exhausted quota" "429" "$code_k1b"
     else
-      echo "  SKIP  could not mint a second key for marketing-1"
+      echo "  SKIP  could not mint a second key for don-from-marketing"
       SKIP=$((SKIP+1))
     fi
   else
-    echo "  SKIP  marketing-1 login failed"
+    echo "  SKIP  don-from-marketing login failed"
     SKIP=$((SKIP+1))
   fi
   # A different user in the same division gets their own budget: the cap is
   # per user, not pooled per division.
-  KUBECONFIG="$TMP/marketing-2.kubeconfig" oc login -u "marketing-2" -p "$DEMO_PASSWORD" --server="$API" \
+  KUBECONFIG="$TMP/peggy.kubeconfig" oc login -u "peggy-from-marketing" -p "$DEMO_PASSWORD" --server="$API" \
     --insecure-skip-tls-verify=true >/dev/null 2>&1
   if [ $? -eq 0 ]; then
-    TOKEN2=$(KUBECONFIG="$TMP/marketing-2.kubeconfig" oc whoami -t)
-    K2=$(mint_key "$TOKEN2" "marketing2-verify")
+    TOKEN2=$(KUBECONFIG="$TMP/peggy.kubeconfig" oc whoami -t)
+    K2=$(mint_key "$TOKEN2" "peggy-verify")
     if [ -n "$K2" ]; then
       code_k2=$(fire_one "$K2" "gemini-3-pro")
-      check "marketing-2 (same division) has own budget" "200" "$code_k2"
+      check "peggy-from-marketing (same division) has own budget" "200" "$code_k2"
     else
-      echo "  SKIP  could not mint a key for marketing-2"
+      echo "  SKIP  could not mint a key for peggy-from-marketing"
       SKIP=$((SKIP+1))
     fi
   else
-    echo "  SKIP  marketing-2 login failed"
+    echo "  SKIP  peggy-from-marketing login failed"
     SKIP=$((SKIP+1))
   fi
 else

@@ -68,15 +68,17 @@ subscription, and user untouched.
 what makes the workshop's key-multiplication exercise possible). Identity
 provider: `fedaura-demo`, additive - existing providers are untouched.
 
+Character names used fictitiously; no affiliation.
+
 | Group | Users | Data class |
 |-------|-------|------------|
-| fedaura-sales | sales-1, sales-2 | Public-facing |
-| fedaura-branch | branch-1, branch-2 | Public-facing |
-| fedaura-credit | credit-1, credit-2 | Sensitive |
-| fedaura-developers | dev-1, dev-2 | Technical |
-| fedaura-it | it-1, it-2 | Technical |
-| fedaura-risk | risk-1, risk-2 | Sensitive |
-| fedaura-marketing | marketing-1, marketing-2 | Public-facing |
+| fedaura-sales | dwight-from-sales, jim-from-sales | Public-facing |
+| fedaura-branch | andy-from-branch, pete-from-branch | Public-facing |
+| fedaura-credit | lane-from-credit, oscar-from-credit | Sensitive |
+| fedaura-developers | richard-from-developers, dinesh-from-developers | Technical |
+| fedaura-it | gilfoyle-from-it, jared-from-it | Technical |
+| fedaura-risk | toby-from-risk, angela-from-risk | Sensitive |
+| fedaura-marketing | don-from-marketing, peggy-from-marketing | Public-facing |
 
 ## Run it
 
@@ -104,7 +106,11 @@ cd demo/corporate-scenario
 #    dashboards (tokens, and dollars where the platform reports pricing)
 cd ../.. && ./scripts/setup-maas.sh --from-phase 7 --with-observability && cd demo/corporate-scenario
 
-# 6. Tear everything down
+# 6. Fill the scoreboard: backfill synthetic consumption into the usage
+#    LokiStack so the scene 6 dashboard renders. HOURS/DENSITY/USERS knobs.
+./fake-consumption.sh
+
+# 7. Tear everything down
 ./cleanup-demo.sh
 ```
 
@@ -211,10 +217,9 @@ Representative output from `run-demo.sh`:
    per model, per hour). The combination is the full governance picture.
 
 3. **Show the model catalog per user** (scene 3). The developer sees the on-prem
-   models. The marketer sees the cloud general-purpose model plus the image
-   model. The credit officer sees one on-prem general model. The platform hides
-   what you cannot access - no "request access" button, no greyed-out rows. The
-   catalog is the policy.
+   models. The marketer sees Claude, Gemini, GPT-OSS, and Nemotron. The credit
+   officer gets two on-prem models. The platform hides what you cannot access -
+   no "request access" button, no greyed-out rows. The catalog is the policy.
 
    <!-- screenshots go here once captured -->
 
@@ -300,6 +305,38 @@ not pooled per division. (`verify-fa-cap.sh` proves both behaviors.)
 `SKIP_RATE_LIMIT=1` skips the ~1-2 minute quota burn (the rate-limit and
 key-multiplication tests then report SKIP).
 
+## Fake consumption data
+
+The scene 6 scoreboard (the Perses usage dashboards on the `usage` route)
+reads the `usage` LokiStack - Perses has no database of its own; consumption
+IS log records. `fake-consumption.sh` pushes records shaped exactly like real
+gateway usage logs (same stream labels: service_name, log_name, log_type,
+model, subscription, user_id, tokens_prompt/tokens_completion/tokens_total,
+response_code/response_type) straight through the usage route's Loki push API
+(`/api/logs/v1/application/loki/api/v1/push`) - no real quota burned, no pods
+to warm. Every token count is a stream label, so each record is its own Loki
+stream; records are batched 200 per push call.
+
+Knobs: `HOURS` (backfill window, default 24 - Loki rejects records older than
+~7 days, so keep it under 160), `DENSITY` (max records per user-model-hour,
+default 3), `USERS` (default: all 14 demo users). The script ends with the
+same `sum_over_time` query the dashboard runs, printing the scoreboard Perses
+will render.
+
+Pushed data is immutable: the Loki delete API is not routed through the usage
+gateway, so records age out with retention. To start clean, drop the LokiStack
+(`oc delete lokistack usage -n redhat-ods-monitoring` - setup re-creates it)
+or just re-run with different knobs to add more.
+
+Two caveats:
+
+- `dashboard-3-maas-usage-admin` is fed by the gateway's Limitador/Prometheus
+  metrics, not Loki - fake records do not move it. The Loki-fed
+  `dashboard-5-maas-usage-logs` (tokens per division/user/model) is the
+  scoreboard this script fills.
+- The dashboard's `rate_limit` panel only shows real 429s -
+  `warmup-cloud-quota.sh` produces those.
+
 ## Files
 
 ```
@@ -307,6 +344,7 @@ demo/corporate-scenario/
   README.md              # this file
   setup-demo.sh          # create users, groups, IdP, models, MaaS CRDs
   run-demo.sh            # video beats CLI - catalogs, admin view, IDE config
+  fake-consumption.sh   # backfill synthetic consumption into the usage LokiStack
   warmup-cloud-quota.sh  # burn a cloud model's hourly quota for a real 429
   verify-fa-cap.sh       # automated verification (69 tests)
   cleanup-demo.sh        # tear down all demo resources

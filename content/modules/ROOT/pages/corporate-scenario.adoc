@@ -193,7 +193,7 @@ Three columns, left to right:
 
 * *Left*: Fed Aura Capital - 80,000 employees, seven division icons, one label: "all users, apps, and agents".
 * *Middle*: the Red Hat AI Gateway, drawn as the only path between left and right. One arrow in, one arrow out.
-* *Right*: two estates. On-prem: GPT-OSS 120B, Kimi K3, Nemotron Lightning 30B - "company GPUs, data never leaves". Cloud: Claude Opus 5.1, Gemini 3 Pro (image), Terra - "external SaaS, pay-per-use".
+* *Right*: two estates. On-prem: GPT-OSS 120B, Kimi K3, Nemotron 30B - "company GPUs, data never leaves". Cloud: Claude Opus 5.1, Gemini 3 Pro, Terra - "external SaaS, pay-per-use".
 
 The visual rule: there is exactly one line between the bank and any model, and it goes through the gateway.
 
@@ -251,7 +251,7 @@ Six `LLMInferenceService`s, all served by `llm-d-inference-sim` (CPU-only). The 
 | `kimi-k3`
 | `kimi/k3`
 
-| Nemotron Lightning 30B
+| Nemotron 30B
 | General purpose, lighter/faster
 | `llm` (on-prem)
 | `nemotron-lightning`
@@ -284,36 +284,38 @@ URL scheme: `\https://maas.<domain>/<namespace>/<llminferenceservice-name>/v1/ch
 === The organization
 
 Seven OpenShift groups, one per division, each with two htpasswd users (the second user in each division is what makes the workshop's key-multiplication exercise possible). Identity provider: the same additive `htpasswd` setup the guide uses elsewhere - it does not touch existing providers.
++
+Character names used fictitiously; no affiliation.
 
 |===
 | Group | Users | Data class
 
 | `fedaura-sales`
-| `sales-1`, `sales-2`
+| `dwight-from-sales`, `jim-from-sales`
 | Public-facing
 
 | `fedaura-branch`
-| `branch-1`, `branch-2`
+| `andy-from-branch`, `pete-from-branch`
 | Public-facing
 
 | `fedaura-credit`
-| `credit-1`, `credit-2`
+| `lane-from-credit`, `oscar-from-credit`
 | Sensitive
 
 | `fedaura-developers`
-| `dev-1`, `dev-2`
+| `richard-from-developers`, `dinesh-from-developers`
 | Technical
 
 | `fedaura-it`
-| `it-1`, `it-2`
+| `gilfoyle-from-it`, `jared-from-it`
 | Technical
 
 | `fedaura-risk`
-| `risk-1`, `risk-2`
+| `toby-from-risk`, `angela-from-risk`
 | Sensitive
 
 | `fedaura-marketing`
-| `marketing-1`, `marketing-2`
+| `don-from-marketing`, `peggy-from-marketing`
 | Public-facing
 |===
 
@@ -404,6 +406,8 @@ All under `demo/corporate-scenario/`:
 | `verify-fa-cap.sh`
 | The Fed Aura Capital test suite: the full 7x6 access matrix (allow/deny per cell), rate-limit behavior on the cloud models, key multiplication (limits are per subscription, not per credential), and config-drift checks that subscription caps match the matrix above (hourly and monthly windows).
 
+| `fake-consumption.sh`
+| Backfills synthetic consumption into the usage LokiStack so the scene 6 scoreboard renders without burning real quota or warming pods. Needs the observability stack (`setup-maas.sh --from-phase 7 --with-observability`). Pushed records are immutable - to start over, drop the LokiStack or wait out retention.
 | `cleanup-demo.sh`
 | Tears everything down - CRDs, services, namespace, groups, users, identity provider. Nothing from the base guide is touched.
 |===
@@ -419,6 +423,7 @@ cd demo/corporate-scenario
 ./run-demo.sh                 # scenes 3-5 (catalogs, admin view, IDE config)
 ./warmup-cloud-quota.sh       # prepare scene 6 before the "55 minutes later" cut
 ./verify-fa-cap.sh            # prove the whole matrix holds
+./fake-consumption.sh         # scene 6 scoreboard data - needs the observability stack (phase 7)
 ./cleanup-demo.sh             # when done
 ----
 
@@ -451,7 +456,7 @@ For live workshops where the audience gets their hands in. None of this appears 
 
 === Prove the denial
 
-The video hides unauthorized models; a workshop can also prove the enforcement. As `sales-1`, call the on-prem code model endpoint directly:
+The video hides unauthorized models; a workshop can also prove the enforcement. As `dwight-from-sales`, call the on-prem code model endpoint directly:
 
 [source,bash]
 ----
@@ -475,4 +480,4 @@ Re-run `./run-demo.sh` - the new cap is in effect immediately, no redeploy. Rest
 
 === Key multiplication does not help
 
-As `dev-1`, mint two keys and exhaust the shared quota with key one: key two is rate-limited the instant key one is. The limit is per subscription, not per credential. (`verify-fa-cap.sh` runs this automatically.)
+As `richard-from-developers`, mint two keys and exhaust the shared quota with key one: key two is rate-limited the instant key one is. The limit is per subscription, not per credential. (`verify-fa-cap.sh` runs this automatically.)
