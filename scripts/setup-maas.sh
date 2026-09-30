@@ -1223,12 +1223,13 @@ if should_run 7 && { [ "$WITH_OBSERVABILITY" = true ] || [ "$WITH_REDIS" = true 
 
     # Telemetry (auto-created by operator when enabled on MaasTenantConfig/Tenant)
     log_step "Enabling Gateway telemetry..."
+    TELEMETRY_PATCH='{"spec":{"telemetry":{"enabled":true,"metrics":{"captureUser":true,"captureGroup":false,"captureModelUsage":true,"captureOrganization":true}}}}'
     if [ "$IS_35_PLUS" = true ]; then
         run_cmd oc patch maastenantconfig default-tenant -n models-as-a-service \
-            --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
+            --type=merge -p "$TELEMETRY_PATCH"
     else
         run_cmd oc patch tenant default-tenant -n models-as-a-service \
-            --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
+            --type=merge -p "$TELEMETRY_PATCH"
     fi
     if [ "$DRY_RUN" = false ]; then
         TIMEOUT=120
