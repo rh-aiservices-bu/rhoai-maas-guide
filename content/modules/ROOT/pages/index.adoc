@@ -10,6 +10,13 @@ Requires OpenShift 4.19+ with cluster-admin access.
 
 IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} documentation (link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[3.4]). It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
 
+[NOTE]
+====
+link:{attachmentsdir}/install-flow.html[*Open the Install & Configuration Visualizer*^] (opens in a new tab) +
+_4 Flows | 9 Phases | Governance Pairing | Tiers & Priority | 30+ Components_ +
+An animated, click-to-inspect walkthrough of the full install sequence, the most common ordering mistake, and how MaaSModelRef/MaaSAuthPolicy/MaaSSubscription pair up. Handy for explaining the moving parts to a customer before you touch a cluster.
+====
+
 == Getting Started
 
 Clone the repository and work from its root directory. All commands and file paths in this guide are relative to the cloned repo.

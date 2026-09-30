@@ -119,6 +119,8 @@ These two CRDs are intentionally separate - they serve different purposes (acces
 However, *updating one does NOT auto-update the other*. If you add a model to a `MaaSSubscription` (via CLI or UI), you must also add it to a `MaaSAuthPolicy`. The controller does not sync them automatically.
 ====
 
+NOTE: link:{attachmentsdir}/install-flow.html[*Open the Install & Configuration Visualizer*^] (opens in a new tab) to see governance pairing, tiers/priority, and the full phase sequence animated end-to-end.
+
 == Deploying a Model
 
 [NOTE]
