@@ -107,6 +107,7 @@ cleanup_test_resources() {
             -H "Authorization: Bearer $(oc whoami -t)" \
             -X DELETE \
             "${HOST}/maas-api/v1/api-keys/${API_KEY_ID}" 2>/dev/null || true
+        printf "\n"
         log_info "Deleted test API key"
     fi
 
