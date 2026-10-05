@@ -129,7 +129,7 @@ oc get telemetrypolicies.extensions.kuadrant.io -n openshift-ingress
 oc get telemetry.telemetry.istio.io -n openshift-ingress
 ----
 
-Optional - enable per-user metrics (disabled by default for GDPR compliance):
+Enable per-user metrics, which the MaaS UI Usage tab needs to show per-user activity (RHOAI disables captureUser by default for GDPR compliance):
 
 [source,bash]
 ----

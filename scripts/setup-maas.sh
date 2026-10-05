@@ -1227,31 +1227,17 @@ if should_run 7 && { [ "$WITH_OBSERVABILITY" = true ] || [ "$WITH_REDIS" = true 
 
     TELEMETRY_PATCH='{"spec":{"telemetry":{"enabled":true}}}'
 
-    if [ "$IS_35_PLUS" = true ] && [ "$DRY_RUN" = false ]; then
+    if [ "$IS_35_PLUS" = true ]; then
+        TELEMETRY_PATCH='{"spec":{"telemetry":{"enabled":true,"metrics":{"captureUser":true}}}}'
         printf "\n"
         echo -e "  ${DIM}${YELLOW}─────────────────────────────────────────────${NC}"
         log_info "The Usage tab in the MaaS UI can show per-user and per-model metrics."
-        log_info "This requires capturing user identity and model usage data in telemetry."
+        log_info "This requires capturing user identity and model usage data."
         echo -e "  ${BOLD}${YELLOW}⚠  Enabling this may have GDPR / privacy implications.${NC}"
         echo -e "  ${BOLD}${YELLOW}   Ensure compliance with applicable data-protection regulations.${NC}"
         echo -e "  ${DIM}${YELLOW}─────────────────────────────────────────────${NC}"
-        printf "\n"
-        printf "  ${BOLD}Enable Usage tab metrics (captureUser)? [y/N]:${NC} "
-        read -r USAGE_REPLY
-        case "$USAGE_REPLY" in
-            [yY]|[yY][eE][sS])
-                TELEMETRY_PATCH='{"spec":{"telemetry":{"enabled":true,"metrics":{"captureUser":true}}}}'
-                log_info "Enabling telemetry with Usage tab metrics..."
-                ;;
-            *)
-                log_info "Enabling basic telemetry (without user/model capture)..."
-                ;;
-        esac
-    else
-        log_info "Enabling basic telemetry..."
-    fi
+        log_info "Enabling telemetry with Usage tab metrics..."
 
-    if [ "$IS_35_PLUS" = true ]; then
         run_cmd oc patch maastenantconfig default-tenant -n models-as-a-service \
             --type=merge -p "$TELEMETRY_PATCH"
         echo -e "  ${YELLOW}You can change this later on the maastenantconfig/default-tenant CR in models-as-a-service namespace.${NC}"
