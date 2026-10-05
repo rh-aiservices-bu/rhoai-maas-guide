@@ -44,6 +44,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
@@ -1223,12 +1224,27 @@ if should_run 7 && { [ "$WITH_OBSERVABILITY" = true ] || [ "$WITH_REDIS" = true 
 
     # Telemetry (auto-created by operator when enabled on MaasTenantConfig/Tenant)
     log_step "Enabling Gateway telemetry..."
+
+    TELEMETRY_PATCH='{"spec":{"telemetry":{"enabled":true}}}'
+
     if [ "$IS_35_PLUS" = true ]; then
+        TELEMETRY_PATCH='{"spec":{"telemetry":{"enabled":true,"metrics":{"captureUser":true}}}}'
+        printf "\n"
+        echo -e "  ${DIM}${YELLOW}─────────────────────────────────────────────${NC}"
+        log_info "The Usage tab in the MaaS UI can show per-user and per-model metrics."
+        log_info "This requires capturing user identity and model usage data."
+        echo -e "  ${BOLD}${YELLOW}⚠  Enabling this may have GDPR / privacy implications.${NC}"
+        echo -e "  ${BOLD}${YELLOW}   Ensure compliance with applicable data-protection regulations.${NC}"
+        echo -e "  ${DIM}${YELLOW}─────────────────────────────────────────────${NC}"
+        log_info "Enabling telemetry with Usage tab metrics..."
+
         run_cmd oc patch maastenantconfig default-tenant -n models-as-a-service \
-            --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
+            --type=merge -p "$TELEMETRY_PATCH"
+        echo -e "  ${YELLOW}You can change this later on the maastenantconfig/default-tenant CR in models-as-a-service namespace.${NC}"
     else
         run_cmd oc patch tenant default-tenant -n models-as-a-service \
-            --type=merge -p '{"spec":{"telemetry":{"enabled":true}}}'
+            --type=merge -p "$TELEMETRY_PATCH"
+        echo -e "  ${YELLOW}You can change this later on the tenant/default-tenant CR in models-as-a-service namespace.${NC}"
     fi
     if [ "$DRY_RUN" = false ]; then
         TIMEOUT=120
