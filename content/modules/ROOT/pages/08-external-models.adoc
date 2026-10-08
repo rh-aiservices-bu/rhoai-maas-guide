@@ -842,6 +842,12 @@ On RHOAI 3.4, the BBR `openai` provider hardcodes the upstream path to `/v1/chat
 
 *Resolved in RHOAI 3.5+*: the `ExternalModel` CRD includes a `path` field in `externalProviderRefs` that overrides the upstream path. The Gemini manifest sets `path: /v1beta/openai/chat/completions`, and inference works end-to-end.
 
+=== WASM auth timeout under load - HTTP 500 (RHOAIENG-71638)
+
+External model calls through the gateway can return HTTP 500 under concurrent load even though the model backend is healthy. The signature: a 23-byte error body, an empty upstream host in the gateway access log, and a response time close to 200ms. This means the Kuadrant WASM plugin timed out waiting for Authorino to authorize the request (default: 200ms, `failureMode: deny`).
+
+The fix is to increase `AUTH_SERVICE_TIMEOUT` on the RHCL operator Subscription. See xref:10-post-upgrade-troubleshooting.adoc#issue-7[Issue 7: WASM Auth Timeout Under Load] in the troubleshooting guide for diagnosis steps and the workaround.
+
 === Anthropic Messages API - no token counting or rate limiting (RHOAIENG-93984)
 
 The MaaS `TokenRateLimitPolicy` only supports the OpenAI-compatible `/v1/chat/completions` endpoint. Requests sent directly to `/v1/messages` (the Anthropic Messages API) bypass token counting and rate limiting entirely - usage is not tracked and rate limits are not enforced. Tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-93984[RHOAIENG-93984].
