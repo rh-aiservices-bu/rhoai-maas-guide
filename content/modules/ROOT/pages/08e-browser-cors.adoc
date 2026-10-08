@@ -1,6 +1,6 @@
 = Browser Access (CORS)
 
-Calling the {maas} gateway directly from a browser -- pointing a browser-based chat UI at `https://<gateway-host>` with a MaaS API key -- fails out of the box: the gateway's auth chain answers CORS preflights with 401, and success responses carry no CORS headers. This page shows the one EnvoyFilter that fixes both.
+Calling the {maas} gateway directly from a browser -- pointing a browser-based chat UI at `https://<gateway-host>` with a MaaS API key -- fails out of the box: CORS preflights are rejected (404 or 401, depending on whether the gateway's route matching or auth chain rejects `OPTIONS` first), and success responses carry no CORS headers. This page shows the one EnvoyFilter that fixes both.
 
 TIP: Prerequisites: cluster-admin access on the MaaS cluster, at least one model deployed (local or external), and a MaaS API key. A key comes from `POST /maas-api/v1/api-keys` with your OpenShift token.
 
@@ -10,7 +10,7 @@ IMPORTANT: Status: undocumented and unsupported in RHOAI/Kuadrant docs -- but ve
 
 Three things, all on the gateway:
 
-. *Preflights must be answered before the auth filters run.* Browsers never send `Authorization` on a CORS preflight (fetch spec: preflights are credentialless). The {maas} gateway's auth chain (Kuadrant WASM -> Authorino ext-authz) answers `OPTIONS` with 401 before any CORS handling:
+. *Preflights must be answered before the auth filters run.* Browsers never send `Authorization` on a CORS preflight (fetch spec: preflights are credentialless). Without the Lua filter, `OPTIONS` fails -- typically 404 because no HTTPRoute matches the method, or 401 if the auth chain intercepts first:
 +
 [source,bash]
 ----
@@ -18,11 +18,9 @@ $ curl -i -X OPTIONS "https://<HOST>/v1/chat/completions" \
     -H "Origin: https://<your-app>" \
     -H "Access-Control-Request-Method: POST" \
     -H "Access-Control-Request-Headers: authorization, content-type"
-HTTP/2 401
-www-authenticate: request.headers.authorization realm="api-keys"
-www-authenticate: Bearer realm="kubernetes-tokens"
-x-ext-auth-reason: Authentication required
+HTTP/2 404               <1>
 ----
+<1> May be 401 with `x-ext-auth-reason: Authentication required` on some Kuadrant/gateway configurations. Either way, CORS fails.
 
 . *Actual responses must carry CORS headers.* A preflight alone is not enough -- the browser also validates every real response (`200`, `401`, `429`, ...). No `access-control-allow-origin` on a response means the browser blocks it from JavaScript.
 
@@ -134,13 +132,13 @@ Then the browser: point the chat UI at `https://<HOST>` with a MaaS key, click _
 
 One resource, one delete. The procedure on this page changed nothing else -- auth, routes, and policies are untouched -- and nothing re-creates the filter afterwards: `setup-maas.sh` never applies `manifests/99-cors/`, and `cleanup-maas.sh` never deletes it, so the whole lifecycle is manual.
 
-. *Check whether the filter is currently active.* Resource existence is not proof -- a silent NACK leaves the EnvoyFilter in place but ineffective. The preflight is answered before auth, so an unauthenticated `OPTIONS` is the cleanest probe: 204 means the filter is live, 401 means stock gateway behavior:
+. *Check whether the filter is currently active.* Resource existence is not proof -- a silent NACK leaves the EnvoyFilter in place but ineffective. The preflight is answered before auth, so an unauthenticated `OPTIONS` is the cleanest probe: 204 means the filter is live, 404 means stock gateway behavior (OPTIONS does not match any HTTPRoute, so the gateway returns 404 before auth runs):
 +
 [source,bash]
 ----
 oc get envoyfilter maas-cors-headers -n openshift-ingress
 
-# 204 = filter live, 401 = stock behavior (no CORS)
+# 204 = filter live, 404 = stock behavior (no CORS, no route match for OPTIONS)
 curl -sS -o /dev/null -w '%{http_code}\n' -X OPTIONS "https://<HOST>/v1/chat/completions" \
   -H "Origin: <ALLOWED_ORIGIN>" \
   -H "Access-Control-Request-Method: POST"
@@ -153,7 +151,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X OPTIONS "https://<HOST>/v1/chat/com
 oc delete envoyfilter maas-cors-headers -n openshift-ingress
 ----
 
-. *Verify the rollback.* Re-run the probe: expect 401 again -- the auth chain answering preflights, exactly the stock behavior from the top of this page. Re-run the three checks in the Verify section: expect no `access-control-allow-origin` on any response. The xDS config push is immediate; no pod restarts needed.
+. *Verify the rollback.* Re-run the probe: expect 404 -- without the Lua filter, `OPTIONS` does not match any HTTPRoute and the gateway returns 404 before auth runs. Re-run the three checks in the Verify section: expect no `access-control-allow-origin` on any response. The xDS config push is immediate; no pod restarts needed.
 
 * *Access ends immediately.* Browsers cache preflight decisions for up to 24h (`access-control-max-age`), but a cached preflight grants nothing after the delete: real responses stop carrying CORS headers, so the browser blocks them regardless. Cross-origin access ends as soon as the gateway stops emitting the headers.
 * *Outlives teardown.* A full `cleanup-maas.sh` run leaves `maas-cors-headers` (with `*` CORS) sitting in `openshift-ingress` on an otherwise torn-down gateway -- delete it manually if you want the cluster clean. Platform upgrades do not re-create it: the MaaS controller re-applies only its own filters (such as `authorino-tls-bootstrap`), never this one.
