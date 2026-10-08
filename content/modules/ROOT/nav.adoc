@@ -32,6 +32,7 @@
 * xref:08b-request-deepdive.adoc[Request Deep Dive]
 * xref:08c-api-key-security.adoc[API Key Security]
 * xref:08d-multi-tenancy.adoc[Multi-Tenancy]
+* xref:08e-browser-cors.adoc[Browser Access (CORS)]
 * xref:11-model-swap.adoc[Model Swap]
 
 .Demos
