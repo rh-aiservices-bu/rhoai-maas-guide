@@ -440,7 +440,7 @@ oc get subscription -n openshift-operators rhcl-operator \
 
 === Workaround
 
-Set `AUTH_SERVICE_TIMEOUT` to `2s` on the RHCL operator Subscription:
+Set `AUTH_SERVICE_TIMEOUT` to `10s` on the RHCL operator Subscription:
 
 [source,bash]
 ----
@@ -449,7 +449,7 @@ RHCL_SUBSCRIPTION=rhcl-operator
 
 oc patch subscription "${RHCL_SUBSCRIPTION}" -n "${RHCL_NAMESPACE}" \
   --type=merge \
-  -p '{"spec":{"config":{"env":[{"name":"AUTH_SERVICE_TIMEOUT","value":"2s"}]}}}'
+  -p '{"spec":{"config":{"env":[{"name":"AUTH_SERVICE_TIMEOUT","value":"10s"}]}}}'
 ----
 
 WARNING: The merge patch replaces the entire `spec.config.env` array. If your subscription already has other env vars, edit the subscription manually (`oc edit subscription`) and add the entry to the existing list instead.
@@ -861,7 +861,7 @@ When you hit problems after upgrading from 3.4 to 3.5, check in this order:
 
 | 6
 | HTTP 500/503 under load?
-| Set AUTH_SERVICE_TIMEOUT to 2s (<<issue-7,Issue 7>>)
+| Set AUTH_SERVICE_TIMEOUT to 10s (<<issue-7,Issue 7>>)
 
 | 7
 | HTTP 429 Too Many Requests?
