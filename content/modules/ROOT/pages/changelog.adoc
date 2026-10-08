@@ -4,6 +4,14 @@ Changes to the {rhoai} {maas} companion guide since the project started in June 
 
 Each entry links to its pull request for full details.
 
+== October 2026
+
+=== Fixes
+
+* *WASM Auth Timeout in External Models Guide* - Added Known Issue entry for the WASM auth timeout (RHOAIENG-71638) to the external models page so users hitting HTTP 500 under load can find the fix directly. Also bumped the recommended AUTH_SERVICE_TIMEOUT from 2s to 10s based on field feedback. (link:{repo-url}/pull/186[#186])
+
+* *CORS Undo Status Code* - Fixed expected status code in the CORS guide undo section: stock gateway returns 404 on OPTIONS (no HTTPRoute match), not 401 as originally documented. (link:{repo-url}/pull/185[#185])
+
 == September 2026
 
 === New Pages
