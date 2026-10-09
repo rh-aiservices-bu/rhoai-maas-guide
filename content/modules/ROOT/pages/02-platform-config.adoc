@@ -372,6 +372,11 @@ On non-cloud platforms, the Gateway's LoadBalancer service receives an IP from M
 The passthrough Route bridges external requests (via the OpenShift router at your cluster's public DNS) to the internal LoadBalancer IP, allowing the Gateway to be accessible from outside the cluster.
 ====
 
+[TIP]
+====
+*MetalLB and the Route solve different problems.* MetalLB assigns a LoadBalancer IP so the Gateway reaches `Programmed=True` - without it, the Gateway stays stuck in Pending. The passthrough Route makes that internal IP reachable from outside the cluster. Both are required on non-cloud platforms.
+====
+
 [WARNING]
 ====
 *Environments without a Router VIP (round-robin DNS)*
