@@ -8,7 +8,7 @@ IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} docum
 
 == Version Notes
 
-The versions this guide has been exercised against, for orientation only. This is not a support statement - the link:https://access.redhat.com/articles/rhoai-supported-configs-3.x[{rhoai-short} 3.x supported configurations matrix^] is the authoritative source, and you should check it (and your own entitlements) before installing.
+The versions this guide is written against, for orientation only. This is not a support statement - the link:https://access.redhat.com/articles/rhoai-supported-configs-3.x[{rhoai-short} 3.x supported configurations matrix^] is the authoritative source, and you should check it (and your own entitlements) before installing.
 
 [cols="1,1,2", options="header"]
 |===
@@ -24,8 +24,10 @@ The versions this guide has been exercised against, for orientation only. This i
 
 | Red Hat Connectivity Link (RHCL)
 | 1.4.2+
-| Any 1.4.x release is generally reported to work with {rhoai} 3.4 and 3.5. The manifests here assume >= 1.4.2, which is what the gateway-scoped AuthPolicy used by xref:08d-multi-tenancy.adoc[Multi-Tenancy] needs. 1.3.x does not appear in the matrix for these {rhoai-short} versions, so downgrading to it is probably not a good way out of a problem. For issues seen in earlier RHCL releases, see link:https://access.redhat.com/solutions/7144055[KCS 7144055^].
+| Any 1.4.x release is generally reported to work with {rhoai} 3.4 and 3.5. The manifests here assume >= 1.4.2, which is what the gateway-scoped AuthPolicy used by xref:08d-multi-tenancy.adoc[Multi-Tenancy] needs.
 |===
+
+On RHCL specifically: 1.3.x does not appear in the matrix for these {rhoai-short} versions, so downgrading to it is probably not a good way out of a problem. For issues seen in earlier RHCL releases, see link:https://access.redhat.com/solutions/7144055[KCS 7144055^].
 
 NOTE: On entitlement, the link:https://access.redhat.com/articles/7092611[Red Hat AI subscription guide^] describes RHCL as being included in Red Hat AI SKUs for {maas} use cases only from {rhoai} 3.4 onward, and not included for other {rhoai-short} components. When {maas} is enabled, RHCL is deployed through the Kuadrant Operator, which provides authentication, authorization, and rate limiting. Confirm the details for your subscription with Red Hat rather than relying on this paragraph.
 
