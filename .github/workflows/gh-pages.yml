@@ -42,6 +42,11 @@ jobs:
         run: npm install --global @antora/cli@3.1 @antora/site-generator@3.1 @andrew-jones/antora-tabs-extension @antora/lunr-extension
       - name: antora generate
         run: antora generate site.yml --stacktrace
+      - name: copy favicon to site root
+        # Antora publishes the icon to _/img/, which the theme links from every
+        # content page. The generated site root is a bare redirect stub with no
+        # head links, so browsers landing there fall back to /favicon.ico.
+        run: cp supplemental-ui/img/favicon.ico www/favicon.ico
       - name: upload pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
