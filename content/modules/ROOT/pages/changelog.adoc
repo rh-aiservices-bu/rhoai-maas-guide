@@ -8,7 +8,7 @@ Each entry links to its pull request for full details.
 
 === Fixes
 
-* *Version Notes in Phase 1* - Added an orientation-only table of the OCP / RHOAI / RHCL versions the guide is exercised against, pointing at the supported configurations matrix as the authoritative source, plus a note on how the Red Hat AI subscription guide describes RHCL entitlement for MaaS. Dropped the stale "pin to 1.3.4" suggestion from the troubleshooting checklist.
+* *Version Notes in Phase 1* - Added an orientation-only table of the OCP / RHOAI / RHCL versions the guide is exercised against, pointing at the supported configurations matrix as the authoritative source, plus a note on how the Red Hat AI subscription guide describes RHCL entitlement for MaaS. Dropped the stale "pin to 1.3.4" suggestion from the troubleshooting checklist. (link:{repo-url}/pull/189[#189])
 
 * *WASM Auth Timeout in External Models Guide* - Added Known Issue entry for the WASM auth timeout (RHOAIENG-71638) to the external models page so users hitting HTTP 500 under load can find the fix directly. Also bumped the recommended AUTH_SERVICE_TIMEOUT from 2s to 10s based on field feedback. (link:{repo-url}/pull/186[#186])
 
