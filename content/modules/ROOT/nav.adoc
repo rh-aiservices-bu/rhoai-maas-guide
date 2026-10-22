@@ -47,3 +47,6 @@
 
 .Tools
 * xref:claude-code.adoc[AI-Assisted Installation]
+
+.Automated Verification
+* xref:maaspal.adoc[MaaS:PAL]
