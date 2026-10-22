@@ -873,18 +873,13 @@ The tunnel is Envoy's `tcp_proxy` with `tunneling_config`, a stable documented f
 
 Azure OpenAI already working through MaaS as described in <<azure-openai,Azure OpenAI>>. Get that green first with direct egress if you can, so that a later failure is clearly the proxy and not the provider.
 
-=== Step 1: Deploy the tunnel
+=== Step 1: Configure and deploy the tunnel
 
-[source,bash]
-----
-oc apply -k manifests/08-external-models/http-proxy/
-----
+Edit `manifests/08-external-models/http-proxy/egress-tunnel.yaml` *before* you apply it. The file ships with the values from the test environment, so applying it unchanged gives you a tunnel pointing at the wrong provider:
 
-This creates the `egress-proxy` namespace, the tunnel, and a lab proxy that simulates the corporate one.
-
-IMPORTANT: If you already have a real proxy, remove `forward-proxy.yaml` from `manifests/08-external-models/http-proxy/kustomization.yaml` and set the `corporate_proxy` cluster address in `egress-tunnel.yaml` to your proxy host and port.
-
-Set the provider hostname in `egress-tunnel.yaml` (`tunneling_config.hostname`) to your own Azure resource, and the image to whatever your gateway runs:
+* `tunneling_config.hostname` - your own Azure OpenAI resource, for example `my-resource.openai.azure.com:443`.
+* the `corporate_proxy` cluster address - your real proxy host and port. Leave the in-cluster Service only if you are using the lab proxy.
+* `image` - the image your gateway already runs, so there is nothing extra to pull or mirror:
 
 [source,bash]
 ----
@@ -893,11 +888,25 @@ oc get pod -n openshift-ingress \
     -o jsonpath='{.items[0].spec.containers[?(@.name=="istio-proxy")].image}'
 ----
 
-Check both pods are up:
+IMPORTANT: If you already have a real corporate proxy, also remove `forward-proxy.yaml` from `manifests/08-external-models/http-proxy/kustomization.yaml`. That file is only a lab stand-in for the proxy, you do not want it in a cluster that already has one.
+
+Now apply, which creates the `egress-proxy` namespace and the tunnel (plus the lab proxy if you kept it):
+
+[source,bash]
+----
+oc apply -k manifests/08-external-models/http-proxy/
+----
 
 [source,bash]
 ----
 oc get pods -n egress-proxy
+----
+
+NOTE: Envoy reads this static configuration once at start-up. If you change the hostname, the proxy address or anything else in the ConfigMap later, re-applying the manifests is not enough: the running pod keeps the old settings until you restart it.
+
+[source,bash]
+----
+oc rollout restart deploy/egress-tunnel -n egress-proxy
 ----
 
 === Step 2: Point the ServiceEntry at the tunnel

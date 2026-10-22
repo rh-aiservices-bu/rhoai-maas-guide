@@ -24,7 +24,10 @@ data:
     admin:
       address:
         socket_address:
-          address: 0.0.0.0
+          # localhost only. Envoy's admin API is unauthenticated and exposes
+          # /quitquitquit and /config_dump, so it must never listen on the pod IP.
+          # Reach it with: oc exec deploy/egress-tunnel -- curl -s localhost:9902/stats
+          address: 127.0.0.1
           port_value: 9902
     static_resources:
       listeners:
