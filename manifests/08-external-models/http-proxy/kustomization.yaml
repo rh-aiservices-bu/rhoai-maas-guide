@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  # LAB ONLY - remove this line if you already have a real corporate proxy.
+  - forward-proxy.yaml
+  - egress-tunnel.yaml

@@ -1,0 +1,141 @@
+---
+# LAB ONLY - simulates the customer's corporate HTTP forward proxy.
+#
+# If you already have a real proxy, do NOT deploy this. Point the egress tunnel
+# at your own proxy address instead and skip straight to egress-tunnel.yaml.
+#
+# Implemented with Envoy (CONNECT termination + dynamic forward proxy) instead of
+# Squid because it runs under the default restricted-v2 SCC as an arbitrary UID,
+# so it needs no anyuid grant. It reuses the istio-proxyv2 image that the gateway
+# already pulled, so there is no extra image to mirror.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: egress-proxy-config
+  namespace: egress-proxy
+data:
+  envoy.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9901
+    static_resources:
+      listeners:
+      - name: forward_proxy
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 3128
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: forward_proxy
+              # Logs the CONNECT authority verbatim. This is the audit trail that
+              # proves egress really went through the proxy, and it shows whether
+              # the client tunnels by hostname or by resolved IP.
+              access_log:
+              - name: envoy.access_loggers.stdout
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                  log_format:
+                    text_format_source:
+                      inline_string: "PROXY method=%REQ(:METHOD)% authority=%REQ(:AUTHORITY)% upstream=%UPSTREAM_HOST% code=%RESPONSE_CODE% flags=%RESPONSE_FLAGS% dur=%DURATION%\n"
+              route_config:
+                name: proxy_route
+                virtual_hosts:
+                - name: connect_target
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      connect_matcher: {}
+                    route:
+                      cluster: dfp_cluster
+                      upgrade_configs:
+                      - upgrade_type: CONNECT
+                        connect_config: {}
+              http_filters:
+              - name: envoy.filters.http.dynamic_forward_proxy
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                  dns_cache_config:
+                    name: dfp_cache
+                    dns_lookup_family: V4_ONLY
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+              http_protocol_options: {}
+      clusters:
+      - name: dfp_cluster
+        connect_timeout: 10s
+        lb_policy: CLUSTER_PROVIDED
+        cluster_type:
+          name: envoy.clusters.dynamic_forward_proxy
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+            dns_cache_config:
+              name: dfp_cache
+              dns_lookup_family: V4_ONLY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egress-proxy
+  namespace: egress-proxy
+  labels:
+    app: egress-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: egress-proxy
+  template:
+    metadata:
+      labels:
+        app: egress-proxy
+    spec:
+      containers:
+        - name: envoy
+          # Replace with your cluster's gateway image, see the guide:
+          #   oc get pod -n openshift-ingress -l gateway.networking.k8s.io/gateway-name=maas-default-gateway \
+          #     -o jsonpath='{.items[0].spec.containers[?(@.name=="istio-proxy")].image}'
+          image: registry.redhat.io/openshift-service-mesh/istio-proxyv2-rhel9@sha256:2b5f5aa5ee9974269d8e3666b1bfc58da10c172bf3f1d6defd555fbd1ac9a6ec
+          command: ["/usr/local/bin/envoy"]
+          args: ["-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+          ports:
+            - containerPort: 3128
+              name: proxy
+          readinessProbe:
+            tcpSocket:
+              port: 3128
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/envoy
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: egress-proxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: egress-proxy
+  namespace: egress-proxy
+spec:
+  selector:
+    app: egress-proxy
+  ports:
+    - name: proxy
+      port: 3128
+      targetPort: 3128

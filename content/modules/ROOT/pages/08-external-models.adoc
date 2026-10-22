@@ -833,6 +833,159 @@ curl -sk "${MAAS_GW}/v1/chat/completions" \
     --external-model-api-key "$AZURE_OPENAI_API_KEY"
 ----
 
+[[http-proxy]]
+== HTTP Proxy
+
+Some clusters cannot reach the internet directly and are only allowed to leave through a corporate HTTP/HTTPS proxy. This is common in regulated environments: the OpenShift nodes have no route to `*.openai.azure.com`, but a proxy that accepts `CONNECT` does.
+
+External models still work in this setup, but not through any proxy setting on MaaS. This section explains why, and shows the pattern that does work, using Azure OpenAI as the example.
+
+NOTE: Validated on RHOAI 3.5.2, OCP 4.21, Envoy 1.35.10 (OSSM 3.x gateway). The same pattern applies to any external provider, only the hostname changes.
+
+=== Why there is no proxy setting
+
+The gateway Envoy is the process that opens the connection to the provider. Nothing in that path reads proxy configuration:
+
+* *`HTTP_PROXY`/`HTTPS_PROXY` do nothing.* Envoy does not read these environment variables, and the cluster-wide `Proxy` CR (`oc get proxy/cluster`) only injects them into pods that honour them. The gateway is not one of them.
+* *`DestinationRule` `trafficPolicy.tunnel` cannot be used.* Istio does have native `CONNECT` support, but the API states it applies to TCP or TLS routes and cannot be applied to HTTP routes. The external provider reconciler always generates the `ServiceEntry` with `protocol: HTTPS` (or `HTTP`), which is an HTTP route, so `tunnel` never takes effect.
+* *An `EnvoyFilter` using `http_11_proxy` does not work on this Envoy.* On Envoy 1.35 the proxy address must come from per-endpoint `typed_filter_metadata`, and `EnvoyFilter` `MERGE` *appends* repeated fields instead of annotating the generated endpoint, so you cannot attach it to the `STRICT_DNS` cluster Istio builds. The other code path, which takes the address from filter state, is only reachable from compiled-in C++ filters: `Http11ProxyInfoFilterState` has no object factory, so `set_filter_state` cannot populate it. Envoy also documents that extension as having an "unknown security posture".
+* *The `maas.opendatahub.io/tls` and `maas.opendatahub.io/port` annotations are RHOAI 3.4 only.* On 3.5 the resources are created by `ipp-external-provider-reconciler`, which ignores them. Annotating the `ExternalProvider` leaves the `ServiceEntry` on `HTTPS`/443 with the `DestinationRule` still in place.
+
+WARNING: Do not spend time on `http_11_proxy` EnvoyFilters. It is the suggestion most AI assistants give for this problem and it cannot be made to work against a reconciler-generated cluster on RHOAI 3.5.
+
+=== How it works
+
+Instead of teaching the gateway about the proxy, put a small TCP tunnel in front of the proxy and point the mesh at it:
+
+[source]
+----
+MaaS gateway  --TLS-->  egress-tunnel  --CONNECT-->  corporate proxy  ----->  Azure OpenAI
+(openshift-ingress)     (egress-proxy)                                        (TLS ends here)
+----
+
+The tunnel accepts the raw TCP that the gateway was going to send to Azure, issues `CONNECT <provider>:443` to the proxy, and splices the bytes through. The important consequence is that *TLS is terminated by Azure, not by the tunnel*: SNI, certificate validation and the `api-key` header injected by IPP all stay end-to-end, and the proxy only sees an opaque tunnel.
+
+It also sends `CONNECT` with a *hostname*, so the proxy does the DNS resolution. That matters because the generated `ServiceEntry` is `resolution: DNS`: if your cluster cannot resolve `*.openai.azure.com`, the Envoy cluster gets zero endpoints and returns 503 before the proxy is ever contacted.
+
+The tunnel is Envoy's `tcp_proxy` with `tunneling_config`, a stable documented feature, and it reuses the `istio-proxyv2` image your gateway already runs, so there is no extra image to mirror and no `anyuid` grant needed.
+
+=== Prerequisites
+
+Azure OpenAI already working through MaaS as described in <<azure-openai,Azure OpenAI>>. Get that green first with direct egress if you can, so that a later failure is clearly the proxy and not the provider.
+
+=== Step 1: Deploy the tunnel
+
+[source,bash]
+----
+oc apply -k manifests/08-external-models/http-proxy/
+----
+
+This creates the `egress-proxy` namespace, the tunnel, and a lab proxy that simulates the corporate one.
+
+IMPORTANT: If you already have a real proxy, remove `forward-proxy.yaml` from `manifests/08-external-models/http-proxy/kustomization.yaml` and set the `corporate_proxy` cluster address in `egress-tunnel.yaml` to your proxy host and port.
+
+Set the provider hostname in `egress-tunnel.yaml` (`tunneling_config.hostname`) to your own Azure resource, and the image to whatever your gateway runs:
+
+[source,bash]
+----
+oc get pod -n openshift-ingress \
+    -l gateway.networking.k8s.io/gateway-name=maas-default-gateway \
+    -o jsonpath='{.items[0].spec.containers[?(@.name=="istio-proxy")].image}'
+----
+
+Check both pods are up:
+
+[source,bash]
+----
+oc get pods -n egress-proxy
+----
+
+=== Step 2: Point the ServiceEntry at the tunnel
+
+The reconciler creates the `ServiceEntry` with `resolution: DNS`, which sends the gateway straight to the internet. Switch it to `STATIC` so it resolves to the tunnel instead:
+
+[source,bash]
+----
+TUNNEL_IP=$(oc get svc egress-tunnel -n egress-proxy -o jsonpath='{.spec.clusterIP}')
+
+oc patch serviceentry azure-openai -n external-models --type=merge \
+    -p "{\"spec\":{\"resolution\":\"STATIC\",\"endpoints\":[{\"address\":\"${TUNNEL_IP}\"}]}}"
+----
+
+Nothing else changes. The `ExternalProvider` keeps the real Azure FQDN, so the Host header, SNI and certificate check stay correct.
+
+[source,bash]
+----
+oc get serviceentry azure-openai -n external-models -o jsonpath='{.spec}' | python3 -m json.tool
+----
+
+WARNING: This `ServiceEntry` is owned by `ipp-external-provider-reconciler`. The edit survives a restart of `ai-gateway-operator` and `maas-controller` (verified), because the reconciler creates the resource but does not correct drift. It is still an unmanaged change: re-check it after an RHOAI upgrade, and expect to re-apply it if you delete and recreate the `ExternalProvider`.
+
+=== Step 3: Verify
+
+[source,bash]
+----
+MAAS_GW="https://$(oc get route maas-default-gateway -n openshift-ingress -o jsonpath='{.spec.host}' 2>/dev/null || echo "maas.$(oc get ingress.config cluster -o jsonpath='{.spec.domain}')")"
+
+API_KEY=$(curl -sk -X POST "${MAAS_GW}/maas-api/v1/api-keys" \
+    -H "Authorization: Bearer $(oc whoami -t)" \
+    -H "Content-Type: application/json" \
+    -d '{"name": "proxy-test", "subscription": "azure-openai-free", "expiresIn": "1h", "ephemeral": true}' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])")
+
+curl -sk "${MAAS_GW}/v1/chat/completions" \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"model": "azure-gpt-4-1-mini", "messages": [{"role": "user", "content": "Reply with exactly: PROXY OK"}], "max_tokens": 10}'
+----
+
+Then confirm the traffic really went through the proxy:
+
+[source,bash]
+----
+oc logs -n egress-proxy deploy/egress-tunnel --tail=5 | grep TUNNEL
+oc logs -n egress-proxy deploy/egress-proxy  --tail=5 | grep PROXY
+----
+
+You should see the gateway pod IP arriving at the tunnel, and a `CONNECT` for your provider hostname in the proxy log:
+
+[source]
+----
+TUNNEL downstream=10.232.0.2:43124 proxy=172.231.175.184:3128 flags=- dur=22
+PROXY method=CONNECT authority=maas-aoai-kfhjq.openai.azure.com:443 upstream=20.232.91.137:443 code=200 flags=DC dur=13
+----
+
+TIP: Prove there is no direct-egress fallback by scaling the proxy to zero: `oc scale deploy/egress-proxy -n egress-proxy --replicas=0`. Inference must fail with HTTP 503 and `TLS_error ... Connection reset by peer`. Scale it back to 1 and it recovers. If inference still succeeds with the proxy down, the mesh is not using the tunnel and Step 2 did not apply.
+
+=== Using a real corporate proxy
+
+*Proxy requires authentication.* Envoy's `tunneling_config` can add headers to the `CONNECT` request, so Basic auth works by adding to the `tcp_proxy` config:
+
+[source,yaml]
+----
+tunneling_config:
+  hostname: "maas-aoai-kfhjq.openai.azure.com:443"
+  headers_to_add:
+    - header:
+        key: "Proxy-Authorization"
+        value: "Basic <base64 of user:password>"
+----
+
+Keep that value in a Secret and mount it rather than committing it in the ConfigMap.
+
+*Proxy inspects TLS (MITM).* This pattern deliberately does not terminate TLS, so an inspecting proxy breaks certificate validation at the gateway. Either allow-list the provider hostname for pass-through on the proxy, which is the usual answer, or add the proxy's CA to the gateway trust bundle. Pass-through is strongly preferred: the `api-key` is in those requests.
+
+*Proxy only allows certain destinations.* Ask for `CONNECT` to the provider hostname on 443. The lab proxy logs show exactly what to allow-list.
+
+*More than one provider.* `tunneling_config.hostname` is a single fixed destination, so deploy one tunnel Deployment and Service per external provider and patch each `ServiceEntry` to its own tunnel IP.
+
+=== Caveats
+
+* One tunnel per provider, as above.
+* The tunnel is a single replica in these manifests. Raise `replicas` for anything beyond a demo, it holds no state.
+* The `ServiceEntry` edit is unmanaged, see the warning in Step 2.
+* Nothing changes for consumers. API keys, `AuthPolicy`, and token rate limiting keep working exactly as before, because only the egress leg moved.
+
 [[known-issues]]
 == Known Issues
 
@@ -928,6 +1081,11 @@ manifests/08-external-models/
       maas-model.yaml
       maas-auth-policy.yaml
       maas-subscription.yaml
+  http-proxy/
+    kustomization.yaml           # namespace + lab proxy + tunnel
+    namespace.yaml               # egress-proxy namespace
+    forward-proxy.yaml           # LAB ONLY: simulated corporate proxy (CONNECT)
+    egress-tunnel.yaml           # TCP tunnel that CONNECTs through the proxy
 ----
 
 === Supported Providers
