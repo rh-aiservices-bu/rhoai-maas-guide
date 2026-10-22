@@ -887,6 +887,14 @@ Pick one of the two paths.
 # and delete the "- forward-proxy.yaml" line
 ----
 
+IMPORTANT: Removing the file from the kustomization does not remove anything that is already running. `oc apply -k` does not prune. If you tried the lab path before switching to your real proxy, delete the lab proxy explicitly, otherwise it stays in the cluster as an open proxy:
+
+[source,bash]
+----
+oc delete deploy/egress-proxy svc/egress-proxy cm/egress-proxy-config \
+    -n egress-proxy --ignore-not-found
+----
+
 Ask the proxy owners to allow `CONNECT` to your provider hostname on 443. Then go to Step 2.
 
 *You do not have a proxy and want to test.* Keep `forward-proxy.yaml` and deploy it. It is an Envoy that terminates `CONNECT` and logs every tunnel, which is what makes the rest of this section verifiable:
@@ -1018,7 +1026,23 @@ TUNNEL downstream=10.232.0.2:43124 proxy=172.231.175.184:3128 flags=- dur=22
 PROXY method=CONNECT authority=maas-aoai-kfhjq.openai.azure.com:443 upstream=20.232.91.137:443 code=200 flags=DC dur=13
 ----
 
-TIP: Prove there is no direct-egress fallback by scaling the proxy to zero: `oc scale deploy/egress-proxy -n egress-proxy --replicas=0`. Inference must fail with HTTP 503 and `TLS_error ... Connection reset by peer`. Scale it back to 1 and it recovers. If inference still succeeds with the proxy down, the mesh is not using the tunnel and Step 3 did not apply.
+Prove there is no direct-egress fallback by breaking the path on purpose. If you deployed the lab proxy, scale it to zero:
+
+[source,bash]
+----
+oc scale deploy/egress-proxy -n egress-proxy --replicas=0
+----
+
+Inference must then fail with HTTP 503 and `TLS_error ... Connection reset by peer`. With a real corporate proxy you cannot scale it, so stop the tunnel instead, which fails with HTTP 500:
+
+[source,bash]
+----
+oc scale deploy/egress-tunnel -n egress-proxy --replicas=0
+----
+
+Scale whichever you stopped back to 1 and inference recovers.
+
+IMPORTANT: The exact status does not matter, the failure does. If inference still returns 200 while the proxy or the tunnel is down, the gateway is still reaching the provider directly, which means the `ServiceEntry` patch in Step 3 did not take effect and nothing you tested so far went through the proxy.
 
 === Using a real corporate proxy
 
