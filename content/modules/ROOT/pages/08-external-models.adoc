@@ -873,12 +873,69 @@ The tunnel is Envoy's `tcp_proxy` with `tunneling_config`, a stable documented f
 
 Azure OpenAI already working through MaaS as described in <<azure-openai,Azure OpenAI>>. Get that green first with direct egress if you can, so that a later failure is clearly the proxy and not the provider.
 
-=== Step 1: Configure and deploy the tunnel
+You also need a proxy that accepts `CONNECT` to the provider hostname on port 443. If you do not have one, or you only want to try this out, the manifests include a lab proxy and Step 1 deploys it for you.
 
-Edit `manifests/08-external-models/http-proxy/egress-tunnel.yaml` *before* you apply it. The file ships with the values from the test environment, so applying it unchanged gives you a tunnel pointing at the wrong provider:
+=== Step 1: Deploy the proxy
+
+Pick one of the two paths.
+
+*You already have a corporate proxy.* Write down its host and port, you need them in Step 2, and remove the lab proxy from the kustomization so you do not end up with a second proxy in the cluster:
+
+[source,bash]
+----
+# edit manifests/08-external-models/http-proxy/kustomization.yaml
+# and delete the "- forward-proxy.yaml" line
+----
+
+Ask the proxy owners to allow `CONNECT` to your provider hostname on 443. Then go to Step 2.
+
+*You do not have a proxy and want to test.* Keep `forward-proxy.yaml` and deploy it. It is an Envoy that terminates `CONNECT` and logs every tunnel, which is what makes the rest of this section verifiable:
+
+[source,bash]
+----
+oc apply -k manifests/08-external-models/http-proxy/
+oc rollout status deploy/egress-proxy -n egress-proxy
+----
+
+NOTE: This same command also deploys the tunnel, because both live in one kustomization. That is fine, the tunnel is configured in Step 2 and restarted there.
+
+Before wiring anything to it, check the proxy on its own. This is the step that tells you whether a later failure is the proxy or the MaaS side, so do not skip it:
+
+[source,bash]
+----
+oc run proxytest -n egress-proxy --rm -i --restart=Never \
+    --image=registry.access.redhat.com/ubi9/ubi-minimal:latest --command -- \
+    curl -sS -o /dev/null -w "http=%{http_code}\n" --max-time 30 \
+    -x http://egress-proxy:3128 \
+    -H "Content-Type: application/json" \
+    -d '{"messages":[{"role":"user","content":"hi"}],"max_tokens":5}' \
+    "https://<your-resource>.openai.azure.com/openai/deployments/gpt-4-1-mini/chat/completions?api-version=2025-04-01-preview"
+----
+
+You want `http=401`. That looks like a failure but it is the result you need: 401 comes from Azure itself, so the `CONNECT` tunnel opened and TLS completed, and the only thing missing is the API key, which the gateway adds later. A timeout or `http=000` instead means the proxy is not reachable.
+
+TIP: `oc run` prints PodSecurity warnings about the throwaway pod. They are harmless, the pod still runs.
+
+The proxy log should show the tunnel for that request:
+
+[source,bash]
+----
+oc logs -n egress-proxy deploy/egress-proxy --tail=5 | grep PROXY
+----
+
+[source]
+----
+PROXY method=CONNECT authority=maas-aoai-kfhjq.openai.azure.com:443 upstream=20.232.91.78:443 code=200 flags=DC dur=7
+----
+
+That `authority` is exactly what a real corporate proxy has to allow-list.
+
+=== Step 2: Configure and deploy the tunnel
+
+The tunnel ships with the values from the test environment, so it is pointing at the wrong provider until you edit it. Open `manifests/08-external-models/http-proxy/egress-tunnel.yaml` and set three things:
 
 * `tunneling_config.hostname` - your own Azure OpenAI resource, for example `my-resource.openai.azure.com:443`.
-* the `corporate_proxy` cluster address - your real proxy host and port. Leave the in-cluster Service only if you are using the lab proxy.
+* the `corporate_proxy` cluster address - the proxy host and port from Step 1. Leave it as the in-cluster Service (`egress-proxy.egress-proxy.svc.cluster.local:3128`) if you deployed the lab proxy.
 * `image` - the image your gateway already runs, so there is nothing extra to pull or mirror:
 
 [source,bash]
@@ -888,28 +945,25 @@ oc get pod -n openshift-ingress \
     -o jsonpath='{.items[0].spec.containers[?(@.name=="istio-proxy")].image}'
 ----
 
-IMPORTANT: If you already have a real corporate proxy, also remove `forward-proxy.yaml` from `manifests/08-external-models/http-proxy/kustomization.yaml`. That file is only a lab stand-in for the proxy, you do not want it in a cluster that already has one.
-
-Now apply, which creates the `egress-proxy` namespace and the tunnel (plus the lab proxy if you kept it):
+Apply your edits and restart the tunnel:
 
 [source,bash]
 ----
 oc apply -k manifests/08-external-models/http-proxy/
+oc rollout restart deploy/egress-tunnel -n egress-proxy
+oc rollout status deploy/egress-tunnel -n egress-proxy
 ----
+
+IMPORTANT: The restart is not optional. Envoy reads this static configuration once at start-up, so `oc apply` alone updates the ConfigMap while the running pod keeps the old settings. If Step 1 already started the tunnel with the shipped values, only the restart picks up yours. The same applies any time you change the hostname or the proxy address later.
+
+Both pods should be running:
 
 [source,bash]
 ----
 oc get pods -n egress-proxy
 ----
 
-NOTE: Envoy reads this static configuration once at start-up. If you change the hostname, the proxy address or anything else in the ConfigMap later, re-applying the manifests is not enough: the running pod keeps the old settings until you restart it.
-
-[source,bash]
-----
-oc rollout restart deploy/egress-tunnel -n egress-proxy
-----
-
-=== Step 2: Point the ServiceEntry at the tunnel
+=== Step 3: Point the ServiceEntry at the tunnel
 
 The reconciler creates the `ServiceEntry` with `resolution: DNS`, which sends the gateway straight to the internet. Switch it to `STATIC` so it resolves to the tunnel instead:
 
@@ -930,7 +984,7 @@ oc get serviceentry azure-openai -n external-models -o jsonpath='{.spec}' | pyth
 
 WARNING: This `ServiceEntry` is owned by `ipp-external-provider-reconciler`. The edit survives a restart of `ai-gateway-operator` and `maas-controller` (verified), because the reconciler creates the resource but does not correct drift. It is still an unmanaged change: re-check it after an RHOAI upgrade, and expect to re-apply it if you delete and recreate the `ExternalProvider`.
 
-=== Step 3: Verify
+=== Step 4: Verify
 
 [source,bash]
 ----
@@ -964,7 +1018,7 @@ TUNNEL downstream=10.232.0.2:43124 proxy=172.231.175.184:3128 flags=- dur=22
 PROXY method=CONNECT authority=maas-aoai-kfhjq.openai.azure.com:443 upstream=20.232.91.137:443 code=200 flags=DC dur=13
 ----
 
-TIP: Prove there is no direct-egress fallback by scaling the proxy to zero: `oc scale deploy/egress-proxy -n egress-proxy --replicas=0`. Inference must fail with HTTP 503 and `TLS_error ... Connection reset by peer`. Scale it back to 1 and it recovers. If inference still succeeds with the proxy down, the mesh is not using the tunnel and Step 2 did not apply.
+TIP: Prove there is no direct-egress fallback by scaling the proxy to zero: `oc scale deploy/egress-proxy -n egress-proxy --replicas=0`. Inference must fail with HTTP 503 and `TLS_error ... Connection reset by peer`. Scale it back to 1 and it recovers. If inference still succeeds with the proxy down, the mesh is not using the tunnel and Step 3 did not apply.
 
 === Using a real corporate proxy
 
@@ -992,7 +1046,7 @@ Keep that value in a Secret and mount it rather than committing it in the Config
 
 * One tunnel per provider, as above.
 * The tunnel is a single replica in these manifests. Raise `replicas` for anything beyond a demo, it holds no state.
-* The `ServiceEntry` edit is unmanaged, see the warning in Step 2.
+* The `ServiceEntry` edit is unmanaged, see the warning in Step 3.
 * Nothing changes for consumers. API keys, `AuthPolicy`, and token rate limiting keep working exactly as before, because only the egress leg moved.
 
 [[known-issues]]
