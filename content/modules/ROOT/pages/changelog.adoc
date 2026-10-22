@@ -8,7 +8,7 @@ Each entry links to its pull request for full details.
 
 === Features
 
-* *HTTP Proxy for External Models* - New section in the external models page for clusters that can only reach provider APIs through a corporate HTTP proxy, with Azure OpenAI as the worked example. Explains why there is no proxy setting to turn on (Envoy ignores `HTTP_PROXY`, Istio `tunnel` does not apply to HTTP routes, `http_11_proxy` EnvoyFilters cannot attach to the reconciler-generated cluster on Envoy 1.35, and the `tls`/`port` annotations are 3.4 only), then documents the egress tunnel pattern that keeps TLS end-to-end to the provider. Includes Kustomize manifests with a lab proxy for testing.
+* *HTTP Proxy for External Models* - New section in the external models page for clusters that can only reach provider APIs through a corporate HTTP proxy, with Azure OpenAI as the worked example. Explains why there is no proxy setting to turn on (Envoy ignores `HTTP_PROXY`, Istio `tunnel` does not apply to HTTP routes, `http_11_proxy` EnvoyFilters cannot attach to the reconciler-generated cluster on Envoy 1.35, and the `tls`/`port` annotations are 3.4 only), then documents the egress tunnel pattern that keeps TLS end-to-end to the provider. Includes Kustomize manifests with a lab proxy for testing. (link:{repo-url}/pull/194[#194])
 
 === Fixes
 
