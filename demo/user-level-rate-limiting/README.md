@@ -41,14 +41,23 @@ six requests, while `alice` and `carol` continue unaffected.
 ```bash
 cd demo/user-level-rate-limiting
 
-# 1. Create alice/bob/carol and the maas-demo-users group
+# 1. Create alice/bob/carol, the maas-demo-users group, and apply the tiers
 ./setup-demo-users.sh
 
-# 2. Apply the tiers
-oc apply -f subscriptions.yaml
+# 1a. Confirm the subscriptions were created
+oc get maassubscription -n models-as-a-service
 
-# 3. Show it working
+# 2. Show it working
 ./run-demo.sh
+```
+
+The `oc get` in step 1a should list the three demo subscriptions:
+
+```
+NAME                  AGE
+demo-team-standard    5s
+demo-alice-gold       5s
+demo-bob-throttled    5s
 ```
 
 Representative output:
@@ -67,7 +76,10 @@ Tear down with `./cleanup-demo.sh`.
 ## Talk track
 
 1. **Show `subscriptions.yaml`** — one group tier, two per-user overrides. Point at
-   `owner.groups` versus `owner.users`, and at `priority`.
+   `owner.groups` versus `owner.users`, and at `priority`. `setup-demo-users.sh`
+   already applied this file, so you only need to re-run
+   `oc apply -f subscriptions.yaml` by hand if you edit the tiers afterward
+   (see step 4 below).
 
 2. **Mint a key as bob.** Note that the request does *not* name a subscription —
    the platform resolves it:

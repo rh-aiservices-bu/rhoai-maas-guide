@@ -49,6 +49,11 @@ echo "==> Creating group ${GROUP}"
 oc adm groups new "$GROUP" "${USERS[@]}" 2>/dev/null || \
   { for u in "${USERS[@]}"; do oc adm groups add-users "$GROUP" "$u" >/dev/null 2>&1 || true; done; }
 
+# creates maassubscription to the users
+echo "==> Creating group subscription demo-team-standard, demo-alice-gold, demo-bob-throttled"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+oc apply -f "${SCRIPT_DIR}/subscriptions.yaml"
+
 echo
 echo "Identity providers now:"
 oc get oauth cluster -o jsonpath='{range .spec.identityProviders[*]}  {.name} ({.type}){"\n"}{end}'
