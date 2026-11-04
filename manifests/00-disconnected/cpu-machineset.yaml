@@ -1,0 +1,87 @@
+# CPU MachineSet for CPU-only model serving on AWS.
+#
+# Companion to gpu-machineset.yaml. The difference that matters: this one sets
+# NO taint. The GPU manifests under manifests/05-maas-models/ tolerate
+# nvidia.com/gpu, but the CPU model manifests (simulator, qwen3-06b) carry no
+# tolerations, so a taint here would leave their pods Pending.
+#
+# Before applying, discover the cluster-specific values and render:
+#
+#   export INFRA_ID=$(oc get -o jsonpath='{.status.infrastructureName}' infrastructure cluster)
+#   export AMI=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.ami.id}')
+#   export REGION=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.region}')
+#   export AZ=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.availabilityZone}')
+#   export SUBNET_NAME=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.subnet.filters[0].values[0]}')
+#   export INSTANCE_TYPE=m6i.4xlarge
+#   export MS_NAME=${INFRA_ID}-cpu-${AZ}
+#   export IAM_PROFILE=${INFRA_ID}-worker-profile
+#   export SG=${INFRA_ID}-node
+#
+#   envsubst < manifests/00-disconnected/cpu-machineset.yaml | oc apply -f -
+#
+# IPI-installed AWS clusters reference the subnet by tag filter instead of by
+# ID, which is why SUBNET_NAME reads the filter value above. If your worker
+# MachineSet pins an explicit subnet ID, swap the subnet block for:
+#   subnet:
+#     id: subnet-xxxxxxxxxxxxxxxxx
+#
+# Instance types (qwen3-06b is memory-bound rather than core-bound on CPU):
+#   m6i.2xlarge   8 vCPU / 32 GiB - minimum for qwen3-06b
+#   m6i.4xlarge  16 vCPU / 64 GiB - comfortable, leaves room for platform pods
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  name: ${MS_NAME}
+  namespace: openshift-machine-api
+  labels:
+    machine.openshift.io/cluster-api-cluster: ${INFRA_ID}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: ${INFRA_ID}
+      machine.openshift.io/cluster-api-machineset: ${MS_NAME}
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: ${INFRA_ID}
+        machine.openshift.io/cluster-api-machine-role: cpu
+        machine.openshift.io/cluster-api-machine-type: cpu
+        machine.openshift.io/cluster-api-machineset: ${MS_NAME}
+    spec:
+      metadata:
+        labels:
+          node-role.kubernetes.io/cpu-inference: ""
+      providerSpec:
+        value:
+          apiVersion: machine.openshift.io/v1beta1
+          kind: AWSMachineProviderConfig
+          ami:
+            id: ${AMI}
+          instanceType: ${INSTANCE_TYPE}
+          placement:
+            availabilityZone: ${AZ}
+            region: ${REGION}
+          subnet:
+            filters:
+              - name: tag:Name
+                values:
+                  - ${SUBNET_NAME}
+          iamInstanceProfile:
+            id: ${IAM_PROFILE}
+          securityGroups:
+            - filters:
+                - name: tag:Name
+                  values:
+                    - ${SG}
+          tags:
+            - name: kubernetes.io/cluster/${INFRA_ID}
+              value: owned
+          userDataSecret:
+            name: worker-user-data
+          credentialsSecret:
+            name: aws-cloud-credentials
+          blockDevices:
+            - ebs:
+                volumeSize: 100
+                volumeType: gp3
