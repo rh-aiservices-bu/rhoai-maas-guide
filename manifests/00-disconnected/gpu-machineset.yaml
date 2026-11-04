@@ -4,7 +4,7 @@
 #
 #   export INFRA_ID=$(oc get -o jsonpath='{.status.infrastructureName}' infrastructure cluster)
 #   export AMI=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.ami.id}')
-#   export SUBNET=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.subnet.id}')
+#   export SUBNET_NAME=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.subnet.filters[0].values[0]}')
 #   export REGION=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.region}')
 #   export AZ=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.availabilityZone}')
 #   export INSTANCE_TYPE=g6.2xlarge   # or g6e.2xlarge for L40S (48GB VRAM)
@@ -13,6 +13,12 @@
 #   export SG=${INFRA_ID}-node
 #
 #   envsubst < manifests/00-disconnected/gpu-machineset.yaml | oc apply -f -
+#
+# IPI-installed AWS clusters reference the subnet by tag filter instead of by
+# ID, which is why SUBNET_NAME reads the filter value above. If your worker
+# MachineSet pins an explicit subnet ID, swap the subnet block for:
+#   subnet:
+#     id: subnet-xxxxxxxxxxxxxxxxx
 #
 # Instance types (vLLM FP8 requires compute capability >= 80, do NOT use g5/A10G):
 #   g6.2xlarge   1x L4    (24 GB VRAM) - fits Gemma 9B FP8, Granite tiny, GPT-oss-20b (quantized)
@@ -55,7 +61,10 @@ spec:
             availabilityZone: ${AZ}
             region: ${REGION}
           subnet:
-            id: ${SUBNET}
+            filters:
+              - name: tag:Name
+                values:
+                  - ${SUBNET_NAME}
           iamInstanceProfile:
             id: ${IAM_PROFILE}
           securityGroups:

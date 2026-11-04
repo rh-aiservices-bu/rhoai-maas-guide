@@ -322,6 +322,31 @@ oc logs -n openshift-ingress -l istio.io/gateway-name=maas-default-gateway --tai
 
 If you see `cannot fetch Wasm module` or `applying deny RBAC filter`, the WASM shim patch from <<wasm-shim>> was not applied or the image is not in the mirror registry.
 
+== CPU MachineSet (optional)
+
+If the cluster has no dedicated CPU worker nodes and you plan to deploy the CPU-only models (`simulator`, `qwen3-06b`), create a CPU MachineSet.
+
+A template is provided at `manifests/00-disconnected/cpu-machineset.yaml`. It is the same shape as the GPU template but sets *no* taint - the GPU model manifests tolerate `nvidia.com/gpu`, while the CPU model manifests carry no tolerations, so a taint here would leave their pods Pending.
+
+[source,bash]
+----
+export INFRA_ID=$(oc get -o jsonpath='{.status.infrastructureName}' infrastructure cluster)
+export AMI=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.ami.id}')
+export SUBNET_NAME=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.subnet.filters[0].values[0]}')
+export REGION=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.region}')
+export AZ=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.availabilityZone}')
+export INSTANCE_TYPE=m6i.4xlarge
+export MS_NAME=${INFRA_ID}-cpu-${AZ}
+export IAM_PROFILE=${INFRA_ID}-worker-profile
+export SG=${INFRA_ID}-node
+
+envsubst < manifests/00-disconnected/cpu-machineset.yaml | oc apply -f -
+----
+
+NOTE: On IPI-installed AWS clusters the worker MachineSet references its subnet by tag filter, not by ID, which is why `SUBNET_NAME` reads the filter value. If `oc get machineset ... subnet.filters[0].values[0]` returns nothing, your cluster pins an explicit subnet ID instead - edit the template's `subnet` block to use `id: <subnet-id>`.
+
+The node comes up labelled `node-role.kubernetes.io/cpu-inference`. `m6i.2xlarge` (8 vCPU / 32 GiB) is the minimum for `qwen3-06b`; `m6i.4xlarge` (16 vCPU / 64 GiB) leaves room for platform pods as well.
+
 == GPU setup (optional)
 
 === GPU MachineSet
@@ -334,7 +359,7 @@ A template is provided at `manifests/00-disconnected/gpu-machineset.yaml`. Befor
 ----
 export INFRA_ID=$(oc get -o jsonpath='{.status.infrastructureName}' infrastructure cluster)
 export AMI=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.ami.id}')
-export SUBNET=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.subnet.id}')
+export SUBNET_NAME=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.subnet.filters[0].values[0]}')
 export REGION=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.region}')
 export AZ=$(oc get machineset -n openshift-machine-api -o jsonpath='{.items[0].spec.template.spec.providerSpec.value.placement.availabilityZone}')
 export INSTANCE_TYPE=g6.2xlarge
@@ -344,6 +369,8 @@ export SG=${INFRA_ID}-node
 
 envsubst < manifests/00-disconnected/gpu-machineset.yaml | oc apply -f -
 ----
+
+NOTE: On IPI-installed AWS clusters the worker MachineSet references its subnet by tag filter, not by ID, which is why `SUBNET_NAME` reads the filter value. If `oc get machineset ... subnet.filters[0].values[0]` returns nothing, your cluster pins an explicit subnet ID instead - edit the template's `subnet` block to use `id: <subnet-id>`.
 
 Wait for the GPU node to be Ready:
 
