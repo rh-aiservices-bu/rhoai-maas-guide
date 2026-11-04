@@ -12,7 +12,11 @@ data:
           - name: istio-proxy
             resources:
               requests:
-                cpu: 100m
+                # 500m, not 100m: the Sail Operator gives this Deployment an HPA
+                # that targets 80% CPU *of the request*. A gateway running the
+                # Kuadrant Wasm filters idles at 145-271m, so a 100m request put
+                # the HPA permanently at maxReplicas (10 pods x 2Gi).
+                cpu: 500m
                 memory: 256Mi
               limits:
                 cpu: "2"
