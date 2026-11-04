@@ -184,7 +184,10 @@ check_and_fix_gateway_oom() {
 
         if [ "$mem_limit" = "1Gi" ]; then
             log_warn "Gateway pod has OOMKilled ($restarts restarts). Applying persistent 2Gi memory limit via ConfigMap..."
-            # Create the ConfigMap with 2Gi limit (idempotent)
+            # Create the ConfigMap with 2Gi limit (idempotent). Keep the values in
+            # step with manifests/02-platform-config/gateway-resources.yaml: the
+            # 500m CPU request matters because the gateway HPA targets 80% of the
+            # request, and 100m pins it at maxReplicas.
             cat <<'GWEOF' | oc apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -200,7 +203,7 @@ data:
           - name: istio-proxy
             resources:
               requests:
-                cpu: 100m
+                cpu: 500m
                 memory: 256Mi
               limits:
                 cpu: "2"
