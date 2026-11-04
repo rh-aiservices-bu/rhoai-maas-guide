@@ -74,6 +74,8 @@ Verified on the cluster above before changing anything:
 [id=issue-1]
 == Issue 1: The RHOAI Operator Is Not in the OpenShift 5 Catalog
 
+Tracked as link:https://redhat.atlassian.net/browse/RHOAIENG-102811[RHOAIENG-102811^].
+
 === Symptoms
 
 The {rhoai-short} `Subscription` is created and then nothing happens. No `InstallPlan`, no CSV, and no error that names the cause.
