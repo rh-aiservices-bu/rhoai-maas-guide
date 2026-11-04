@@ -314,14 +314,15 @@ Confirm all MaaS operators are available:
 ----
 for pkg in rhcl-operator authorino-operator dns-operator limitador-operator \
            leader-worker-set metallb-operator \
-           cluster-observability-operator opentelemetry-product tempo-product; do
+           cluster-observability-operator opentelemetry-product tempo-product \
+           loki-operator; do
   echo -n "  $pkg: "
   oc get packagemanifest "$pkg" -n openshift-marketplace \
     -o jsonpath='{.status.catalogSource}' 2>/dev/null && echo || echo "NOT FOUND"
 done
 ----
 
-All 9 should resolve to a CatalogSource. If any show `NOT FOUND`, the mirror set is incomplete - check the oc-mirror output for errors.
+All 10 should resolve to a CatalogSource. If any show `NOT FOUND`, the mirror set is incomplete - check the oc-mirror output for errors.
 
 Verify the gateway pod has no WASM errors:
 
