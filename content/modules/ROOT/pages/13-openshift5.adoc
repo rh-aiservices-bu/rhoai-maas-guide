@@ -1,0 +1,531 @@
+= Running MaaS on OpenShift 5
+
+What happens when you install {rhoai} {maas} on {ocp-short} 5, which blocks, and what to change. The guide's other phases are written against {ocp-short} 4.19+, and this page records the first end-to-end walkthrough on a 5.0 cluster.
+
+IMPORTANT: This guide is not a replacement for the official {rhoai} {maas} documentation (link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[3.5] | link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index[3.4]). {ocp-short} 5.0 does not appear in the link:https://access.redhat.com/articles/rhoai-supported-configs-3.x[{rhoai-short} 3.x supported configurations matrix^] at the time of writing, so treat everything here as field notes, not a support statement.
+
+TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root. Make sure you have cloned it and are working from its root directory (see xref:index.adoc#_getting_started[Getting Started]).
+
+== Test Cluster
+
+[cols="1,2", options="header"]
+|===
+| Property | Value
+
+| {ocp-short}
+| 5.0.0-rc.7 (Kubernetes v1.36.5, RHCOS 10.2, cri-o 1.36.6)
+
+| Platform
+| BareMetal, 3 nodes, every node `control-plane,master,worker`
+
+| Node IPs
+| `10.10.10.10`, `10.10.10.11`, `10.10.10.12` (consecutive, which matters for xref:13-openshift5.adoc#issue-5[Issue 5])
+
+| GPU
+| None, so the CPU-only `simulator` model
+
+| Storage
+| ODF, default StorageClass `ocs-external-storagecluster-ceph-rbd`
+
+| Pre-installed
+| Red Hat Connectivity Link 1.4.2, Service Mesh 3 operator 3.5.0 (Istio 1.31.1), cert-manager, COO, Tempo, GitOps
+|===
+
+This was a shared workshop cluster rather than a clean one, which surfaced xref:13-openshift5.adoc#issue-4[Issue 4]. A clean {ocp-short} 5 cluster hits Issues 1, 2, 3 and 5 only.
+
+== Outcome
+
+{maas} runs on {ocp-short} 5. After working around the issues below, the full verification suite passed: 15 of 15 end-to-end checks, including inference, authentication enforcement and rate limiting.
+
+Nothing in the {maas} data path needed changing. Every problem was either operator packaging (xref:13-openshift5.adoc#issue-1[Issue 1], xref:13-openshift5.adoc#issue-2[Issue 2]) or a pre-existing assumption in this repo's own automation that {ocp-short} 5 happened to expose (Issues 3, 5 and 6). The automation in `scripts/setup-maas.sh` and `manifests/06-verification/verify.sh` now handles all of them.
+
+WARNING: Everything on this page is {rhoai-short} *3.4.2* on {ocp-short} 5.0.0-rc.7. {rhoai-short} 3.5 GA was not tested, because the only catalog on this cluster that carries {rhoai-short} is a snapshot taken before 3.5 shipped. That is a property of the test cluster, not a statement about 3.5 on {ocp-short} 5.
+
+== What Works Unchanged
+
+Verified on the cluster above before changing anything:
+
+[cols="1,2", options="header"]
+|===
+| Area | Result
+
+| OLM v0 (`operators.coreos.com`)
+| Still present and working. `Subscription`, `CSV`, `InstallPlan` and `OperatorGroup` all behave as on 4.x, so every subscription manifest in `manifests/01-prerequisites/` stays valid. OLM v1 (`olm.operatorframework.io`) exists alongside it but is not needed.
+
+| Gateway API
+| `gateway.networking.k8s.io` is *v1 only*. `v1beta1` is gone, including for `ReferenceGrant`. The manifests in this repo already use `v1` everywhere, so nothing had to change.
+
+| `openshift-default` GatewayClass
+| Still backed by Istio. The controller name `openshift.io/gateway-controller/v1` is unchanged, `istiod-openshift-gateway` runs in `openshift-ingress`, and the gateway pod is still an `istio-proxy` container. This matters because Kuadrant attaches its policies through Istio EnvoyFilters.
+
+| Kuadrant policy attachment
+| Works. The RHCL operator ships `ISTIO_GATEWAY_CONTROLLER_NAMES=openshift.io/gateway-controller/v1`, and `AuthPolicy` / `RateLimitPolicy` produce the expected `kuadrant-auth-*`, `kuadrant-ratelimiting-*` and `kuadrant-*` EnvoyFilters.
+
+| SecurityContextConstraints
+| The 28 default SCCs are still present. Nothing in this guide needed an SCC change.
+
+| Deprecated APIs
+| `oc get apirequestcounts` reports no in-use API with a `removedInRelease` set, so nothing this guide applies is on a removal path.
+
+| Operator installs
+| {rhoai-short} 3.4.2, Leader Worker Set 1.0.1 and cert-manager 1.20.1 all reach `Succeeded` on 5.0.0-rc.7.
+|===
+
+[id=issue-1]
+== Issue 1: The RHOAI Operator Is Not in the OpenShift 5 Catalog
+
+Tracked as link:https://redhat.atlassian.net/browse/RHOAIENG-102811[RHOAIENG-102811^].
+
+IMPORTANT: *Tested on {rhoai-short} 3.4.2 only.* GA {rhoai-short} 3.5 could not be tested on {ocp-short} 5, because no Red Hat catalog publishes a 3.5 channel for it.
+
+=== Symptoms
+
+The {rhoai-short} `Subscription` is created and then nothing happens. No `InstallPlan`, no CSV, and no error that names the cause.
+
+=== Diagnosis
+
+On {ocp-short} 5 the `redhat-operators` CatalogSource points at the 5.0 index, which does not carry the `rhods-operator` package at all:
+
+[source,bash]
+----
+oc get catalogsource redhat-operators -n openshift-marketplace -o jsonpath='{.spec.image}{"\n"}'
+# registry.redhat.io/redhat/redhat-operator-index:v5.0
+
+oc get packagemanifest -n openshift-marketplace -l catalog=redhat-operators \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -icE 'rhods|rhoai|opendatahub'
+# 0
+----
+
+That index carries 129 packages and none of them is {rhoai-short}. cert-manager, `leader-worker-set` and `metallb-operator` are all there, so the gap is specific to {rhoai-short}.
+
+NOTE: The OLM v1 `ClusterCatalog` named `openshift-redhat-operators` uses the same `v5.0` index image, so switching to OLM v1 does not help.
+
+=== Workaround
+
+Subscribe from a catalog that does publish {rhoai-short}. On RHPDS workshop clusters a snapshot of the 4.22 index is already present:
+
+[source,bash]
+----
+oc get packagemanifest -n openshift-marketplace --field-selector metadata.name=rhods-operator \
+  -o jsonpath='{range .items[*]}{.status.catalogSource}{" default="}{.status.defaultChannel}{"\n"}{end}'
+# redhat-operators-v422 default=stable-3.x
+
+oc patch subscription rhods-operator -n redhat-ods-operator --type=merge \
+  -p '{"spec":{"source":"redhat-operators-v422","channel":"stable-3.x"}}'
+----
+
+`scripts/setup-maas.sh` now does this automatically: it looks up which catalog actually publishes each package and repoints the `Subscription` if the one in the manifest cannot resolve. Use `--catalog-source <name>` to prefer a specific catalog; the installer still falls back, with a warning, if that catalog does not carry the package.
+
+That snapshot is pinned to a date (`v4.22_2026_08_03` on the cluster used here), so what it offers depends on when it was taken. On this one:
+
+[source,bash]
+----
+oc get packagemanifest -n openshift-marketplace --field-selector metadata.name=rhods-operator \
+  -o jsonpath='{range .items[*]}{range .status.channels[*]}{.name}{" -> "}{.currentCSV}{"\n"}{end}{end}'
+# stable-3.x -> rhods-operator.3.4.2   <- default
+# stable-3.4 -> rhods-operator.3.4.2
+# stable-3.3 -> rhods-operator.3.3.4
+# beta       -> rhods-operator.3.5.0-ea.2
+----
+
+There is no `stable-3.5` channel, because the snapshot predates 3.5 GA. `stable-3.x` therefore still resolves to 3.4.2, which causes xref:13-openshift5.adoc#issue-3[Issue 3].
+
+NOTE: `beta` does carry `3.5.0-ea.2`, so a 3.5 code path can be exercised with `--rhoai-version 3.5` once the Subscription is pointed at that channel. It is a pre-GA build, so treat failures there with suspicion. A newer snapshot, or the official index once it carries {rhoai-short} for {ocp-short} 5, is the better route to a GA 3.5.
+
+[id=issue-2]
+== Issue 2: The RHCL Channel `stable` Does Not Exist
+
+Tracked as link:https://redhat.atlassian.net/browse/RHOAIENG-102811[RHOAIENG-102811^]. Same root cause as Issue 1: what the {ocp-short} 5 index publishes. Worked around automatically, see below.
+
+=== Symptoms
+
+The Red Hat Connectivity Link `Subscription` never resolves. Same silent symptom as Issue 1: no `InstallPlan`, no CSV.
+
+=== Diagnosis
+
+The guide and the official docs subscribe RHCL with `channel: stable`. The {ocp-short} 5 index renamed it:
+
+[source,bash]
+----
+oc get packagemanifest -n openshift-marketplace -l catalog=redhat-operators \
+  --field-selector metadata.name=rhcl-operator \
+  -o jsonpath='{.status.defaultChannel}{" | "}{range .status.channels[*]}{.name}{"="}{.currentCSV}{" "}{end}{"\n"}'
+# stable-1.5 | stable-1.5=rhcl-operator.v1.5.0
+----
+
+Only `stable-1.5` is published, pointing at RHCL 1.5.0. For comparison, the 4.22 snapshot on the same cluster still has `stable` at `rhcl-operator.v1.4.2`, so this is a channel rename between the two indexes.
+
+=== Workaround
+
+Use the channel the cluster publishes:
+
+[source,bash]
+----
+oc patch subscription rhcl-operator -n openshift-operators --type=merge \
+  -p '{"spec":{"channel":"stable-1.5"}}'
+----
+
+That installs RHCL 1.5.0. The manifests in this repo are written against 1.4.2, which is what xref:08d-multi-tenancy.adoc[Multi-Tenancy] needs for the gateway-scoped AuthPolicy, and 1.5.0 is not yet exercised by this guide.
+
+`scripts/setup-maas.sh` therefore looks for a catalog that publishes the channel the manifest asks for *before* falling back to any catalog's default channel. On a cluster that also carries the 4.22 snapshot, RHCL resolves to `redhat-operators-v422` / `stable` and stays on 1.4.2. `redhat-operators` wins ties, so a snapshot catalog never shadows the official index for an operator both of them publish. Only when no catalog offers the requested channel does the installer fall back to a default, and it warns when it does.
+
+NOTE: On a cluster carrying only the 5.0 index, `stable-1.5` is the single option and you get RHCL 1.5.0. Treat that combination as untested.
+
+[id=issue-3]
+== Issue 3: The Installer Assumes 3.5 While the Catalog Gives 3.4
+
+Tracked as link:https://redhat.atlassian.net/browse/RHOAIENG-102811[RHOAIENG-102811^]. The version mismatch is a consequence of the channel gap. Fixed in this repo's installer, see below.
+
+=== Symptoms
+
+`setup-maas.sh` reports {rhoai-short} 3.5 during preflight, but the CSV that lands is 3.4.2:
+
+[source,bash]
+----
+# Phase 0
+[INFO]   RHOAI version:      3.5 (3.5+: true)
+[INFO]   maas-api namespace: redhat-ai-gateway-infra
+
+# Summary, same run
+[INFO] RHOAI version: 3.4.2
+----
+
+=== Diagnosis
+
+With no {rhoai-short} installed, the script defaults to 3.5, which sets `IS_35_PLUS=true` and selects the 3.5 namespace and DSC layout. The version is detected once in Phase 0, before the operator exists, and never re-read afterwards. Because the only usable channel resolves to 3.4.2 (xref:13-openshift5.adoc#issue-1[Issue 1]), the run then applies the 3.5 DSC path (`aigateway.modelsAsAService`) against a 3.4 operator.
+
+The failure mode is quiet, and which command you use decides whether you get any hint at all. On {rhoai-short} 3.4.2 the `DataScienceCluster` CRD has no `aigateway` component in either schema version and does not set `x-kubernetes-preserve-unknown-fields`, so the API server prunes the field. It is never stored.
+
+`oc patch` does warn. `oc apply`, which is what the installer and the docs use, does not:
+
+[source,bash]
+----
+$ oc patch datasciencecluster default-dsc --type=merge --dry-run=server \
+    -p '{"spec":{"components":{"aigateway":{"modelsAsAService":{"managementState":"Managed"}}}}}'
+Warning: unknown field "spec.components.aigateway"
+datasciencecluster.../default-dsc patched (no change)
+
+$ oc apply --dry-run=server -f dsc-with-aigateway.yaml
+datasciencecluster.../default-dsc configured (server dry run)
+----
+
+So with `oc apply` the field is dropped with no warning, the command reports success, and the stored DSC comes back without it. {maas} is simply never enabled.
+
+[source,bash]
+----
+oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for v in d['spec']['versions']:
+    comps=v['schema']['openAPIV3Schema']['properties']['spec']['properties']['components']['properties']
+    print(v['name'], '->', sorted(comps.keys()))
+"
+----
+
+On 3.4.2 neither schema version lists `aigateway`, while `kserve` exposes `modelsAsService`:
+
+[source,text]
+----
+v1 -> ['codeflare', 'dashboard', ..., 'kserve', ...]
+v2 -> ['aipipelines', 'dashboard', ..., 'kserve', ...]
+----
+
+This is not specific to {ocp-short} 5. Any cluster whose `stable-3.x` channel has not moved to 3.5 hits the same thing.
+
+=== Workaround
+
+Pin the version explicitly so the code path matches what the catalog will give you:
+
+[source,bash]
+----
+./scripts/setup-maas.sh --rhoai-version 3.4
+----
+
+`setup-maas.sh` now also re-reads the installed version from the CSV after Phase 1 and again at the start of Phase 4, and switches the code path with a warning if it differs from what was requested.
+
+[id=issue-4]
+== Issue 4: An Existing Kuadrant Instance in Another Namespace
+
+link:https://redhat.atlassian.net/browse/RHOAIENG-102811[RHOAIENG-102811^] covers the {ocp-short} 5 findings overall. This one is environmental rather than a product defect, and the installer handles it, see below.
+
+Only applies to clusters that already run RHCL for something else. Skip on a clean cluster.
+
+=== Symptoms
+
+{maas} expects `Kuadrant`, `Authorino` and `Limitador` in `kuadrant-system`. A cluster that already uses RHCL may have them somewhere else, and the install then creates a second set.
+
+=== Diagnosis
+
+The RHCL operator supports `AllNamespaces` install mode only, and runs with an empty `OPERATOR_NAMESPACE`:
+
+[source,bash]
+----
+oc get csv rhcl-operator.v1.4.2 -n <operator-ns> \
+  -o jsonpath='{range .spec.installModes[*]}{.type}={.supported}{" "}{end}{"\n"}'
+# OwnNamespace=false SingleNamespace=false MultiNamespace=false AllNamespaces=true
+----
+
+So it watches every namespace and will reconcile a second `Kuadrant` CR as well. There is no validating webhook to stop you. Both instances then manage the same gateways' EnvoyFilters, which is why one instance per cluster is the only safe arrangement.
+
+=== Workaround
+
+Keep one `Kuadrant` instance. Back up the existing one, remove its policies and CR, and let {maas} create its own in `kuadrant-system`. The operator itself stays installed:
+
+[source,bash]
+----
+oc get kuadrant,authorino,limitador,authpolicy,ratelimitpolicy -A -o yaml > kuadrant-backup.yaml
+
+oc delete authpolicy,ratelimitpolicy --all -n <their-namespace>
+oc delete kuadrant <name> -n <their-namespace>
+----
+
+WARNING: If the existing instance is managed by GitOps, deletions get reverted. Argo CD applications with `syncPolicy.automated.selfHeal: true` restore the CR within minutes, and an app-of-apps pattern also restores any change you make to the child application. Suspend automated sync on the parent and the child first, then delete.
+
+`setup-maas.sh` now detects an operator already subscribed from a different namespace, skips creating a duplicate `Subscription`, and waits for the CSV in the namespace where the operator actually lives instead of the one the manifest expects.
+
+[id=issue-5]
+== Issue 5: The MetalLB Pool Can Land on a Node IP
+
+Not a product issue: this was a bug in this repo's own installer, fixed in link:{repo-url}/pull/203[#203].
+
+=== Symptoms
+
+After {maas} installs on a non-cloud cluster, the OpenShift console and OAuth stop answering. `curl` against the console route returns nothing at all.
+
+=== Diagnosis
+
+On a platform with no cloud load balancer, the gateway Service stays `Pending` and the installer brings up MetalLB. The address for the pool used to be derived as "first node IP plus one". On a cluster whose nodes have consecutive addresses, that formula lands the pool on another node:
+
+[source,bash]
+----
+oc get nodes -o jsonpath='{range .items[*]}{range .status.addresses[?(@.type=="InternalIP")]}{.address}{"\n"}{end}{end}'
+# 10.10.10.10
+# 10.10.10.11   <- nodeIP+1 would claim this
+# 10.10.10.12
+----
+
+MetalLB then advertises an address that a node already owns, and the two compete for port 443.
+
+=== Workaround
+
+Never give MetalLB an address that belongs to a node. `setup-maas.sh` now collects every node `InternalIP` and skips all of them when choosing the pool address, failing with an explicit message if it cannot find a free one rather than picking a colliding address.
+
+To check an existing install:
+
+[source,bash]
+----
+GW=$(oc get gateway maas-default-gateway -n openshift-ingress -o jsonpath='{.status.addresses[0].value}')
+oc get nodes -o jsonpath='{.items[*].status.addresses[?(@.type=="InternalIP")].address}' | grep -q "$GW" \
+  && echo "COLLISION: gateway address is a node IP" || echo "OK"
+----
+
+[id=issue-6]
+== Issue 6: verify.sh Inference Checks Fail on RHOAI 3.4
+
+Not a product issue: this was a bug in this repo's own `verify.sh`, fixed in link:{repo-url}/pull/203[#203].
+
+=== Symptoms
+
+`verify.sh` reports the platform healthy but three checks fail, and every failure is HTTP 404:
+
+[source,text]
+----
+[FAIL] Inference returned HTTP 404 (expected 200)
+[FAIL] Unauthenticated request returned HTTP 404 (expected 401/403)
+[FAIL] Invalid token returned HTTP 404 (expected 401/403)
+[WARN] No 429 responses in 16 requests.
+----
+
+A 404 on the unauthenticated request is the giveaway. If authentication were the problem the gateway would answer 401 or 403. A 404 means no route matched at all, so the request never reached the auth filter.
+
+=== Diagnosis
+
+The two {rhoai-short} releases expose inference differently.
+
+On 3.5 the gateway serves `/v1/chat/completions` at the root and picks the backend from the `model` field in the request body (body-based routing). On 3.4 there is no root route. Each model is reachable only under its own path prefix, and no body-based routing EnvoyFilter exists:
+
+[source,bash]
+----
+oc get httproute -n llm -o jsonpath='{range .items[0].spec.rules[*]}{range .matches[*]}{.path.value}{"\n"}{end}{end}'
+# /llm/facebook-opt-125m-simulated/v1/completions
+# /llm/facebook-opt-125m-simulated/v1/chat/completions
+# /llm/facebook-opt-125m-simulated/v1/responses
+# /llm/facebook-opt-125m-simulated
+----
+
+`verify.sh` built the inference URL from the gateway base, which resolves to `https://maas.<domain>/v1/chat/completions`. That path only exists on 3.5. The models listing passed because `/v1/models` *is* served at the root by `maas-api-route`, which is what made the failure look like an auth or timing problem rather than a routing one.
+
+=== Workaround
+
+Use the per-model URL that the API already returns in the listing:
+
+[source,bash]
+----
+MODEL_URL=$(curl -sk "https://maas.${CLUSTER_DOMAIN}/maas-api/v1/models" \
+  -H "Authorization: Bearer ${API_KEY}" | jq -r '.data[0].url')
+
+curl -sk "${MODEL_URL}/v1/chat/completions" \
+  -H "Authorization: Bearer ${API_KEY}" -H 'Content-Type: application/json' \
+  -d '{"model":"facebook/opt-125m","messages":[{"role":"user","content":"hi"}],"max_tokens":10}'
+----
+
+`verify.sh` now reads `.data[0].url` from the listing and falls back to the gateway root when the listing does not provide one, so it is correct on both 3.4 and 3.5. With that change the same cluster reports 15 of 15 passing.
+
+NOTE: Expect a short window right after deploying a model where requests still return 404 while Envoy picks up the new route. It clears on its own in about two minutes.
+
+[id=issue-7]
+== Issue 7: The Gateway HPA Sits at Maximum Replicas
+
+Tracked upstream as link:https://redhat.atlassian.net/browse/RHOAIENG-71755[RHOAIENG-71755^] (gateway resource workaround, open) and link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589^] (gateway OOMKill). Worked around in this repo, see below.
+
+Not specific to {ocp-short} 5, but easy to miss and expensive on a small cluster.
+
+=== Symptoms
+
+The {maas} gateway runs at its replica ceiling with no traffic to justify it:
+
+[source,bash]
+----
+oc get hpa maas-default-gateway-openshift-default -n openshift-ingress
+# TARGETS         MINPODS   MAXPODS   REPLICAS
+# cpu: 186%/80%   2         10        10
+----
+
+Ten gateway pods, each with a 2Gi memory limit, on a three node cluster.
+
+=== Diagnosis
+
+The gateway HPA scales on CPU utilisation measured against the container's CPU *request*. `manifests/02-platform-config/gateway-resources.yaml` sets that request to `100m`, so the 80% target is 80 millicores. A gateway running the Kuadrant Wasm filters idles well above that:
+
+[source,bash]
+----
+oc adm top pods -n openshift-ingress | grep maas-default-gateway
+# ... 145m   404Mi
+# ... 271m   419Mi
+----
+
+Observed usage of 145m to 271m against an 80m threshold means the HPA scales up until it hits `maxReplicas` and stays there. Memory is not the constraint: the pods use around 400Mi of the 2Gi limit.
+
+=== Workaround
+
+Give the HPA a realistic baseline by raising the CPU *request*. `manifests/02-platform-config/gateway-resources.yaml` now ships `cpu: 500m` instead of `100m`, so a fresh install gets this by default. The Gateway picks it up through `spec.infrastructure.parametersRef`, so no Deployment patch is needed.
+
+For a cluster already installed, re-apply the ConfigMap:
+
+[source,bash]
+----
+oc apply -f manifests/02-platform-config/gateway-resources.yaml
+
+# Istio merges it into the Deployment within seconds
+oc get deployment maas-default-gateway-openshift-default -n openshift-ingress \
+  -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}{"\n"}'
+----
+
+Measured on the cluster used here: the request went from `100m` to `500m`, and the gateway dropped from 10 replicas back to `minReplicas: 2` within ten seconds, with the health endpoint still returning HTTP 200.
+
+NOTE: The gateway still spikes above the threshold while it compiles the Wasm filters at startup, so you may briefly see it scale up after a rollout. That is the HPA doing its job. The problem being fixed here is it never scaling back *down*.
+
+Keep the 2Gi memory limit. That is the link:https://redhat.atlassian.net/browse/RHOAIENG-68589[RHOAIENG-68589^] workaround and it is still required: the gateway container defaults to 1Gi, and this cluster confirmed the default is unchanged on {ocp-short} 5 with Service Mesh 3.5.0 and Istio 1.31.1.
+
+== Verification Results
+
+Measured on the cluster described above, {rhoai-short} 3.4.2, after applying the workarounds.
+
+[cols="2,1,3", options="header"]
+|===
+| Check | Result | Detail
+
+| `verify.sh` end-to-end
+| 15 / 15
+| Includes inference HTTP 200, unauthenticated 401, invalid token 401, rate limiting 3 allowed and 13 limited out of 16
+
+| Gateway address
+| PASS
+| MetalLB assigned `10.10.10.13`, which is not any node address
+
+| Gateway memory and restarts
+| PASS
+| 2Gi limit, 0 restarts, no OOMKill
+
+| Console and OAuth
+| PASS
+| HTTP 200, so no MetalLB collision
+
+| {rhoai-short} dashboard
+| PASS
+| HTTP 301 to login
+
+| `llm` namespace labels
+| PASS
+| `dashboard`, `gateway-access` and `generated-namespace` all present
+
+| RHCL
+| PASS
+| 1.4.2, `Succeeded`, Automatic approval
+
+| Model storage init
+| PASS
+| No pods stuck in `Init`, no Xet hang
+
+| MaaS CRDs
+| PASS
+| `maasmodelrefs`, `maasauthpolicies`, `maassubscriptions` registered
+
+| Health endpoint
+| PASS
+| Returns `{"status":"healthy"}`
+
+| DSC readiness
+| PASS
+| `ModelsAsServiceReady=True`, `postgres`, `maas-api`, `maas-controller` and `authorino` each at 1 replica
+|===
+
+=== Operator Versions
+
+[cols="1,1", options="header"]
+|===
+| Operator | Version
+
+| {rhoai-short}
+| 3.4.2
+
+| Red Hat Connectivity Link
+| 1.4.2
+
+| cert-manager
+| 1.20.1
+
+| Leader Worker Set
+| 1.0.1
+
+| Service Mesh 3 (Istio)
+| 3.5.0 (Istio 1.31.1)
+
+| MetalLB
+| 5.0.0
+|===
+
+== Troubleshooting Quick Reference
+
+[cols="2,3", options="header"]
+|===
+| Symptom | Cause
+
+| Subscription sits with no InstallPlan and no CSV
+| The channel or the package is not published in the catalog the Subscription targets. See xref:13-openshift5.adoc#issue-1[Issue 1] and xref:13-openshift5.adoc#issue-2[Issue 2]. Run `oc get packagemanifest -n openshift-marketplace --field-selector metadata.name=<pkg>` to see which catalogs have it.
+
+| `maas-api` never deploys, `ModelsAs(A)ServiceReady` stays `False`
+| A 3.5-shaped DSC was applied to a 3.4 operator and the API server pruned the unknown field. See xref:13-openshift5.adoc#issue-3[Issue 3].
+
+| Console and OAuth stop answering after install
+| MetalLB is advertising an address that belongs to a node. See xref:13-openshift5.adoc#issue-5[Issue 5].
+
+| Inference returns 404, including without credentials
+| Wrong inference URL for the {rhoai-short} version, or Envoy has not yet synced a freshly deployed route. See xref:13-openshift5.adoc#issue-6[Issue 6].
+
+| Gateway pods `CrashLoopBackOff` with exit code 137
+| The 1Gi default memory limit. Apply the `maas-gateway-options` ConfigMap, see xref:13-openshift5.adoc#issue-7[Issue 7].
+
+| Two sets of Authorino and Limitador pods
+| More than one `Kuadrant` CR on the cluster. See xref:13-openshift5.adoc#issue-4[Issue 4].
+|===

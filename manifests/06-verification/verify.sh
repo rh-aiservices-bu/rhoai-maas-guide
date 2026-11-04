@@ -184,7 +184,10 @@ check_and_fix_gateway_oom() {
 
         if [ "$mem_limit" = "1Gi" ]; then
             log_warn "Gateway pod has OOMKilled ($restarts restarts). Applying persistent 2Gi memory limit via ConfigMap..."
-            # Create the ConfigMap with 2Gi limit (idempotent)
+            # Create the ConfigMap with 2Gi limit (idempotent). Keep the values in
+            # step with manifests/02-platform-config/gateway-resources.yaml: the
+            # 500m CPU request matters because the gateway HPA targets 80% of the
+            # request, and 100m pins it at maxReplicas.
             cat <<'GWEOF' | oc apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -200,7 +203,7 @@ data:
           - name: istio-proxy
             resources:
               requests:
-                cpu: 100m
+                cpu: 500m
                 memory: 256Mi
               limits:
                 cpu: "2"
@@ -617,6 +620,13 @@ else
     log_warn "Response: $API_KEY_RESPONSE"
 fi
 
+# On RHOAI 3.5 the gateway exposes /v1/chat/completions at the root and routes by the
+# "model" field in the body (BBR). On 3.4 there is no such root route: each model is
+# reachable only under its own path prefix, so posting to ${HOST}/v1/chat/completions
+# returns 404 for every request, authenticated or not. The models listing already tells
+# us the right base URL per model, so use it and fall back to the gateway root.
+INFERENCE_BASE="$HOST"
+
 # List models
 if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ]; then
     MODELS_RESPONSE=$(maas_curl \
@@ -629,8 +639,18 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ]; then
 
     if [ "$MODEL_COUNT" -gt 0 ] 2>/dev/null; then
         FIRST_MODEL_ID=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null || echo "")
+        FIRST_MODEL_URL=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].url // empty' 2>/dev/null || echo "")
         log_pass "Models available ($MODEL_COUNT total, first: $FIRST_MODEL_ID)"
         INFERENCE_MODEL="$FIRST_MODEL_ID"
+        if [ -n "$FIRST_MODEL_URL" ]; then
+            # Take only the path from the advertised URL and keep the origin we are
+            # actually reaching the gateway on. In the NodePort fallback $HOST carries
+            # the node port and maas_curl adds a matching --resolve, so using the
+            # advertised host:443 verbatim would bypass both.
+            MODEL_PATH=$(printf '%s' "$FIRST_MODEL_URL" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*##')
+            INFERENCE_BASE="${HOST}${MODEL_PATH}"
+            log_info "Inference base URL: ${INFERENCE_BASE}"
+        fi
     else
         log_warn "No models found in listing (may be timing or API version difference)"
         log_warn "Response: ${MODELS_RESPONSE:0:200}"
@@ -646,7 +666,7 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${INFERENCE_MODEL:-}" 
         -H "Content-Type: application/json" \
         -w "\n%{http_code}" \
         -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 50}" \
-        "${HOST}/v1/chat/completions" 2>/dev/null || echo -e "\n000")
+        "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo -e "\n000")
 
     INFERENCE_CODE=$(echo "$INFERENCE_RESPONSE" | tail -1)
     INFERENCE_BODY=$(echo "$INFERENCE_RESPONSE" | sed '$d')
@@ -674,7 +694,7 @@ if [ -n "${INFERENCE_MODEL:-}" ]; then
         -o /dev/null -w '%{http_code}' \
         -H "Content-Type: application/json" \
         -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
-        "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
+        "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo "000")
 
     if [ "$NO_AUTH_CODE" = "401" ] || [ "$NO_AUTH_CODE" = "403" ]; then
         log_pass "Unauthenticated request rejected (HTTP $NO_AUTH_CODE)"
@@ -688,7 +708,7 @@ if [ -n "${INFERENCE_MODEL:-}" ]; then
         -H "Authorization: Bearer invalid-token-12345" \
         -H "Content-Type: application/json" \
         -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
-        "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
+        "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo "000")
 
     if [ "$INVALID_CODE" = "401" ] || [ "$INVALID_CODE" = "403" ]; then
         log_pass "Invalid token rejected (HTTP $INVALID_CODE)"
@@ -714,7 +734,7 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${INFERENCE_MODEL:-}" 
             -H "Authorization: Bearer ${API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello, write me a very long essay about the history of computing\"}], \"max_tokens\": 50}" \
-            "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
+            "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo "000")
         if [ "$CODE" = "429" ]; then
             RATE_LIMITED=$((RATE_LIMITED + 1))
         elif [ "$CODE" = "200" ]; then
