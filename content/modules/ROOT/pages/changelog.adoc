@@ -4,6 +4,22 @@ Changes to the {rhoai} {maas} companion guide since the project started in June 
 
 Each entry links to its pull request for full details.
 
+== November 2026
+
+=== New Pages
+
+* *Running MaaS on OpenShift 5* - First walkthrough of {maas} on {ocp-short} 5.0, covering what carries over unchanged (OLM v0, Gateway API v1, the Istio-backed `openshift-default` GatewayClass, Kuadrant policy attachment) and seven issues with workarounds: {rhoai-short} missing from the {ocp-short} 5 operator index, the RHCL `stable` channel renamed to `stable-1.5`, the installer assuming 3.5 while the catalog serves 3.4.2, a second Kuadrant instance on a cluster that already runs RHCL, the MetalLB pool landing on a node address, `verify.sh` using a 3.5-only inference URL, and the gateway HPA pinned at maximum replicas. Verified 15/15 end to end on {rhoai-short} 3.4.2.
+
+=== Fixes
+
+* *Operator Catalog and Channel Resolution* - `setup-maas.sh` now looks up which CatalogSource actually publishes each operator and which channels it offers, instead of assuming `redhat-operators` and a fixed channel. Adds `--catalog-source` to force a specific catalog, and `--to-phase` to stop after a given phase. Also skips creating a duplicate Subscription when an operator is already installed from another namespace, and waits for the CSV where the operator really lives.
+
+* *RHOAI Version Re-detection* - The installer read the {rhoai-short} version once during preflight, before the operator existed, so a run that asked for 3.5 against a catalog serving 3.4.2 applied the 3.5 DSC layout. The API server prunes the unknown `aigateway` field without an error, leaving {maas} silently disabled. The version is now re-read from the CSV after the operator installs and again at Phase 4.
+
+* *MetalLB Pool Collision* - The pool address was derived as "first node IP plus one", which lands on a second node whenever node addresses are consecutive. The resulting collision on port 443 takes down the console and OAuth. Node addresses are now excluded when choosing the pool.
+
+* *verify.sh Inference URL on RHOAI 3.4* - The inference, auth-enforcement and rate-limit checks posted to `/v1/chat/completions` at the gateway root, which only exists on 3.5 with body-based routing. On 3.4 every request returned 404 and looked like an auth failure. The checks now use the per-model URL from the models listing.
+
 == October 2026
 
 === New Pages

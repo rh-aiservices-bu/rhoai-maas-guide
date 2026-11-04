@@ -16,7 +16,7 @@ The versions this guide is written against, for orientation only. This is not a 
 
 | {ocp-short}
 | 4.19+
-| 4.22 has been reported to work with {rhoai} 3.4 and 3.5. Disconnected installs are documented against 4.20+ (xref:00-disconnected.adoc[Phase 0]).
+| 4.22 has been reported to work with {rhoai} 3.4 and 3.5. Disconnected installs are documented against 4.20+ (xref:00-disconnected.adoc[Phase 0]). For {ocp-short} 5, which needs a different catalog and channel for two of the operators below, see xref:13-openshift5.adoc[Running MaaS on OpenShift 5].
 
 | {rhoai-short}
 | 3.4, 3.5

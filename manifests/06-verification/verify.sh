@@ -617,6 +617,13 @@ else
     log_warn "Response: $API_KEY_RESPONSE"
 fi
 
+# On RHOAI 3.5 the gateway exposes /v1/chat/completions at the root and routes by the
+# "model" field in the body (BBR). On 3.4 there is no such root route: each model is
+# reachable only under its own path prefix, so posting to ${HOST}/v1/chat/completions
+# returns 404 for every request, authenticated or not. The models listing already tells
+# us the right base URL per model, so use it and fall back to the gateway root.
+INFERENCE_BASE="$HOST"
+
 # List models
 if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ]; then
     MODELS_RESPONSE=$(maas_curl \
@@ -629,8 +636,13 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ]; then
 
     if [ "$MODEL_COUNT" -gt 0 ] 2>/dev/null; then
         FIRST_MODEL_ID=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].id // empty' 2>/dev/null || echo "")
+        FIRST_MODEL_URL=$(echo "$MODELS_RESPONSE" | jq -r '.data[0].url // empty' 2>/dev/null || echo "")
         log_pass "Models available ($MODEL_COUNT total, first: $FIRST_MODEL_ID)"
         INFERENCE_MODEL="$FIRST_MODEL_ID"
+        if [ -n "$FIRST_MODEL_URL" ]; then
+            INFERENCE_BASE="$FIRST_MODEL_URL"
+            log_info "Inference base URL: ${INFERENCE_BASE}"
+        fi
     else
         log_warn "No models found in listing (may be timing or API version difference)"
         log_warn "Response: ${MODELS_RESPONSE:0:200}"
@@ -646,7 +658,7 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${INFERENCE_MODEL:-}" 
         -H "Content-Type: application/json" \
         -w "\n%{http_code}" \
         -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 50}" \
-        "${HOST}/v1/chat/completions" 2>/dev/null || echo -e "\n000")
+        "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo -e "\n000")
 
     INFERENCE_CODE=$(echo "$INFERENCE_RESPONSE" | tail -1)
     INFERENCE_BODY=$(echo "$INFERENCE_RESPONSE" | sed '$d')
@@ -674,7 +686,7 @@ if [ -n "${INFERENCE_MODEL:-}" ]; then
         -o /dev/null -w '%{http_code}' \
         -H "Content-Type: application/json" \
         -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
-        "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
+        "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo "000")
 
     if [ "$NO_AUTH_CODE" = "401" ] || [ "$NO_AUTH_CODE" = "403" ]; then
         log_pass "Unauthenticated request rejected (HTTP $NO_AUTH_CODE)"
@@ -688,7 +700,7 @@ if [ -n "${INFERENCE_MODEL:-}" ]; then
         -H "Authorization: Bearer invalid-token-12345" \
         -H "Content-Type: application/json" \
         -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}], \"max_tokens\": 10}" \
-        "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
+        "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo "000")
 
     if [ "$INVALID_CODE" = "401" ] || [ "$INVALID_CODE" = "403" ]; then
         log_pass "Invalid token rejected (HTTP $INVALID_CODE)"
@@ -714,7 +726,7 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ] && [ -n "${INFERENCE_MODEL:-}" 
             -H "Authorization: Bearer ${API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"model\": \"${INFERENCE_MODEL}\", \"messages\": [{\"role\": \"user\", \"content\": \"Hello, write me a very long essay about the history of computing\"}], \"max_tokens\": 50}" \
-            "${HOST}/v1/chat/completions" 2>/dev/null || echo "000")
+            "${INFERENCE_BASE}/v1/chat/completions" 2>/dev/null || echo "000")
         if [ "$CODE" = "429" ]; then
             RATE_LIMITED=$((RATE_LIMITED + 1))
         elif [ "$CODE" = "200" ]; then

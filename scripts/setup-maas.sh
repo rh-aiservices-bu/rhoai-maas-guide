@@ -55,6 +55,7 @@ log_phase() { echo -e "\n${BOLD}${BLUE}═════════════�
 
 MODEL="auto"
 FROM_PHASE=0
+TO_PHASE=8
 SKIP_MODELS=false
 SKIP_VERIFY=false
 WITH_OBSERVABILITY=false
@@ -64,6 +65,7 @@ MAAS_HOSTNAME="${MAAS_HOSTNAME:-}"
 EXTERNAL_MODEL_PROVIDER="${EXTERNAL_MODEL_PROVIDER:-openai}"
 EXTERNAL_MODEL_API_KEY="${EXTERNAL_MODEL_API_KEY:-}"
 RHOAI_TARGET_VERSION=""
+CATALOG_SOURCE="${CATALOG_SOURCE:-}"
 DISCONNECTED=${DISCONNECTED:-false}
 DRY_RUN=false
 
@@ -71,6 +73,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --model) MODEL="$2"; shift 2 ;;
         --from-phase) FROM_PHASE="$2"; shift 2 ;;
+        --to-phase) TO_PHASE="$2"; shift 2 ;;
         --skip-models) SKIP_MODELS=true; shift ;;
         --skip-verify) SKIP_VERIFY=true; shift ;;
         --with-observability) WITH_OBSERVABILITY=true; shift ;;
@@ -80,6 +83,7 @@ while [[ $# -gt 0 ]]; do
         --external-model-provider) EXTERNAL_MODEL_PROVIDER="$2"; shift 2 ;;
         --external-model-api-key) EXTERNAL_MODEL_API_KEY="$2"; shift 2 ;;
         --rhoai-version) RHOAI_TARGET_VERSION="$2"; shift 2 ;;
+        --catalog-source) CATALOG_SOURCE="$2"; shift 2 ;;
         --disconnected) DISCONNECTED=true; shift ;;
         --dry-run) DRY_RUN=true; shift ;;
         -h|--help)
@@ -93,7 +97,10 @@ idempotent  - re-running skips what's already done.
 Options:
   --model <name>       Model: simulator, granite-tiny-gpu, gemma, gpt-oss-20b, qwen3-06b, auto (default: auto)
   --rhoai-version <v>  RHOAI version: 3.4 or 3.5 (default: 3.5). Auto-detects if already installed.
+  --catalog-source <s> CatalogSource to prefer for operator Subscriptions (default: auto-detect
+                       whichever catalog actually publishes each package, preferring redhat-operators)
   --from-phase <N>     Start from phase N (0-8, default: 0)
+  --to-phase <N>       Stop after phase N (0-8, default: 8). Useful to pause between phases.
   --maas-hostname <h>  Custom gateway hostname (default: maas.<cluster-domain>, or MAAS_HOSTNAME env var)
   --skip-models        Skip Phase 5 (model deployment)
   --skip-verify        Skip Phase 6 (verification)
@@ -137,7 +144,7 @@ run_cmd() {
     fi
 }
 
-should_run() { [ "$FROM_PHASE" -le "$1" ]; }
+should_run() { [ "$FROM_PHASE" -le "$1" ] && [ "$TO_PHASE" -ge "$1" ]; }
 
 wait_for() {
     local desc="$1"; shift
@@ -176,10 +183,137 @@ wait_for_crd() {
     return 1
 }
 
-# Explain why an operator CSV never showed up, or never reached Succeeded,
-# instead of only reporting the timeout (GH #197). The usual cause is a
-# Subscription whose channel is not published in the catalog this cluster can
-# see, which leaves it with no InstallPlan and therefore no CSV at all.
+# Not every cluster can see every package in redhat-operators. On OpenShift 5,
+# for example, rhods-operator is only published in a snapshot catalog and RHCL
+# ships channel stable-1.5 instead of stable, so the checked-in Subscriptions
+# resolve to nothing and never get an InstallPlan. Resolve the catalog/channel
+# from what the cluster actually publishes instead of trusting the manifest.
+# Echo "<catalog> <channel>" for a package. An exact match on the channel the
+# manifest asks for wins over the preferred catalog, because dropping to a
+# catalog's default channel can silently move you to an untested release: on
+# OpenShift 5 redhat-operators only offers RHCL stable-1.5 (1.5.0) while the
+# snapshot catalog still has the stable (1.4.2) the manifests target.
+# Returns 1 when no catalog on this cluster publishes the package at all.
+resolve_pkg_source_channel() {
+    local pkg="$1" want="$2"
+    local rows src def chans pinned
+    local fb_src="" fb_chan="" m_src="" m_chan=""
+
+    # One row per catalog: "<catalog> <defaultChannel> <channel>..."
+    rows=$(oc get packagemanifest -n openshift-marketplace \
+        --field-selector "metadata.name=${pkg}" \
+        -o jsonpath='{range .items[*]}{.status.catalogSource}{" "}{.status.defaultChannel}{" "}{range .status.channels[*]}{.name}{" "}{end}{"\n"}{end}' \
+        2>/dev/null | grep -v '^[[:space:]]*$' || true)
+    [ -n "$rows" ] || return 1
+
+    # An explicit --catalog-source wins, as long as it carries the package.
+    if [ -n "$CATALOG_SOURCE" ]; then
+        pinned=$(printf '%s\n' "$rows" | awk -v c="$CATALOG_SOURCE" '$1==c {print; exit}')
+        if [ -n "$pinned" ]; then
+            rows="$pinned"
+        else
+            # stderr: this runs inside a command substitution
+            log_warn "  ${pkg}: not in --catalog-source ${CATALOG_SOURCE}, auto-detecting" >&2
+        fi
+    fi
+
+    while read -r src def chans; do
+        [ -n "$src" ] || continue
+        # word splitting on $chans is intentional
+        if [ -n "$want" ] && printf '%s\n' $chans | grep -qx "$want"; then
+            # redhat-operators wins ties, so a snapshot catalog never shadows
+            # the official index when both publish the requested channel
+            if [ -z "$m_src" ] || [ "$src" = "redhat-operators" ]; then
+                m_src="$src"
+                m_chan="$want"
+            fi
+        fi
+        if [ -z "$fb_src" ] || [ "$src" = "redhat-operators" ]; then
+            fb_src="$src"
+            fb_chan="$def"
+            [ -n "$fb_chan" ] || fb_chan=$(printf '%s\n' $chans | head -1)
+        fi
+    done <<EOF
+$rows
+EOF
+
+    if [ -n "$m_src" ]; then
+        echo "$m_src $m_chan"
+        return 0
+    fi
+    [ -n "$fb_src" ] || return 1
+    echo "$fb_src $fb_chan"
+}
+
+# Phase 0 has to guess the RHOAI version before the operator exists. Once the
+# CSV is installed, re-read it: a catalog can publish an older release than the
+# one asked for (stable-3.x still resolving to 3.4.x, for example), and the DSC
+# field layout differs between 3.4 (kserve.modelsAsService) and 3.5
+# (aigateway.modelsAsAService). Trusting the request instead of the CSV produces
+# a DataScienceCluster the operator silently ignores.
+refresh_rhoai_version() {
+    local installed
+    installed=$(oc get csv -n redhat-ods-operator \
+        -l operators.coreos.com/rhods-operator.redhat-ods-operator= \
+        -o jsonpath='{.items[0].spec.version}' 2>/dev/null \
+        | grep -oE '^[0-9]+\.[0-9]+' || true)
+    [ -z "$installed" ] && return 0
+    [ "$installed" = "$RHOAI_MAJOR_MINOR" ] && return 0
+
+    log_warn "RHOAI ${installed} is installed, but this run assumed ${RHOAI_MAJOR_MINOR}"
+    log_warn "  The channel in use does not publish ${RHOAI_MAJOR_MINOR} in this catalog."
+    log_warn "  Switching to the ${installed} code path (DSC fields differ between 3.4 and 3.5)."
+    RHOAI_MAJOR_MINOR="$installed"
+    IS_35_PLUS=false
+    if printf '%s\n' "3.5" "$RHOAI_MAJOR_MINOR" | sort -V | head -1 | grep -qx "3.5"; then
+        IS_35_PLUS=true
+    fi
+    if [ "$IS_35_PLUS" = true ]; then
+        MAAS_API_NS="$GATEWAY_INFRA_NS"
+    else
+        MAAS_API_NS="$NAMESPACE"
+    fi
+    log_info "  RHOAI version:      ${RHOAI_MAJOR_MINOR} (3.5+: ${IS_35_PLUS})"
+    log_info "  maas-api namespace: ${MAAS_API_NS}"
+}
+
+# An operator subscribed from another namespace through an AllNamespaces
+# OperatorGroup already owns its CRDs cluster-wide. Subscribing again from the
+# namespace our manifests expect makes OLM fight over the same CSV, and the
+# copied CSV stays labelled with the *original* namespace, so a wait on the
+# expected namespace would hang forever. Echoes that namespace if found.
+operator_subscribed_in() {
+    local pkg="$1"
+    oc get subscription -A \
+        -o jsonpath='{range .items[*]}{.spec.name}{" "}{.metadata.namespace}{"\n"}{end}' 2>/dev/null \
+        | awk -v p="$pkg" '$1==p {print $2; exit}'
+}
+
+# Repoint a Subscription at a catalog/channel this cluster really publishes.
+align_subscription() {
+    local ns="$1" sub="$2" pkg="$3"
+    local resolved src chan cur_src cur_chan
+    oc get subscription "$sub" -n "$ns" &>/dev/null || return 0
+    cur_src=$(oc get subscription "$sub" -n "$ns" -o jsonpath='{.spec.source}' 2>/dev/null || true)
+    cur_chan=$(oc get subscription "$sub" -n "$ns" -o jsonpath='{.spec.channel}' 2>/dev/null || true)
+
+    if ! resolved=$(resolve_pkg_source_channel "$pkg" "$cur_chan"); then
+        log_warn "  ${pkg}: not published in any catalog this cluster can see - leaving ${cur_src}/${cur_chan}"
+        return 0
+    fi
+    src="${resolved%% *}"
+    chan="${resolved##* }"
+    [ -n "$src" ] && [ -n "$chan" ] || { log_warn "  ${pkg}: could not resolve a catalog/channel"; return 0; }
+
+    if [ "$src" = "$cur_src" ] && [ "$chan" = "$cur_chan" ]; then
+        log_info "  ${pkg}: ${src} / ${chan}"
+        return 0
+    fi
+    log_warn "  ${pkg}: ${cur_src}/${cur_chan} is not published here - repointing to ${src}/${chan}"
+    run_cmd oc patch subscription "$sub" -n "$ns" --type=merge \
+        -p "{\"spec\":{\"source\":\"${src}\",\"channel\":\"${chan}\"}}"
+}
+
 diagnose_csv_failure() {
     local ns="$1"
 
@@ -408,6 +542,22 @@ if should_run 1; then
         # exists in the namespace to avoid OLM conflicts (GH #99)
         for op_dir in "$MANIFESTS_DIR"/01-prerequisites/operators/*/; do
             [ -d "$op_dir" ] || continue
+            # Do not create a duplicate Subscription for an operator that is
+            # already installed from a different namespace.
+            case "$(basename "$op_dir")" in
+                rhoai-operator)     OP_PKG=rhods-operator;                  OP_NS=redhat-ods-operator ;;
+                connectivity-link)  OP_PKG=rhcl-operator;                   OP_NS=openshift-operators ;;
+                cert-manager)       OP_PKG=openshift-cert-manager-operator; OP_NS=cert-manager-operator ;;
+                leader-worker-set)  OP_PKG=leader-worker-set;               OP_NS=openshift-lws-operator ;;
+                *)                  OP_PKG=""; OP_NS="" ;;
+            esac
+            if [ -n "$OP_PKG" ]; then
+                EXISTING_NS=$(operator_subscribed_in "$OP_PKG")
+                if [ -n "$EXISTING_NS" ] && [ "$EXISTING_NS" != "$OP_NS" ]; then
+                    log_warn "${OP_PKG} already subscribed in ${EXISTING_NS} - skipping duplicate Subscription in ${OP_NS}"
+                    continue
+                fi
+            fi
             for f in "$op_dir"*.yaml; do
                 [ -f "$f" ] || continue
                 if [ "$(basename "$f")" = "operatorgroup.yaml" ]; then
@@ -422,16 +572,33 @@ if should_run 1; then
             done
         done
 
+        log_step "Resolving operator catalogs/channels against this cluster..."
+        align_subscription redhat-ods-operator   rhods-operator                  rhods-operator
+        align_subscription openshift-operators   rhcl-operator                   rhcl-operator
+        align_subscription cert-manager-operator openshift-cert-manager-operator openshift-cert-manager-operator
+        align_subscription openshift-lws-operator leader-worker-set              leader-worker-set
+
         log_info "Waiting for operator CSVs (this may take 5-10 minutes)..."
         if [ "$DRY_RUN" = false ]; then
-            for ns_label in \
-                "redhat-ods-operator operators.coreos.com/rhods-operator.redhat-ods-operator" \
-                "openshift-operators operators.coreos.com/rhcl-operator.openshift-operators" \
-                "cert-manager-operator operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator" \
-                "openshift-lws-operator operators.coreos.com/leader-worker-set.openshift-lws-operator"
+            # Wait where each operator actually got installed, not where the
+            # manifest expected it. A pre-existing install in another namespace
+            # keeps its CSV label tied to that namespace.
+            CSV_WAIT_LIST=""
+            for op_spec in \
+                "rhods-operator redhat-ods-operator" \
+                "rhcl-operator openshift-operators" \
+                "openshift-cert-manager-operator cert-manager-operator" \
+                "leader-worker-set openshift-lws-operator"
             do
-                ns="${ns_label%% *}"
-                label="${ns_label#* }"
+                wait_pkg="${op_spec%% *}"
+                wait_ns="${op_spec#* }"
+                actual_ns=$(operator_subscribed_in "$wait_pkg")
+                [ -n "$actual_ns" ] && wait_ns="$actual_ns"
+                CSV_WAIT_LIST="${CSV_WAIT_LIST}${wait_ns} operators.coreos.com/${wait_pkg}.${wait_ns}
+"
+            done
+            while read -r ns label; do
+                [ -n "$ns" ] || continue
                 log_info "  Waiting for CSV in $ns..."
                 # Wait for CSV to appear first (oc wait exits immediately if no resources match)
                 CSV_WAIT_ELAPSED=0
@@ -450,11 +617,12 @@ if should_run 1; then
                 oc wait csv -n "$ns" -l "$label=" \
                     --for=jsonpath='{.status.phase}'=Succeeded --timeout=900s 2>/dev/null || \
                     { log_error "  CSV in $ns did not reach Succeeded within 900s - aborting (re-run with --from-phase 1 after manual check)"; diagnose_csv_failure "$ns"; exit 1; }
-            done
+            done <<< "$CSV_WAIT_LIST"
         else
             log_info "[DRY RUN] Would wait for operator CSVs"
         fi
         log_info "All operator CSVs ready"
+        refresh_rhoai_version
 
         if [ "$DISCONNECTED" = true ] && [ "$DRY_RUN" = false ]; then
             log_step "Patching RHCL subscription with RELATED_IMAGE_WASMSHIM for disconnected..."
@@ -686,13 +854,36 @@ if should_run 2; then
 
                         # Create IPAddressPool + L2Advertisement if needed
                         if ! oc get ipaddresspool maas-pool -n metallb-system &>/dev/null; then
-                            NODE_IP=$(oc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
+                            NODE_IPS=$(oc get nodes -o jsonpath='{range .items[*]}{range .status.addresses[?(@.type=="InternalIP")]}{.address}{"\n"}{end}{end}' 2>/dev/null | grep -v '^$' || true)
+                            NODE_IP=$(printf '%s\n' "$NODE_IPS" | head -1)
                             if [ -n "$NODE_IP" ]; then
-                                METALLB_IP=$(echo "$NODE_IP" | awk -F. '{printf "%s.%s.%s.%d", $1, $2, $3, $4+1}')
-                                METALLB_IP_RANGE="${METALLB_IP}-${METALLB_IP}"
-                                log_info "Creating MetalLB IPAddressPool: ${METALLB_IP_RANGE} (node IP: ${NODE_IP})"
-                                export METALLB_IP_RANGE
-                                envsubst '${METALLB_IP_RANGE}' < "$MANIFESTS_DIR/03-maas-platform/openshift-gateway-setup/metallb-config.yaml" | oc apply -f -
+                                # Never hand MetalLB an address that belongs to a node. The old
+                                # nodeIP+1 formula lands on a second node whenever node IPs are
+                                # consecutive, and that collision takes down OAuth and the console
+                                # because the MetalLB IP then shares port 443 with the node.
+                                METALLB_IP=""
+                                IP_PREFIX=$(echo "$NODE_IP" | awk -F. '{printf "%s.%s.%s", $1, $2, $3}')
+                                CANDIDATE_LAST=$(echo "$NODE_IP" | awk -F. '{print $4+1}')
+                                while [ "$CANDIDATE_LAST" -le 250 ]; do
+                                    CANDIDATE="${IP_PREFIX}.${CANDIDATE_LAST}"
+                                    if printf '%s\n' "$NODE_IPS" | grep -qx "$CANDIDATE"; then
+                                        log_info "MetalLB: skipping ${CANDIDATE} (belongs to a node)"
+                                    else
+                                        METALLB_IP="$CANDIDATE"
+                                        break
+                                    fi
+                                    CANDIDATE_LAST=$((CANDIDATE_LAST + 1))
+                                done
+                                if [ -z "$METALLB_IP" ]; then
+                                    log_error "MetalLB: no address in ${IP_PREFIX}.0/24 is free of node IPs - skipping pool"
+                                    log_error "  Node IPs: $(printf '%s ' $NODE_IPS)"
+                                    log_error "  Create the IPAddressPool by hand, or expose the gateway with a Route instead"
+                                else
+                                    METALLB_IP_RANGE="${METALLB_IP}-${METALLB_IP}"
+                                    log_info "Creating MetalLB IPAddressPool: ${METALLB_IP_RANGE} (node IPs: $(printf '%s ' $NODE_IPS))"
+                                    export METALLB_IP_RANGE
+                                    envsubst '${METALLB_IP_RANGE}' < "$MANIFESTS_DIR/03-maas-platform/openshift-gateway-setup/metallb-config.yaml" | oc apply -f -
+                                fi
                             else
                                 log_warn "Cannot detect node IP for MetalLB pool"
                             fi
@@ -892,6 +1083,8 @@ fi
 # =============================================================================
 if should_run 4; then
     log_phase 4 "RHOAI Configuration"
+
+    refresh_rhoai_version
 
     if [ "$HAS_MAAS_MANAGED" = true ] && \
        { [ "$IS_35_PLUS" = false ] || [ "$MAAS_STATE_35" = "Managed" ]; }; then
@@ -1578,7 +1771,9 @@ fi
 # Final Summary
 # =============================================================================
 echo ""
-log_phase "" "Summary"
+echo -e "\n${BOLD}${BLUE}════════════════════════════════════════════${NC}"
+echo -e "${BOLD}${BLUE}  Summary${NC}"
+echo -e "${BOLD}${BLUE}════════════════════════════════════════════${NC}"
 
 MAAS_URL="https://${MAAS_HOSTNAME}"
 
