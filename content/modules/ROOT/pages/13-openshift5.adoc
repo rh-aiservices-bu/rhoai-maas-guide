@@ -110,7 +110,7 @@ oc patch subscription rhods-operator -n redhat-ods-operator --type=merge \
   -p '{"spec":{"source":"redhat-operators-v422","channel":"stable-3.x"}}'
 ----
 
-`scripts/setup-maas.sh` now does this automatically: it looks up which catalog actually publishes each package and repoints the `Subscription` if the one in the manifest cannot resolve. Use `--catalog-source <name>` to force a specific catalog.
+`scripts/setup-maas.sh` now does this automatically: it looks up which catalog actually publishes each package and repoints the `Subscription` if the one in the manifest cannot resolve. Use `--catalog-source <name>` to prefer a specific catalog; the installer still falls back, with a warning, if that catalog does not carry the package.
 
 That snapshot is pinned to a date (`v4.22_2026_08_03` on the cluster used here), so what it offers depends on when it was taken. On this one:
 
@@ -248,8 +248,7 @@ Keep one `Kuadrant` instance. Back up the existing one, remove its policies and 
 
 [source,bash]
 ----
-oc get kuadrant,authorino,limitador -A -o yaml > kuadrant-backup.yaml
-oc get authpolicy,ratelimitpolicy -A -o yaml >> kuadrant-backup.yaml
+oc get kuadrant,authorino,limitador,authpolicy,ratelimitpolicy -A -o yaml > kuadrant-backup.yaml
 
 oc delete authpolicy,ratelimitpolicy --all -n <their-namespace>
 oc delete kuadrant <name> -n <their-namespace>

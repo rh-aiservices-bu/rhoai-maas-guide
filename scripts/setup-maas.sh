@@ -253,10 +253,12 @@ EOF
 # a DataScienceCluster the operator silently ignores.
 refresh_rhoai_version() {
     local installed
+    # Only trust a Succeeded CSV, and take the highest one. Mid-upgrade the
+    # replaced CSV keeps the same label, so .items[0] can be either of them.
     installed=$(oc get csv -n redhat-ods-operator \
         -l operators.coreos.com/rhods-operator.redhat-ods-operator= \
-        -o jsonpath='{.items[0].spec.version}' 2>/dev/null \
-        | grep -oE '^[0-9]+\.[0-9]+' || true)
+        -o jsonpath='{range .items[?(@.status.phase=="Succeeded")]}{.spec.version}{"\n"}{end}' 2>/dev/null \
+        | grep -oE '^[0-9]+\.[0-9]+' | sort -V | tail -1 || true)
     [ -z "$installed" ] && return 0
     [ "$installed" = "$RHOAI_MAJOR_MINOR" ] && return 0
 
@@ -292,10 +294,19 @@ operator_subscribed_in() {
 # Repoint a Subscription at a catalog/channel this cluster really publishes.
 align_subscription() {
     local ns="$1" sub="$2" pkg="$3"
-    local resolved src chan cur_src cur_chan
+    local resolved src chan cur_src cur_chan installed_csv
     oc get subscription "$sub" -n "$ns" &>/dev/null || return 0
     cur_src=$(oc get subscription "$sub" -n "$ns" -o jsonpath='{.spec.source}' 2>/dev/null || true)
     cur_chan=$(oc get subscription "$sub" -n "$ns" -o jsonpath='{.spec.channel}' 2>/dev/null || true)
+
+    # Leave an operator that already resolved alone. Changing source or channel
+    # under a working install makes OLM attempt an upgrade or a downgrade, and
+    # only an unresolved Subscription actually needs repointing.
+    installed_csv=$(oc get subscription "$sub" -n "$ns" -o jsonpath='{.status.installedCSV}' 2>/dev/null || true)
+    if [ -n "$installed_csv" ]; then
+        log_info "  ${pkg}: already installed (${installed_csv}), leaving ${cur_src}/${cur_chan}"
+        return 0
+    fi
 
     if ! resolved=$(resolve_pkg_source_channel "$pkg" "$cur_chan"); then
         log_warn "  ${pkg}: not published in any catalog this cluster can see - leaving ${cur_src}/${cur_chan}"
@@ -441,7 +452,12 @@ if [ "$IS_35_PLUS" = true ]; then
 else
     MAAS_API_NS="$NAMESPACE"
 fi
-RHCL_CSVS=$(oc get csv -n openshift-operators --no-headers 2>/dev/null || true)
+# RHCL may already be installed from another namespace through an AllNamespaces
+# OperatorGroup. Its CSV label and its operator pods then live there, not in
+# openshift-operators, so resolve the namespace once and use it everywhere.
+RHCL_NS=$(operator_subscribed_in rhcl-operator)
+[ -n "$RHCL_NS" ] || RHCL_NS=openshift-operators
+RHCL_CSVS=$(oc get csv -n "$RHCL_NS" --no-headers 2>/dev/null || true)
 echo "$RHCL_CSVS" | grep rhcl >/dev/null 2>&1 && HAS_RHCL_CSV=true
 CERTMGR_CSVS=$(oc get csv -n cert-manager-operator --no-headers 2>/dev/null || true)
 echo "$CERTMGR_CSVS" | grep cert-manager >/dev/null 2>&1 && HAS_CERTMGR_CSV=true
@@ -574,7 +590,7 @@ if should_run 1; then
 
         log_step "Resolving operator catalogs/channels against this cluster..."
         align_subscription redhat-ods-operator   rhods-operator                  rhods-operator
-        align_subscription openshift-operators   rhcl-operator                   rhcl-operator
+        align_subscription "$RHCL_NS"            rhcl-operator                   rhcl-operator
         align_subscription cert-manager-operator openshift-cert-manager-operator openshift-cert-manager-operator
         align_subscription openshift-lws-operator leader-worker-set              leader-worker-set
 
@@ -626,8 +642,8 @@ if should_run 1; then
 
         if [ "$DISCONNECTED" = true ] && [ "$DRY_RUN" = false ]; then
             log_step "Patching RHCL subscription with RELATED_IMAGE_WASMSHIM for disconnected..."
-            WASM_IMAGE=$(oc get csv -n openshift-operators \
-                -l operators.coreos.com/rhcl-operator.openshift-operators \
+            WASM_IMAGE=$(oc get csv -n "$RHCL_NS" \
+                -l "operators.coreos.com/rhcl-operator.${RHCL_NS}" \
                 -o jsonpath='{range .items[0].spec.install.spec.deployments[0].spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}' 2>/dev/null \
                 | grep RELATED_IMAGE_WASMSHIM | cut -d= -f2)
             if [ -n "$WASM_IMAGE" ]; then
@@ -643,10 +659,10 @@ for item in data.get('items',[]):
 " 2>/dev/null)
                 if [ -n "$RHCL_MIRROR" ] && [ -n "$WASM_DIGEST" ]; then
                     WASM_MIRROR="${RHCL_MIRROR}/wasm-shim-rhel9@${WASM_DIGEST}"
-                    CURRENT_WASM=$(oc get subscription rhcl-operator -n openshift-operators \
+                    CURRENT_WASM=$(oc get subscription rhcl-operator -n "$RHCL_NS" \
                         -o jsonpath='{.spec.config.env[?(@.name=="RELATED_IMAGE_WASMSHIM")].value}' 2>/dev/null)
                     if [ "$CURRENT_WASM" != "$WASM_MIRROR" ]; then
-                        oc patch subscription rhcl-operator -n openshift-operators --type=merge -p "{
+                        oc patch subscription rhcl-operator -n "$RHCL_NS" --type=merge -p "{
                           \"spec\": {
                             \"config\": {
                               \"env\": [{
@@ -659,7 +675,7 @@ for item in data.get('items',[]):
                         log_info "  WASM shim redirected to: $WASM_MIRROR"
                         log_info "  Waiting for RHCL operator pod to restart..."
                         sleep 5
-                        oc wait pod -n openshift-operators -l app.kubernetes.io/name=kuadrant-operator \
+                        oc wait pod -n "$RHCL_NS" -l app.kubernetes.io/name=kuadrant-operator \
                             --for=condition=Ready --timeout=120s 2>/dev/null || true
                     else
                         log_info "  WASM shim already patched, skipping"
@@ -863,8 +879,11 @@ if should_run 2; then
                                 # because the MetalLB IP then shares port 443 with the node.
                                 METALLB_IP=""
                                 IP_PREFIX=$(echo "$NODE_IP" | awk -F. '{printf "%s.%s.%s", $1, $2, $3}')
-                                CANDIDATE_LAST=$(echo "$NODE_IP" | awk -F. '{print $4+1}')
-                                while [ "$CANDIDATE_LAST" -le 250 ]; do
+                                NODE_LAST=$(echo "$NODE_IP" | awk -F. '{print $4}')
+                                # Search upward from the first node address, then wrap to the
+                                # bottom of the range. A node high in the subnet (.250) would
+                                # otherwise leave nothing to try.
+                                for CANDIDATE_LAST in $(seq $((NODE_LAST + 1)) 254) $(seq 2 $((NODE_LAST - 1))); do
                                     CANDIDATE="${IP_PREFIX}.${CANDIDATE_LAST}"
                                     if printf '%s\n' "$NODE_IPS" | grep -qx "$CANDIDATE"; then
                                         log_info "MetalLB: skipping ${CANDIDATE} (belongs to a node)"
@@ -872,7 +891,6 @@ if should_run 2; then
                                         METALLB_IP="$CANDIDATE"
                                         break
                                     fi
-                                    CANDIDATE_LAST=$((CANDIDATE_LAST + 1))
                                 done
                                 if [ -z "$METALLB_IP" ]; then
                                     log_error "MetalLB: no address in ${IP_PREFIX}.0/24 is free of node IPs - skipping pool"
@@ -977,10 +995,10 @@ if should_run 2; then
                 -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}' 2>/dev/null || echo "")
             if [ "$KUADRANT_REASON" = "MissingDependency" ]; then
                 log_warn "Kuadrant reports MissingDependency after Gateway setup - restarting operator pod..."
-                KUADRANT_POD=$(oc get pods -n openshift-operators --no-headers 2>/dev/null \
+                KUADRANT_POD=$(oc get pods -n "$RHCL_NS" --no-headers 2>/dev/null \
                     | grep kuadrant-operator-controller | awk '{print $1}' | head -1)
                 if [ -n "$KUADRANT_POD" ]; then
-                    oc delete pod "$KUADRANT_POD" -n openshift-operators 2>/dev/null || true
+                    oc delete pod "$KUADRANT_POD" -n "$RHCL_NS" 2>/dev/null || true
                     sleep 10
                     oc wait kuadrant/kuadrant -n kuadrant-system --for=condition=Ready --timeout=120s 2>/dev/null || \
                         { log_error "Kuadrant did not become Ready after Gateway setup and operator restart"; exit 1; }

@@ -640,7 +640,12 @@ if [ -n "$API_KEY" ] && [ "$API_KEY" != "null" ]; then
         log_pass "Models available ($MODEL_COUNT total, first: $FIRST_MODEL_ID)"
         INFERENCE_MODEL="$FIRST_MODEL_ID"
         if [ -n "$FIRST_MODEL_URL" ]; then
-            INFERENCE_BASE="$FIRST_MODEL_URL"
+            # Take only the path from the advertised URL and keep the origin we are
+            # actually reaching the gateway on. In the NodePort fallback $HOST carries
+            # the node port and maas_curl adds a matching --resolve, so using the
+            # advertised host:443 verbatim would bypass both.
+            MODEL_PATH=$(printf '%s' "$FIRST_MODEL_URL" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*##')
+            INFERENCE_BASE="${HOST}${MODEL_PATH}"
             log_info "Inference base URL: ${INFERENCE_BASE}"
         fi
     else
