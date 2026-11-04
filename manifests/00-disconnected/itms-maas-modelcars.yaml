@@ -33,6 +33,10 @@ spec:
     - mirrors:
         - MIRROR_REGISTRY:PORT/NAMESPACE/llm-d
       source: ghcr.io/llm-d
+    # MinIO + mc for the LokiStack S3 backend (usage dashboards, both by tag)
+    - mirrors:
+        - MIRROR_REGISTRY:PORT/NAMESPACE/rh-aiservices-bu
+      source: quay.io/rh-aiservices-bu
     # Istio images for OCP >= 4.20.32 (openshift-ingress embedded sail library)
     - mirrors:
         - MIRROR_REGISTRY:PORT/NAMESPACE/openshift-service-mesh

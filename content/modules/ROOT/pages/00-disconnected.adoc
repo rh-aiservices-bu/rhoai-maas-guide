@@ -15,7 +15,7 @@ This guide assumes:
 * A mirror registry is running and the cluster trusts its CA
 * ImageDigestMirrorSet (IDMS) and CatalogSources from the RHOAI mirror are already applied
 
-The MaaS guide adds 9 operators and several container images that are NOT part of the base RHOAI mirror set. This phase mirrors those extra components.
+The MaaS guide adds 10 operators and several container images that are NOT part of the base RHOAI mirror set. This phase mirrors those extra components.
 
 TIP: Currently, `oc-mirror` mirrors all images referenced in the RHOAI operator bundle regardless of which DSC components you enable. There is an initiative (link:https://redhat.atlassian.net/browse/RHOAIENG-75890[RHOAIENG-75890] / link:https://redhat.atlassian.net/browse/OCPSTRAT-3350[OCPSTRAT-3350]) to support selective mirroring - so you can mirror only the images for the components you need (e.g. Dashboard + MaaS). Until that lands, this guide mirrors the full set.
 
@@ -60,6 +60,10 @@ TIP: Currently, `oc-mirror` mirrors all images referenced in the RHOAI operator 
 | Tempo
 | `tempo-product`
 | Trace storage backend
+
+| Loki Operator
+| `loki-operator`
+| Log storage for the Phase 7 usage dashboards
 |===
 
 == Additional images to mirror
@@ -84,6 +88,12 @@ Images not discoverable through operator bundles:
 | `ghcr.io/llm-d/llm-d-inference-sim:v0.7.1`
 | Simulator runtime (CPU-only model)
 
+| `quay.io/rh-aiservices-bu/minio:RELEASE.2025-09-07T16-13-09Z`
+| MinIO S3 backend for the LokiStack (usage dashboards)
+
+| `quay.io/rh-aiservices-bu/mc:latest`
+| MinIO client, creates the `loki` bucket (floating tag, pin it for a reproducible mirror)
+
 | `registry.redhat.io/rhai/modelcar-granite-4-0-h-tiny-fp8-dynamic:3.0`
 | Granite 4.0-h-tiny model weights
 
@@ -107,7 +117,7 @@ IMPORTANT: The WASM shim image lives on `registry.access.redhat.com` (not `regis
 [[mirroring-step1]]
 === Step 1: Mirror the MaaS content
 
-An `ImageSetConfiguration` is provided at `manifests/00-disconnected/imageset-config-maas.yaml`. It includes all 11 operators ({rhoai} base + MaaS) and the additional images listed above.
+An `ImageSetConfiguration` is provided at `manifests/00-disconnected/imageset-config-maas.yaml`. It includes all the operators ({rhoai} base + MaaS) and the additional images listed above.
 
 Before running oc-mirror, discover the WASM shim digest for your RHCL version and update the ImageSetConfiguration:
 
@@ -304,14 +314,15 @@ Confirm all MaaS operators are available:
 ----
 for pkg in rhcl-operator authorino-operator dns-operator limitador-operator \
            leader-worker-set metallb-operator \
-           cluster-observability-operator opentelemetry-product tempo-product; do
+           cluster-observability-operator opentelemetry-product tempo-product \
+           loki-operator; do
   echo -n "  $pkg: "
   oc get packagemanifest "$pkg" -n openshift-marketplace \
     -o jsonpath='{.status.catalogSource}' 2>/dev/null && echo || echo "NOT FOUND"
 done
 ----
 
-All 9 should resolve to a CatalogSource. If any show `NOT FOUND`, the mirror set is incomplete - check the oc-mirror output for errors.
+All 10 should resolve to a CatalogSource. If any show `NOT FOUND`, the mirror set is incomplete - check the oc-mirror output for errors.
 
 Verify the gateway pod has no WASM errors:
 
