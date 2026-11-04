@@ -176,6 +176,53 @@ wait_for_crd() {
     return 1
 }
 
+# Explain why an operator CSV never showed up, or never reached Succeeded,
+# instead of only reporting the timeout (GH #197). The usual cause is a
+# Subscription whose channel is not published in the catalog this cluster can
+# see, which leaves it with no InstallPlan and therefore no CSV at all.
+diagnose_csv_failure() {
+    local ns="$1"
+
+    log_error "  Diagnostics for namespace ${ns}:"
+
+    log_error "  -- Subscriptions --"
+    oc get subscription -n "$ns" -o custom-columns=\
+'NAME:.metadata.name,PACKAGE:.spec.name,CHANNEL:.spec.channel,SOURCE:.spec.source,STATE:.status.state,CURRENT:.status.currentCSV' \
+        2>&1 | sed 's/^/     /'
+
+    log_error "  -- Subscription conditions --"
+    oc get subscription -n "$ns" -o jsonpath=\
+'{range .items[*]}{.metadata.name}{"\n"}{range .status.conditions[*]}    {.type}={.status} {.reason} {.message}{"\n"}{end}{end}' \
+        2>/dev/null | sed 's/^/     /'
+
+    # A package name can exist in several catalogs (e.g. loki-operator ships in
+    # both redhat-operators and community-operators) with completely different
+    # channels, so look it up in the catalog the Subscription actually targets.
+    log_error "  -- Channels published in the catalog the Subscription targets --"
+    oc get subscription -n "$ns" \
+        -o jsonpath='{range .items[*]}{.spec.name}{" "}{.spec.source}{"\n"}{end}' 2>/dev/null \
+    | while read -r pkg src; do
+        [ -n "$pkg" ] || continue
+        chans=$(oc get packagemanifest -n openshift-marketplace \
+            -l "catalog=${src}" --field-selector "metadata.name=${pkg}" \
+            -o jsonpath='{.items[*].status.channels[*].name}' 2>/dev/null)
+        if [ -n "$chans" ]; then
+            log_error "     ${pkg} (${src}): ${chans}"
+        else
+            log_error "     ${pkg} (${src}): not published in that catalog for this OpenShift version"
+        fi
+    done
+
+    log_error "  -- InstallPlans --"
+    oc get installplan -n "$ns" 2>&1 | sed 's/^/     /'
+
+    log_error "  -- CSVs --"
+    oc get csv -n "$ns" 2>&1 | sed 's/^/     /'
+
+    log_error "  If the Subscription channel is not in the published list above,"
+    log_error "  that channel is not available for this OpenShift version."
+}
+
 # =============================================================================
 # Phase 0: Preflight
 # =============================================================================
@@ -397,11 +444,12 @@ if should_run 1; then
                 done
                 if [ $CSV_WAIT_ELAPSED -ge 900 ]; then
                     log_error "  CSV in $ns never appeared within 900s - aborting (re-run with --from-phase 1 after manual check)"
+                    diagnose_csv_failure "$ns"
                     exit 1
                 fi
                 oc wait csv -n "$ns" -l "$label=" \
                     --for=jsonpath='{.status.phase}'=Succeeded --timeout=900s 2>/dev/null || \
-                    { log_error "  CSV in $ns did not reach Succeeded within 900s - aborting (re-run with --from-phase 1 after manual check)"; exit 1; }
+                    { log_error "  CSV in $ns did not reach Succeeded within 900s - aborting (re-run with --from-phase 1 after manual check)"; diagnose_csv_failure "$ns"; exit 1; }
             done
         else
             log_info "[DRY RUN] Would wait for operator CSVs"
