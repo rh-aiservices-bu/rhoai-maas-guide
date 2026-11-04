@@ -219,8 +219,7 @@ resolve_pkg_source_channel() {
 
     while read -r src def chans; do
         [ -n "$src" ] || continue
-        # word splitting on $chans is intentional
-        if [ -n "$want" ] && printf '%s\n' $chans | grep -qx "$want"; then
+        if [ -n "$want" ] && tr ' ' '\n' <<< "$chans" | grep -qx "$want"; then
             # redhat-operators wins ties, so a snapshot catalog never shadows
             # the official index when both publish the requested channel
             if [ -z "$m_src" ] || [ "$src" = "redhat-operators" ]; then
@@ -231,7 +230,7 @@ resolve_pkg_source_channel() {
         if [ -z "$fb_src" ] || [ "$src" = "redhat-operators" ]; then
             fb_src="$src"
             fb_chan="$def"
-            [ -n "$fb_chan" ] || fb_chan=$(printf '%s\n' $chans | head -1)
+            [ -n "$fb_chan" ] || fb_chan=$(tr ' ' '\n' <<< "$chans" | grep -v '^$' | head -1)
         fi
     done <<EOF
 $rows
@@ -880,10 +879,15 @@ if should_run 2; then
                                 METALLB_IP=""
                                 IP_PREFIX=$(echo "$NODE_IP" | awk -F. '{printf "%s.%s.%s", $1, $2, $3}')
                                 NODE_LAST=$(echo "$NODE_IP" | awk -F. '{print $4}')
-                                # Search upward from the first node address, then wrap to the
-                                # bottom of the range. A node high in the subnet (.250) would
-                                # otherwise leave nothing to try.
-                                for CANDIDATE_LAST in $(seq $((NODE_LAST + 1)) 254) $(seq 2 $((NODE_LAST - 1))); do
+                                # Walk the usable host range .2 to .254 once, starting just
+                                # above the first node address and wrapping around, so a node
+                                # high in the subnet still leaves candidates. Done with
+                                # arithmetic rather than seq on purpose: BSD seq counts DOWN
+                                # when start > end (GNU seq prints nothing), which would hand
+                                # out .255 (broadcast) or .1 (usually the router).
+                                METALLB_OFFSET=0
+                                while [ "$METALLB_OFFSET" -lt 253 ]; do
+                                    CANDIDATE_LAST=$(( (NODE_LAST - 1 + METALLB_OFFSET) % 253 + 2 ))
                                     CANDIDATE="${IP_PREFIX}.${CANDIDATE_LAST}"
                                     if printf '%s\n' "$NODE_IPS" | grep -qx "$CANDIDATE"; then
                                         log_info "MetalLB: skipping ${CANDIDATE} (belongs to a node)"
@@ -891,14 +895,15 @@ if should_run 2; then
                                         METALLB_IP="$CANDIDATE"
                                         break
                                     fi
+                                    METALLB_OFFSET=$((METALLB_OFFSET + 1))
                                 done
                                 if [ -z "$METALLB_IP" ]; then
                                     log_error "MetalLB: no address in ${IP_PREFIX}.0/24 is free of node IPs - skipping pool"
-                                    log_error "  Node IPs: $(printf '%s ' $NODE_IPS)"
+                                    log_error "  Node IPs: $(tr '\n' ' ' <<< "$NODE_IPS")"
                                     log_error "  Create the IPAddressPool by hand, or expose the gateway with a Route instead"
                                 else
                                     METALLB_IP_RANGE="${METALLB_IP}-${METALLB_IP}"
-                                    log_info "Creating MetalLB IPAddressPool: ${METALLB_IP_RANGE} (node IPs: $(printf '%s ' $NODE_IPS))"
+                                    log_info "Creating MetalLB IPAddressPool: ${METALLB_IP_RANGE} (node IPs: $(tr '\n' ' ' <<< "$NODE_IPS"))"
                                     export METALLB_IP_RANGE
                                     envsubst '${METALLB_IP_RANGE}' < "$MANIFESTS_DIR/03-maas-platform/openshift-gateway-setup/metallb-config.yaml" | oc apply -f -
                                 fi
