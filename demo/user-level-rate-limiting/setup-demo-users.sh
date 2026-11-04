@@ -50,9 +50,15 @@ oc adm groups new "$GROUP" "${USERS[@]}" 2>/dev/null || \
   { for u in "${USERS[@]}"; do oc adm groups add-users "$GROUP" "$u" >/dev/null 2>&1 || true; done; }
 
 # creates maassubscription to the users
-echo "==> Creating group subscription demo-team-standard, demo-alice-gold, demo-bob-throttled"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-oc apply -f "${SCRIPT_DIR}/subscriptions.yaml"
+if oc get crd maassubscriptions.maas.opendatahub.io >/dev/null 2>&1; then
+  echo "==> Creating group subscription demo-team-standard, demo-alice-gold, demo-bob-throttled"
+  oc apply -f "${SCRIPT_DIR}/subscriptions.yaml"
+else
+  echo "==> WARNING: MaaSSubscription CRD not found, skipping the demo tiers."
+  echo "    Deploy MaaS first (./scripts/setup-maas.sh --model simulator), then run:"
+  echo "    oc apply -f ${SCRIPT_DIR}/subscriptions.yaml"
+fi
 
 echo
 echo "Identity providers now:"
