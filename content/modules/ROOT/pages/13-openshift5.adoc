@@ -39,7 +39,7 @@ This was a shared workshop cluster rather than a clean one, which surfaced xref:
 
 Nothing in the {maas} data path needed changing. Every problem was either operator packaging (xref:13-openshift5.adoc#issue-1[Issue 1], xref:13-openshift5.adoc#issue-2[Issue 2]) or a pre-existing assumption in this repo's own automation that {ocp-short} 5 happened to expose (Issues 3, 5 and 6). The automation in `scripts/setup-maas.sh` and `manifests/06-verification/verify.sh` now handles all of them.
 
-WARNING: {rhoai-short} 3.5 could not be tested. The only catalog that publishes {rhoai-short} on this cluster stops at 3.4.2, so everything on this page is {rhoai-short} *3.4.2* on {ocp-short} 5.0.0-rc.7.
+WARNING: Everything on this page is {rhoai-short} *3.4.2* on {ocp-short} 5.0.0-rc.7. {rhoai-short} 3.5 GA was not tested, because the only catalog on this cluster that carries {rhoai-short} is a snapshot taken before 3.5 shipped. That is a property of the test cluster, not a statement about 3.5 on {ocp-short} 5.
 
 == What Works Unchanged
 
@@ -62,7 +62,7 @@ Verified on the cluster above before changing anything:
 | Works. The RHCL operator ships `ISTIO_GATEWAY_CONTROLLER_NAMES=openshift.io/gateway-controller/v1`, and `AuthPolicy` / `RateLimitPolicy` produce the expected `kuadrant-auth-*`, `kuadrant-ratelimiting-*` and `kuadrant-*` EnvoyFilters.
 
 | SecurityContextConstraints
-| 28 SCCs present, unchanged behaviour.
+| The 28 default SCCs are still present. Nothing in this guide needed an SCC change.
 
 | Deprecated APIs
 | `oc get apirequestcounts` reports no in-use API with a `removedInRelease` set, so nothing this guide applies is on a removal path.
@@ -112,7 +112,21 @@ oc patch subscription rhods-operator -n redhat-ods-operator --type=merge \
 
 `scripts/setup-maas.sh` now does this automatically: it looks up which catalog actually publishes each package and repoints the `Subscription` if the one in the manifest cannot resolve. Use `--catalog-source <name>` to force a specific catalog.
 
-WARNING: That 4.22 snapshot tops out at `rhods-operator.3.4.2`. There is no `stable-3.5` channel in it, which causes xref:13-openshift5.adoc#issue-3[Issue 3].
+That snapshot is pinned to a date (`v4.22_2026_08_03` on the cluster used here), so what it offers depends on when it was taken. On this one:
+
+[source,bash]
+----
+oc get packagemanifest -n openshift-marketplace --field-selector metadata.name=rhods-operator \
+  -o jsonpath='{range .items[*]}{range .status.channels[*]}{.name}{" -> "}{.currentCSV}{"\n"}{end}{end}'
+# stable-3.x -> rhods-operator.3.4.2   <- default
+# stable-3.4 -> rhods-operator.3.4.2
+# stable-3.3 -> rhods-operator.3.3.4
+# beta       -> rhods-operator.3.5.0-ea.2
+----
+
+There is no `stable-3.5` channel, because the snapshot predates 3.5 GA. `stable-3.x` therefore still resolves to 3.4.2, which causes xref:13-openshift5.adoc#issue-3[Issue 3].
+
+NOTE: `beta` does carry `3.5.0-ea.2`, so a 3.5 code path can be exercised with `--rhoai-version 3.5` once the Subscription is pointed at that channel. It is a pre-GA build, so treat failures there with suspicion. A newer snapshot, or the official index once it carries {rhoai-short} for {ocp-short} 5, is the better route to a GA 3.5.
 
 [id=issue-2]
 == Issue 2: The RHCL Channel `stable` Does Not Exist
