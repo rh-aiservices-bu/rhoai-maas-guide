@@ -1,0 +1,535 @@
+= Platform Upgrade (3.5 -> 3.6 EA2)
+
+This page walks through moving a working {maas} deployment from {rhoai} 3.5 to the 3.6 Early Access build (`rhods-operator.3.6.0-ea.2`). Unlike the xref:12-platform-upgrade.adoc[3.4 -> 3.5 upgrade], OLM cannot perform this transition for you: the channel bump is a silent no-op and the operator has to be reinstalled. This guide covers that reinstall and the five post-install breakages that keep the DataScienceCluster from reaching `Ready`.
+
+IMPORTANT: 3.6.0-ea.2 is an *Early Access* build published in the `beta` channel. It is not supported for production, there is no downgrade path back to 3.5, and the issues documented here are EA defects that are likely to change before GA. Use a cluster you can rebuild.
+
+IMPORTANT: This guide is not a replacement for the official {rhoai} release notes. Always check the release notes for the latest updates.
+
+== The Good News First
+
+{maas} itself does not change in 3.6 EA2. Every finding on this page is about the platform *around* {maas}:
+
+* The DSC field stays `aigateway.modelsAsAService`. No field rename, unlike 3.4 -> 3.5.
+* Every {maas} component ships at the same version as 3.5.2 (`Model as a service v0.2.0`, `AI Gateway Operator v0.1.0`, `Batch Gateway v0.3.0`, `Async Processor v0.7.4`, `AI Gateway Payload Processing v0.1.0`). Only the `platform` version differs.
+* `ModelsAsAServiceReady` stayed `True` through the entire operator reinstall. {maas} never went down.
+* `verify.sh` scored 15/15 on 3.5.2 before the upgrade and 15/15 on 3.6.0-ea.2 after it.
+
+What does break is TrustyAI, AI Pipelines and OGX, and because the DSC aggregates module health, any one of them keeps the whole DSC out of `Ready`.
+
+== Prerequisites
+
+* {maas} working on {rhoai} 3.5.x (`verify.sh` passing)
+* `cluster-admin` access
+* A cluster you can afford to rebuild
+
+Confirm your starting point:
+
+[source,bash]
+----
+oc get csv -n redhat-ods-operator | grep rhods-operator
+oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'
+----
+
+== What Changes
+
+[cols="1,2", options="header"]
+|===
+| Area | Change
+
+| *Channel*
+| There is no `3.6ea2` channel. `rhods-operator.3.6.0-ea.2` is published in the *`beta`* channel.
+
+| *Upgrade path*
+| None. The `beta` channel holds a single bundle with no `replaces`, `skips` or `skipRange`, so no OLM edge exists from any 3.5.x. The operator must be reinstalled.
+
+| *DSC MaaS field*
+| Unchanged: `aigateway.modelsAsAService`. `kserve.modelsAsService` also still exists in the v2 schema.
+
+| *New DSC fields*
+| `dashboard.maasConsumerPortal` (new {maas} Consumer Portal submodule, defaults to `Removed`) and `workbenches.workbenchesV2`.
+
+| *New DSC conditions*
+| `MaaSConsumerPortalAvailable`, `WorkbenchesV2Ready`.
+
+| *Removed DSC conditions*
+| `ProvisioningProgress`, `TrainingOperatorReady`.
+
+| *Component CRD rename*
+| `datasciencepipelines.components.platform.opendatahub.io` becomes `aipipelines.components.platform.opendatahub.io`. The 3.5 CR is left behind and blocks the new one.
+
+| *New CRDs*
+| `aipipelines`, `aihubs` and `catalogs.aihub.opendatahub.io` (all `.opendatahub.io`), plus `applications.app.k8s.io`.
+
+| *TrustyAI schema*
+| The DSC declares `trustyai.eval.lmeval.permit*` as a string enum, the component CRD declares them as booleans. They disagree, which breaks the DSC.
+
+| *Immutable fields*
+| 3.6 changes the TrustyAI Deployment `spec.selector` and the OGX playground RoleBinding `roleRef`. Both are immutable, so the operator cannot patch 3.5-era objects.
+
+| *KServe stack*
+| KServe `v0.19.0` -> `v0.21.0`, vLLM `v0.24.0` -> `v0.28.0`, llm-d-router `v0.10.0` -> `v0.11.0`. New: `llm-d-autoscaling v0.9.0`, `vLLM-Omni v0.26.0`.
+|===
+
+== Step 1: Back Up Current State
+
+[source,bash]
+----
+oc get dsc default-dsc -o yaml > dsc-backup.yaml
+oc get dsci -o yaml > dsci-backup.yaml
+oc get sub rhods-operator -n redhat-ods-operator -o yaml > sub-backup.yaml
+oc get odhdashboardconfig -n redhat-ods-applications -o yaml > dashboard-backup.yaml
+
+# MaaS custom resources
+oc get maasmodelrefs,maassubscriptions,maastenantconfigs,maasauthpolicies,configs.maas.opendatahub.io,aitenants \
+  -A -o yaml > maas-crs-backup.yaml
+oc get externalproviders.inference.opendatahub.io -A -o yaml > externalproviders-backup.yaml
+----
+
+Record the DSC component schema so you can diff it afterwards:
+
+[source,bash]
+----
+oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
+  jq -r '.spec.versions[] | select(.name=="v2") |
+    .schema.openAPIV3Schema.properties.spec.properties.components.properties |
+    to_entries[] | "\(.key): \(.value.properties // {} | keys | join(","))"' \
+  > dsc-schema-3.5.txt
+----
+
+[[gitops]]
+== Step 2: Pause GitOps Self-Heal
+
+If the operator Subscription and the DSC are managed by OpenShift GitOps with `selfHeal: true`, Argo CD reverts your changes before OLM ever sees them. On the RHDP `rhai-features-workshop` environment the Subscription is owned by `admin-openshift-ai-operator` and the DSC by `admin-openshift-ai`, both with `selfHeal: true`.
+
+Check which applications own them:
+
+[source,bash]
+----
+oc get sub rhods-operator -n redhat-ods-operator \
+  -o jsonpath='{.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}'
+oc get dsc default-dsc \
+  -o jsonpath='{.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}'
+----
+
+WARNING: Without this step the channel patch is reverted in seconds. On a live cluster a patch applied at `12:05:30` was undone by an automated sync that started at `12:05:31`. The Subscription showed `channel: stable-3.5` again on the next read, with nothing in the Subscription status to explain it.
+
+Disable automated sync on both applications:
+
+[source,bash]
+----
+for app in admin-openshift-ai-operator admin-openshift-ai; do
+  oc patch application.argoproj.io "$app" -n openshift-gitops --type=merge \
+    -p '{"spec":{"syncPolicy":{"automated":null}}}'
+done
+----
+
+NOTE: The cleaner alternative is to change the channel in Git (`automation/gitops/deployments/admin/openshift-ai-operator/values.yaml` pins `channel: stable-3.5`) and let Argo CD roll it out. Pausing self-heal is the right move only when you are testing an EA build you do not want committed.
+
+[[channel-noop]]
+== Step 3: Why the Channel Bump Alone Does Nothing
+
+This is the finding that costs the most time, because nothing reports an error.
+
+Patching the channel to `beta` appears to succeed and then has no effect:
+
+[source,bash]
+----
+oc patch sub rhods-operator -n redhat-ods-operator --type=merge \
+  -p '{"spec":{"channel":"beta"}}'
+
+oc get sub rhods-operator -n redhat-ods-operator \
+  -o jsonpath='channel={.spec.channel} state={.status.state} installedCSV={.status.installedCSV}{"\n"}'
+----
+
+Observed output:
+
+[source]
+----
+channel=beta state=AtLatestKnown installedCSV=rhods-operator.3.5.2
+----
+
+The Subscription reports `AtLatestKnown` while sitting on 3.5.2. No InstallPlan is created, no Kubernetes event is emitted, and no condition turns `False`. This survives a forced re-resolution (`oc rollout restart deploy/catalog-operator -n openshift-operator-lifecycle-manager`).
+
+The reason is in the catalog. The `beta` channel contains exactly one bundle with no upgrade edges:
+
+[source]
+----
+channel: beta
+    rhods-operator.3.6.0-ea.2                                    <- no replaces, skips or skipRange
+channel: stable-3.5
+    rhods-operator.3.5.2 | replaces=3.5.1 | skipRange=>=3.4.0 <3.5.2
+----
+
+You can confirm this yourself:
+
+[source,bash]
+----
+oc get packagemanifest rhods-operator -n openshift-marketplace \
+  -o jsonpath='{range .status.channels[*]}{.name}{"\t"}{.currentCSV}{"\n"}{end}'
+----
+
+Because `3.6.0-ea.2` does not declare that it replaces or skips any 3.5.x release, OLM finds no path from the installed CSV into the `beta` channel and quietly leaves the install alone.
+
+IMPORTANT: `AtLatestKnown` on a channel that does not contain your installed CSV means "I found nothing I can upgrade to", not "you are up to date". Always confirm `installedCSV` after a channel change rather than trusting `state`.
+
+== Step 4: Reinstall the Operator from the beta Channel
+
+Deleting the Subscription and CSV removes the operator Deployment. It does *not* remove CRDs, the DSC, the DSCInitialization, or any {maas} custom resource, so your configuration and models survive.
+
+[source,bash]
+----
+oc delete sub rhods-operator -n redhat-ods-operator
+oc delete csv rhods-operator.3.5.2 -n redhat-ods-operator
+----
+
+Confirm the configuration is still there before continuing:
+
+[source,bash]
+----
+oc get dsc default-dsc
+oc get configs.maas.opendatahub.io default
+oc get maasmodelref -A
+----
+
+Recreate the Subscription on `beta`, pinned to the EA build:
+
+[source,bash]
+----
+cat <<'EOF' | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: rhods-operator
+  namespace: redhat-ods-operator
+spec:
+  channel: beta
+  name: rhods-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+  startingCSV: rhods-operator.3.6.0-ea.2
+EOF
+----
+
+TIP: `startingCSV` is not strictly required while `beta` holds a single bundle, but pinning it makes the intent explicit and stops a later catalog refresh from moving you to a different EA drop.
+
+The existing OperatorGroup in `redhat-ods-operator` is reused. Wait for the CSV:
+
+[source,bash]
+----
+oc wait csv rhods-operator.3.6.0-ea.2 -n redhat-ods-operator \
+  --for=jsonpath='{.status.phase}'=Succeeded --timeout=600s
+----
+
+NOTE: Immediately after install, `ModelRegistryReady` can fail with `no matches for kind "AIHub" in version "components.platform.opendatahub.io/v1alpha1"`. This is a start-up ordering race: the new `aihubs` CRD is not registered before the modelregistry module first reconciles. It clears on its own, so do not act on it.
+
+At this point {maas} is already working again, but the DSC is not `Ready`. Steps 5 to 8 fix that.
+
+[[trustyai-schema]]
+== Step 5: Fix the TrustyAI Schema Mismatch
+
+The DSC and the TrustyAI component CRD disagree about the type of two fields in 3.6.0-ea.2.
+
+The DSC (`datascienceclusters...v2`) declares them as a *string* enum:
+
+[source]
+----
+trustyai.eval.lmeval.permitCodeExecution:  type: string, enum: [allow, deny], default: "deny"
+trustyai.eval.lmeval.permitOnline:         type: string, enum: [allow, deny], default: "deny"
+----
+
+The component CRD (`trustyais.components.platform.opendatahub.io/v1alpha1`) declares the same fields as *boolean*:
+
+[source]
+----
+spec.eval.lmeval.permitCodeExecution:  type: boolean, default: false
+spec.eval.lmeval.permitOnline:         type: boolean, default: false
+----
+
+The operator copies the DSC value straight onto the component CR, so a 3.5 DSC carrying `permitOnline: deny` produces:
+
+[source]
+----
+Ready  False  Error  failure deploying resource /default-trustyai: apply failed
+  components.platform.opendatahub.io/v1alpha1, Kind=TrustyAI: ... failed to create typed live object:
+  .spec.eval.lmeval.permitOnline: expected boolean, got &{deny}
+  .spec.eval.lmeval.permitCodeExecution: expected boolean, got &{deny}
+----
+
+This blocks `ProvisioningSucceeded` and `Ready` for the entire DSC, not just TrustyAI.
+
+Remove the `eval` block from the DSC:
+
+[source,bash]
+----
+oc patch dsc default-dsc --type=json \
+  -p '[{"op":"remove","path":"/spec/components/trustyai/eval"}]'
+----
+
+That alone is not enough. The component CR created by 3.5 still holds the string values, and the operator keeps failing to apply over them. Strip it there too:
+
+[source,bash]
+----
+oc patch trustyais.components.platform.opendatahub.io default-trustyai --type=json \
+  -p '[{"op":"remove","path":"/spec/eval"}]'
+----
+
+The operator then repopulates the CR with correct boolean defaults. Confirm:
+
+[source,bash]
+----
+oc get trustyais.components.platform.opendatahub.io default-trustyai -o jsonpath='{.spec}{"\n"}'
+# Expected to include: "eval":{"lmeval":{"permitCodeExecution":false,"permitOnline":false}}
+----
+
+WARNING: Do not re-add `trustyai.eval` to the DSC on 3.6 EA2. Because the DSC field defaults to `"deny"`, setting the block at all reintroduces the string and breaks the DSC again. Leave it absent and let the component default to `false`.
+
+[[stale-crs]]
+== Step 6: Delete Stale 3.5 Component CRs
+
+3.6 renames the pipelines component CRD from `datasciencepipelines` to `aipipelines`. The operator creates the new CR, but the 3.5 CR is left behind and still owns shared resources, so the new module cannot adopt them:
+
+[source]
+----
+AIPipelines  ProvisioningSucceeded  False  MonitoringReconcileFailed
+  reconcile core ServiceMonitor: ServiceMonitor "data-science-pipelines-operator-service-monitor"
+  is controlled by DataSciencePipelines "default-datasciencepipelines" with UID "7d00cfe5-..."
+----
+
+Delete the orphaned 3.5 CR:
+
+[source,bash]
+----
+oc get datasciencepipelines.components.platform.opendatahub.io
+oc delete datasciencepipelines.components.platform.opendatahub.io default-datasciencepipelines
+----
+
+The ServiceMonitor is garbage-collected with its old owner and the `AIPipelines` controller recreates it. Confirm every condition is `True`:
+
+[source,bash]
+----
+oc get aipipelines.components.platform.opendatahub.io \
+  -o jsonpath='{range .items[0].status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}'
+----
+
+[[immutable]]
+== Step 7: Fix Immutable Fields on 3.5-Era Resources
+
+3.6 changes fields that Kubernetes does not allow to be patched in place. The operator cannot reconcile over objects that 3.5 created, and the fix in both cases is to delete the object so it is recreated.
+
+=== TrustyAI operator Deployment (spec.selector)
+
+3.6 drops `app.opendatahub.io/trustyai: "true"` from the Deployment's label selector, and `spec.selector` is immutable:
+
+[source]
+----
+TrustyAIReady  False  DeployFailed
+  Deployment.apps "trustyai-service-operator-controller-manager" is invalid:
+  spec.selector: Invalid value: {"matchLabels":{"app.kubernetes.io/part-of":"trustyai",
+  "control-plane":"trustyai-service-operator"}}: field is immutable
+----
+
+[source,bash]
+----
+oc delete deploy trustyai-service-operator-controller-manager -n redhat-ods-applications
+----
+
+The operator recreates it within about 20 seconds and `TrustyAIReady` turns `True`.
+
+=== OGX playground RoleBinding (roleRef)
+
+3.6 tightens the SCC bound to each OGX playground from `system:openshift:scc:anyuid` to `system:openshift:scc:nonroot-v2`. A RoleBinding's `roleRef` is immutable, so every OGXServer created on 3.5 fails with:
+
+[source]
+----
+OGXServer  DeploymentReady  False  DeploymentFailed
+  RoleBinding.rbac.authorization.k8s.io "<name>-rb" is invalid:
+  roleRef: Invalid value: {... "Name":"system:openshift:scc:nonroot-v2"}: cannot change roleRef
+----
+
+Find and delete the affected RoleBindings. They are owned by the OGXServer, not by GitOps, so the operator recreates them:
+
+[source,bash]
+----
+# List failing instances
+oc get ogxserver -A
+
+# Delete the stale RoleBinding in each namespace (name is <ogxserver-name>-rb)
+oc delete rolebinding <ogxserver-name>-rb -n <namespace>
+----
+
+The OGX operator does not re-reconcile on its own after the delete, so nudge it:
+
+[source,bash]
+----
+oc rollout restart deploy/ogx-k8s-operator-controller-manager -n redhat-ods-applications
+----
+
+Confirm the RoleBinding came back with the new role and that the instances recovered:
+
+[source,bash]
+----
+oc get rolebinding <ogxserver-name>-rb -n <namespace> -o jsonpath='{.roleRef.name}{"\n"}'
+# Expected: system:openshift:scc:nonroot-v2
+
+oc get ogxserver -A
+# Expected: PHASE=Ready for every instance
+----
+
+[[stale-conditions]]
+== Step 8: Clear Stale Module Conditions
+
+3.6.0-ea.2 does not reliably re-aggregate module health after you fix the underlying resource. Conditions keep reporting an error that no longer exists, and because the DSC rolls module health up into `Ready`, the DSC stays `False` on stale data.
+
+Two cases showed up, each needing a different nudge.
+
+*Stale `ProvisioningSucceeded` after the TrustyAI fix.* The DSC kept quoting the `expected boolean, got &\{deny}` error after the component CR was already correct. Restarting the operator cleared it:
+
+[source,bash]
+----
+oc rollout restart deploy/rhods-operator -n redhat-ods-operator
+oc rollout status deploy/rhods-operator -n redhat-ods-operator --timeout=300s
+----
+
+*Stale `Degraded: UnhealthyOGXServers`.* After Step 7 every OGXServer reported `phase=Ready` with `DeploymentReady=True` and `HealthCheck=True`, but the OGX module still listed them all as unhealthy and held the DSC at `Ready=False`:
+
+[source]
+----
+OGXReady  True   AllDependentsHealthy
+Degraded  True   UnhealthyOGXServers: Unhealthy OGXServer instances: ns1/x, ns2/x, ns3/x, ns4/x
+----
+
+Restarting the OGX operator, restarting `rhods-operator`, and annotating the OGXServer instances all failed to clear this. Toggling the module off and back on does work:
+
+[source,bash]
+----
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"ogx":{"managementState":"Removed"}}}}'
+# wait for DSC Ready=True (about 20s), then
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"ogx":{"managementState":"Managed"}}}}'
+----
+
+After the toggle the DSC reached `Ready=True` with `OGXReady=True` and all OGXServer instances still `Ready`.
+
+NOTE: If you do not use the AI Playground, leaving `ogx` at `Removed` is a valid shortcut: it was verified to bring the DSC to `Ready=True` on its own, and {maas} does not depend on OGX.
+
+== Step 9: Enable the MaaS Consumer Portal (new in 3.6)
+
+3.6 adds a {maas} Consumer Portal as a dashboard submodule. It defaults to `Removed`, so it is opt-in. From the CRD description:
+
+[quote]
+____
+MaaSConsumerPortal controls the MaaS Consumer Portal submodule, shipped in the dashboard-operator. It is managed independently of the core Dashboard: the dashboard-operator Deployment stays up while either the core Dashboard or the portal is Managed.
+____
+
+[source,bash]
+----
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"dashboard":{"maasConsumerPortal":{"managementState":"Managed"}}}}}'
+----
+
+Verify:
+
+[source,bash]
+----
+oc get dsc default-dsc \
+  -o jsonpath='{.status.conditions[?(@.type=="MaaSConsumerPortalAvailable")].status}{"\n"}'
+# Expected: True
+
+oc get deploy maas-consumer-portal -n redhat-ods-applications
+----
+
+The portal deploys as its own `maas-consumer-portal` Deployment and `maas-consumer-portal` Service (port 8443) in `redhat-ods-applications`, alongside the existing `maas-ui`.
+
+== Step 10: Verification Checklist
+
+[cols="2,3", options="header"]
+|===
+| Check | Command
+
+| Operator is on the EA build
+| `oc get csv -n redhat-ods-operator \| grep rhods-operator` +
+Expected: `rhods-operator.3.6.0-ea.2 ... Succeeded`
+
+| Subscription really moved
+| `oc get sub rhods-operator -n redhat-ods-operator -o jsonpath='{.status.installedCSV}'` +
+Expected: `rhods-operator.3.6.0-ea.2` (not just `state=AtLatestKnown`)
+
+| DSC is Ready
+| `oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'` +
+Expected: `True`
+
+| MaaS is Ready
+| `oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="ModelsAsAServiceReady")].status}'` +
+Expected: `True`
+
+| maas-api still running
+| `oc get deploy maas-api -n redhat-ai-gateway-infra` +
+Expected: `1/1`
+
+| MaaS field untouched
+| `oc get dsc default-dsc -o jsonpath='{.spec.components.aigateway.modelsAsAService.managementState}'` +
+Expected: `Managed`
+
+| No stale 3.5 pipelines CR
+| `oc get datasciencepipelines.components.platform.opendatahub.io` +
+Expected: `No resources found`
+
+| TrustyAI eval is boolean
+| `oc get trustyais.components.platform.opendatahub.io default-trustyai -o jsonpath='{.spec.eval}'` +
+Expected: `{"lmeval":{"permitCodeExecution":false,"permitOnline":false}}`
+
+| OGX instances healthy
+| `oc get ogxserver -A` +
+Expected: `PHASE=Ready` for all
+
+| End to end
+| `./manifests/06-verification/verify.sh` +
+Expected: `Passed: 15  Failed: 0`
+|===
+
+Re-enable GitOps self-heal once you are done, if you paused it in <<gitops,Step 2>>. Remember that Git still pins `stable-3.5`, so re-enabling automated sync on `admin-openshift-ai-operator` will try to move the Subscription channel back.
+
+== Known Issues in 3.6 EA2
+
+[cols="2,1,2", options="header"]
+|===
+| Issue | Blocks | Workaround
+
+| `beta` channel has no upgrade edge from 3.5.x; channel change is a silent no-op reported as `AtLatestKnown`
+| The whole upgrade
+| Reinstall the operator (<<channel-noop,Step 3>> and Step 4)
+
+| DSC declares `trustyai.eval.lmeval.permit*` as string, component CRD declares boolean
+| Entire DSC `Ready`
+| Remove `eval` from the DSC *and* the component CR (<<trustyai-schema,Step 5>>)
+
+| 3.5 `DataSciencePipelines` CR keeps ownership of the DSPO ServiceMonitor
+| `AIPipelines` module
+| Delete the stale CR (<<stale-crs,Step 6>>)
+
+| TrustyAI Deployment `spec.selector` changed and is immutable
+| `TrustyAIReady`
+| Delete the Deployment (<<immutable,Step 7>>)
+
+| OGX playground RoleBinding `roleRef` changed `anyuid` -> `nonroot-v2` and is immutable
+| Every pre-existing OGXServer
+| Delete the RoleBinding, restart the OGX operator (<<immutable,Step 7>>)
+
+| Module conditions do not re-aggregate after the underlying fix
+| DSC `Ready` on stale data
+| Restart `rhods-operator`, or toggle the module `Removed` -> `Managed` (<<stale-conditions,Step 8>>)
+
+| `ModelRegistryReady` reports `no matches for kind "AIHub"` right after install
+| Nothing, it is transient
+| Wait, it self-resolves
+|===
+
+== References
+
+* xref:12-platform-upgrade.adoc[Platform Upgrade (3.4 -> 3.5)]
+* xref:10-post-upgrade-troubleshooting.adoc[Post-Upgrade Troubleshooting (3.4 -> 3.5)]
+* xref:06-verification.adoc[Phase 6: MaaS Verification]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[RHOAI 3.5 MaaS Official Docs]
