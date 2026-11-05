@@ -21,7 +21,7 @@ What does break is TrustyAI, AI Pipelines and OGX, and because the DSC aggregate
 
 * {maas} working on {rhoai} 3.5.x (`verify.sh` passing)
 * `cluster-admin` access
-* A cluster you can afford to rebuild
+* A cluster you can leave on 3.6 EA2. There is no supported way back to 3.5: the `beta` channel has no downgrade edge, and the 3.5 DSC you captured cannot be re-applied (see <<backup,Step 1>>). Getting back to 3.5 means another operator reinstall at best, and a rebuild in practice.
 
 Confirm your starting point:
 
@@ -73,7 +73,25 @@ oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].stat
 |===
 
 [[backup]]
-== Step 1: Back Up Current State
+== Step 1: Capture What the Reinstall Destroys
+
+CAUTION: This is *not* a rollback. There is no downgrade path from 3.6 EA2, and re-applying these files onto a 3.6 cluster actively breaks it: the 3.5 DSC carries `trustyai.eval.lmeval.permitOnline: deny`, the string that breaks the DSC in <<trustyai-schema,Step 4>>, and the 3.5 Subscription carries `channel: stable-3.5`, which reinstalls 3.5.2. Capture these to *read* later, never to re-apply.
+
+Step 3 deletes the operator, which destroys the only copy of three things later steps need:
+
+[cols="1,2", options="header"]
+|===
+| Capture | Read by
+
+| `sub-backup.yaml`
+| <<subscription,Step 3>>, for `source`, `sourceNamespace` and `spec.config`. Without it, a disconnected or proxied cluster gets a Subscription that never resolves.
+
+| `dsc-backup.yaml`
+| <<trustyai-schema,Step 4>>, to see which LMEval permissions you had before 3.6 silently drops them to `false`.
+
+| `dsc-schema-before.txt`
+| <<verify-schema,Step 9>>, as the `diff` baseline that confirms the field changes on your own cluster.
+|===
 
 [source,bash]
 ----
@@ -83,15 +101,29 @@ save() {  # save <outfile> <oc get args...>
     || { echo "skipped ${out} (not present)"; rm -f "$out"; }
 }
 
-save dsc-backup.yaml       dsc default-dsc
-save dsci-backup.yaml      dsci
-save sub-backup.yaml       sub rhods-operator -n redhat-ods-operator
-save dashboard-backup.yaml odhdashboardconfig -n redhat-ods-applications
+save sub-backup.yaml  sub rhods-operator -n redhat-ods-operator
+save dsc-backup.yaml  dsc default-dsc
 
-# HTTPRoutes, in case you need to undo the Step 8 host-pinning
-save httproutes-backup.yaml httproute -A
+# Baseline for the Step 9 schema diff
+oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
+  jq -r '.spec.versions[] | select(.name=="v2") |
+    .schema.openAPIV3Schema.properties.spec.properties.components.properties |
+    to_entries[] | "\(.key): \(.value.properties // {} | keys | join(","))"' \
+  > dsc-schema-before.txt
 
-# MaaS custom resources, one kind per call
+# Confirm the two files you actually depend on are non-empty
+for f in sub-backup.yaml dsc-backup.yaml dsc-schema-before.txt; do
+  [ -s "$f" ] && echo "ok   ${f} ($(wc -c < "$f") bytes)" \
+               || echo "MISSING ${f} - stop and fix before Step 3"
+done
+----
+
+IMPORTANT: Check the files are non-empty before continuing. `oc get ... > file` truncates the file before the command runs, so a missing CRD or an RBAC denial leaves a 0-byte file and a non-zero exit nobody notices, one step before the operator is deleted.
+
+If you also want a record of the {maas} resources, take it one kind per call. These are not consumed by any step on this page - every {maas} custom resource survives the operator reinstall - so this is only for your own reference:
+
+[source,bash]
+----
 for k in maasmodelrefs maassubscriptions maastenantconfigs maasauthpolicies \
          configs.maas.opendatahub.io aitenants \
          externalproviders.inference.opendatahub.io; do
@@ -99,18 +131,7 @@ for k in maasmodelrefs maassubscriptions maastenantconfigs maasauthpolicies \
 done
 ----
 
-IMPORTANT: Back the kinds up one at a time, not as a single comma-separated `oc get`. A combined call validates every type up front and aborts with `error: the server doesn't have a resource type "x"` if any one is missing, which happens on partial installs and on 3.5.0/3.5.1. The shell has already truncated the output file by then, so you are left with a 0-byte backup and no warning, one step before Step 3 deletes the operator.
-
-Record the DSC component schema. The <<verify-schema,verification step>> re-runs this against 3.6 and diffs it, which confirms the field changes in the <<what-changes,What Changes>> table on your own cluster:
-
-[source,bash]
-----
-oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
-  jq -r '.spec.versions[] | select(.name=="v2") |
-    .schema.openAPIV3Schema.properties.spec.properties.components.properties |
-    to_entries[] | "\(.key): \(.value.properties // {} | keys | join(","))"' \
-  > dsc-schema-before.txt
-----
+NOTE: One kind per call, not a single comma-separated `oc get`. A combined call validates every type up front and aborts with `error: the server doesn't have a resource type "x"` if any one is missing, which happens on partial installs and on 3.5.0/3.5.1, leaving one truncated file instead of six good ones.
 
 [[channel-noop]]
 == Step 2: Why the Channel Bump Alone Does Nothing
@@ -191,7 +212,10 @@ oc get configs.maas.opendatahub.io default
 oc get maasmodelref -A
 ----
 
-Recreate the Subscription on `beta`. Carry `source`, `sourceNamespace` and `spec.config` over from the `sub-backup.yaml` you took in Step 1 rather than copying the values below blindly:
+[[subscription]]
+=== Recreate the Subscription
+
+Carry `source`, `sourceNamespace` and `spec.config` over from the `sub-backup.yaml` you captured in <<backup,Step 1>> rather than copying the values below blindly:
 
 [source,bash]
 ----
