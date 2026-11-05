@@ -1,0 +1,1081 @@
+= Platform Upgrade (3.5 -> 3.6 EA2)
+
+This page walks through moving a working {maas} deployment from {rhoai} 3.5 to the 3.6 Early Access build (`rhods-operator.3.6.0-ea.2`). Unlike the xref:12-platform-upgrade.adoc[3.4 -> 3.5 upgrade], OLM cannot perform this transition for you: the channel bump is a silent no-op and the operator has to be reinstalled. This guide covers that reinstall and the five post-install breakages that keep the DataScienceCluster from reaching `Ready`.
+
+IMPORTANT: 3.6.0-ea.2 is an *Early Access* build published in the `beta` channel. It is not supported for production, there is no downgrade path back to 3.5, and the issues documented here are EA defects that are likely to change before GA. Use a cluster you can rebuild.
+
+IMPORTANT: This guide is not a replacement for the official {rhoai} release notes. Always check the release notes for the latest updates.
+
+== The Good News First
+
+{maas} itself does not change in 3.6 EA2. Every finding on this page is about the platform *around* {maas}:
+
+* The DSC field stays `aigateway.modelsAsAService`. No field rename, unlike 3.4 -> 3.5.
+* Every {maas} component ships at the same version as 3.5.2 (`Model as a service v0.2.0`, `AI Gateway Operator v0.1.0`, `Batch Gateway v0.3.0`, `Async Processor v0.7.4`, `AI Gateway Payload Processing v0.1.0`). Only the `platform` version differs.
+* `ModelsAsAServiceReady` stayed `True` through the entire operator reinstall. {maas} never went down.
+* `verify.sh` scored 15/15 on 3.5.2 before the upgrade and 15/15 on 3.6.0-ea.2 after it.
+
+What does break is TrustyAI, AI Pipelines and OGX, and because the DSC aggregates module health, any one of them keeps the whole DSC out of `Ready`.
+
+== Prerequisites
+
+* {maas} working on {rhoai} 3.5.x (`verify.sh` passing)
+* `cluster-admin` access
+* A cluster you can leave on 3.6 EA2. There is no supported way back to 3.5: the `beta` channel has no downgrade edge, and the 3.5 DSC you captured cannot be re-applied (see <<backup,Step 1>>). Getting back to 3.5 means another operator reinstall at best, and a rebuild in practice.
+
+Confirm your starting point:
+
+[source,bash]
+----
+oc get csv -n redhat-ods-operator | grep rhods-operator
+oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'
+----
+
+[[what-changes]]
+== What Changes
+
+[cols="1,2", options="header"]
+|===
+| Area | Change
+
+| *Channel*
+| There is no `3.6ea2` channel. `rhods-operator.3.6.0-ea.2` is published in the *`beta`* channel.
+
+| *Upgrade path*
+| None. The `beta` channel holds a single bundle with no `replaces`, `skips` or `skipRange`, so no OLM edge exists from any 3.5.x. The operator must be reinstalled.
+
+| *DSC MaaS field*
+| Unchanged: `aigateway.modelsAsAService`. `kserve.modelsAsService` also still exists in the v2 schema.
+
+| *New DSC fields*
+| `dashboard.maasConsumerPortal` (new {maas} Consumer Portal submodule, defaults to `Removed`) and `workbenches.workbenchesV2`.
+
+| *New DSC conditions*
+| `MaaSConsumerPortalAvailable`, `WorkbenchesV2Ready`.
+
+| *Removed DSC conditions*
+| `ProvisioningProgress`, `TrainingOperatorReady`. Note that `spec.components.trainingoperator` is still *accepted* by the v2 schema - only the condition went away, so setting it is silently inert rather than an error. `TrainerReady` is the replacement.
+
+| *Component CRD rename*
+| `datasciencepipelines.components.platform.opendatahub.io` becomes `aipipelines.components.platform.opendatahub.io`. The 3.5 CR is left behind and blocks the new one.
+
+| *New CRDs*
+| `aipipelines`, `aihubs` and `catalogs.aihub.opendatahub.io` (all `.opendatahub.io`), plus `applications.app.k8s.io`.
+
+| *TrustyAI schema*
+| The DSC declares `trustyai.eval.lmeval.permit*` as a string enum, the component CRD declares them as booleans. They disagree, which breaks the DSC.
+
+| *Immutable fields*
+| 3.6 changes the TrustyAI Deployment `spec.selector` and the OGX playground RoleBinding `roleRef`. Both are immutable, so the operator cannot patch 3.5-era objects.
+
+| *KServe stack*
+| KServe `v0.19.0` -> `v0.21.0`, vLLM `v0.24.0` -> `v0.28.0`, llm-d-router `v0.10.0` -> `v0.11.0`. New: `llm-d-autoscaling v0.9.0`, `vLLM-Omni v0.26.0`.
+|===
+
+[[backup]]
+== Step 1: Capture What the Reinstall Destroys
+
+CAUTION: This is *not* a rollback. There is no downgrade path from 3.6 EA2, and re-applying these files onto a 3.6 cluster actively breaks it: the 3.5 DSC carries `trustyai.eval.lmeval.permitOnline: deny`, the string that breaks the DSC in <<trustyai-schema,Step 4>>, and the 3.5 Subscription carries `channel: stable-3.5`, which reinstalls 3.5.2. Capture these to *read* later, never to re-apply.
+
+Only one of these is genuinely destroyed by Step 3: the Subscription. The DSC, the CRDs and every {maas} custom resource survive the reinstall, as Step 3 says - but the *new operator* rewrites parts of them, so you still need a before-image to read. Three captures, three different reasons:
+
+[cols="1,2", options="header"]
+|===
+| Capture | Read by
+
+| `sub-backup.yaml`
+| <<subscription,Step 3>>, for `source`, `sourceNamespace` and `spec.config`. *Destroyed* by the delete - this is the only irreplaceable one. Without it, a disconnected or proxied cluster gets a Subscription that never resolves.
+
+| `dsc-backup.yaml`
+| <<trustyai-schema,Step 4>>, to see which LMEval permissions you had. The DSC object survives, but the new operator rewrites `trustyai.eval`, so the values are gone once it reconciles.
+
+| `dsc-schema-before.txt`
+| <<verify-schema,Step 9>>, as the `diff` baseline. The CRD survives, but the new CSV replaces its schema, so the 3.5 shape is unrecoverable afterwards.
+|===
+
+[source,bash]
+----
+save() {  # save <outfile> <oc get args...>
+  out=$1; shift
+  err=$(oc get "$@" -o yaml 2>&1 >"$out") \
+    || { echo "FAILED ${out}: ${err}"; rm -f "$out"; }
+}
+
+save sub-backup.yaml  sub rhods-operator -n redhat-ods-operator
+save dsc-backup.yaml  dsc default-dsc
+
+# Baseline for the Step 9 schema diff
+oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
+  jq -r '.spec.versions[] | select(.name=="v2") |
+    .schema.openAPIV3Schema.properties.spec.properties.components.properties |
+    to_entries[] | "\(.key): \(.value.properties // {} | keys | join(","))"' \
+  > dsc-schema-before.txt
+
+# Confirm all three files you depend on are non-empty
+for f in sub-backup.yaml dsc-backup.yaml dsc-schema-before.txt; do
+  [ -s "$f" ] && echo "ok   ${f} ($(wc -c < "$f") bytes)" \
+               || echo "MISSING ${f} - stop and fix before Step 3"
+done
+----
+
+IMPORTANT: Check the files are non-empty before continuing. `oc get ... > file` truncates the file before the command runs, so a missing CRD or an RBAC denial leaves a 0-byte file and a non-zero exit nobody notices, one step before the operator is deleted.
+
+If you also want a record of the {maas} resources, take it one kind per call. These are not consumed by any step on this page - every {maas} custom resource survives the operator reinstall - so this is only for your own reference:
+
+[source,bash]
+----
+for k in maasmodelrefs maassubscriptions maastenantconfigs maasauthpolicies \
+         configs.maas.opendatahub.io aitenants \
+         externalproviders.inference.opendatahub.io; do
+  save "backup-${k}.yaml" "$k" -A
+done
+----
+
+NOTE: One kind per call, not a single comma-separated `oc get`. A combined call validates every type up front and aborts with `error: the server doesn't have a resource type "x"` if any one is missing, which happens on partial installs and on 3.5.0/3.5.1, so a single missing kind costs you all seven captures instead of one.
+
+[[channel-noop]]
+== Step 2: Why the Channel Bump Alone Does Nothing
+
+This is the finding that costs the most time, because nothing reports an error.
+
+Patching the channel to `beta` appears to succeed and then has no effect:
+
+[source,bash]
+----
+oc patch sub rhods-operator -n redhat-ods-operator --type=merge \
+  -p '{"spec":{"channel":"beta"}}'
+
+oc get sub rhods-operator -n redhat-ods-operator \
+  -o jsonpath='channel={.spec.channel} state={.status.state} installedCSV={.status.installedCSV}{"\n"}'
+----
+
+Observed output:
+
+[source]
+----
+channel=beta state=AtLatestKnown installedCSV=rhods-operator.3.5.2
+----
+
+The Subscription reports `AtLatestKnown` while sitting on 3.5.2. No InstallPlan is created, no Kubernetes event is emitted, and no condition turns `False`. This survives a forced re-resolution (`oc rollout restart deploy/catalog-operator -n openshift-operator-lifecycle-manager`).
+
+The reason is in the catalog. The `beta` channel contains exactly one bundle with no upgrade edges:
+
+[source]
+----
+channel: beta
+    rhods-operator.3.6.0-ea.2                                    <- no replaces, skips or skipRange
+channel: stable-3.5
+    rhods-operator.3.5.2 | replaces=3.5.1 | skipRange=>=3.4.0 <3.5.2
+----
+
+You can confirm this yourself:
+
+[source,bash]
+----
+oc get packagemanifest rhods-operator -n openshift-marketplace \
+  -o jsonpath='{range .status.channels[*]}{.name}{"\t"}{.currentCSV}{"\n"}{end}'
+----
+
+Because `3.6.0-ea.2` does not declare that it replaces or skips any 3.5.x release, OLM finds no path from the installed CSV into the `beta` channel and quietly leaves the install alone.
+
+IMPORTANT: `AtLatestKnown` on a channel that does not contain your installed CSV means "I found nothing I can upgrade to", not "you are up to date". Always confirm `installedCSV` after a channel change rather than trusting `state`.
+
+[[prestrip]]
+=== Strip trustyai.eval Before You Reinstall
+
+Do this while 3.5 is still installed and you avoid the TrustyAI breakage in <<trustyai-schema,Step 4>> entirely, rather than walking into it and cleaning up afterwards.
+
+`spec.components.trustyai` has no required fields, so removing `eval` is legal on 3.5, and the DSC field defaults to `"deny"` there anyway - so this is behaviourally neutral on 3.5 and stops the 3.6 operator from ever applying a string onto a boolean field:
+
+[source,bash]
+----
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"trustyai":{"eval":null}}}}'
+
+# The component CR created by 3.5 keeps its own copy - strip that too
+if oc get trustyais.components.platform.opendatahub.io default-trustyai \
+     >/dev/null 2>&1; then
+  oc patch trustyais.components.platform.opendatahub.io default-trustyai \
+    --type=merge -p '{"spec":{"eval":null}}'
+fi
+
+oc get dsc default-dsc -o jsonpath='trustyai={.spec.components.trustyai}{"\n"}'
+# Expected: no "eval" key
+----
+
+NOTE: If you do this, <<trustyai-schema,Step 4>> should find nothing to fix and the DSC should never report `expected boolean, got &\{deny}`. Step 4 is kept for readers who already upgraded, and because the <<caution-manifest,Phase 4 manifest>> can reintroduce the strings later.
+
+== Step 3: Reinstall the Operator from the beta Channel
+
+Deleting the Subscription and CSV removes the operator Deployment. It does *not* remove CRDs, the DSC, the DSCInitialization, or any {maas} custom resource, so your configuration and models survive.
+
+Read the installed CSV name rather than assuming `3.5.2`, so this works from any 3.5.x patch level. Capture it *before* deleting the Subscription, and stop if it comes back empty:
+
+[source,bash]
+----
+OLD_CSV=$(oc get sub rhods-operator -n redhat-ods-operator \
+  -o jsonpath='{.status.installedCSV}')
+
+if [ -z "$OLD_CSV" ]; then
+  echo "################################################################"
+  echo "# STOP. installedCSV is empty - the Subscription may still be   #"
+  echo "# resolving, or something re-created it. Deleting now orphans   #"
+  echo "# the old CSV, and the new Subscription then fails with         #"
+  echo "# 'constraints not satisfiable'. Do NOT paste the next block.   #"
+  echo "################################################################"
+  oc get sub rhods-operator -n redhat-ods-operator -o yaml | sed -n '/^status:/,$p'
+else
+  echo "removing ${OLD_CSV}"
+  oc delete sub rhods-operator -n redhat-ods-operator
+  oc delete csv "${OLD_CSV}" -n redhat-ods-operator --ignore-not-found
+fi
+----
+
+WARNING: If the old CSV survives this step, the new Subscription fails resolution with a `constraints not satisfiable` message that points nowhere near the real cause, because another version of the operator still owns the namespace. Confirm with `oc get csv -n redhat-ods-operator | grep rhods` before moving on.
+
+Confirm the configuration is still there before continuing:
+
+NOTE: `datascienceclusters` uses `conversion.strategy: Webhook`, and the webhook is served by the operator you just deleted. Between the delete and the new CSV, `oc get dsc` can return `conversion webhook ... service unavailable` or `connection refused` instead of the object. That error is expected in this window and does not mean the DSC is gone - re-run it once the new CSV reports `Succeeded`.
+
+[source,bash]
+----
+oc get dsc default-dsc
+oc get configs.maas.opendatahub.io default
+oc get maasmodelref -A
+----
+
+[[subscription]]
+=== Recreate the Subscription
+
+Carry `source`, `sourceNamespace` and `spec.config` over from the `sub-backup.yaml` you captured in <<backup,Step 1>> rather than copying the values below blindly:
+
+[source,bash]
+----
+# What did the original Subscription actually use? Read the FILE, not the cluster.
+# Only source and sourceNamespace carry over - NOT channel, which is the old one.
+grep -E '^  (source|sourceNamespace):' sub-backup.yaml
+
+# spec.config, if it had one
+awk '/^  config:/{f=1;print;next} f&&/^  [^ ]/{f=0} f{print}' sub-backup.yaml
+----
+
+IMPORTANT: Read these from `sub-backup.yaml`, not with `oc get -f sub-backup.yaml`. The `-f` flag only uses the file to identify the resource and then queries the live cluster, where you just deleted the Subscription, so it reports nothing and you would silently drop `spec.config`.
+
+WARNING: Do not carry `channel` over from the backup. The backup was taken in <<backup,Step 1>>, before anything changed, so it still says `stable-3.5`. Reusing it recreates the Subscription on the old channel and quietly reinstalls 3.5.2, and you would then work through the remaining steps against a 3.5 operator wondering why nothing matches.
+
+WARNING: `redhat-operators` is not universal. On a disconnected or mirrored cluster the CatalogSource has a different name (see xref:00-disconnected.adoc[Phase 0: Disconnected Setup]), and a Subscription pointing at a CatalogSource that does not exist never resolves: no InstallPlan, no CSV, and you already deleted the old operator. Any `spec.config` on the original (proxy env, `nodeSelector`, `tolerations`) must be carried over too, or the new operator pod cannot reach the registry or lands on the wrong nodes.
+
+[source,bash]
+----
+SOURCE_NS=openshift-marketplace
+SOURCE=redhat-operators          # replace with your CatalogSource name
+
+# Quoted heredoc: nothing inside is shell-expanded, so a spec.config
+# containing $, ${...}, $(...) or backticks survives verbatim.
+cat <<'EOF' > /tmp/rhods-sub.yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: rhods-operator
+  namespace: redhat-ods-operator
+spec:
+  channel: beta
+  name: rhods-operator
+  source: PLACEHOLDER_SOURCE
+  sourceNamespace: PLACEHOLDER_SOURCE_NS
+  installPlanApproval: Automatic
+  # Deliberately no startingCSV - see the warning below
+EOF
+
+# Paste any spec.config from sub-backup.yaml into /tmp/rhods-sub.yaml now,
+# then substitute the two catalog values and apply.
+sed -i.bak "s|PLACEHOLDER_SOURCE_NS|${SOURCE_NS}|; s|PLACEHOLDER_SOURCE|${SOURCE}|" \
+  /tmp/rhods-sub.yaml
+
+grep -E 'channel|source|sourceNamespace' /tmp/rhods-sub.yaml   # sanity check
+oc apply -f /tmp/rhods-sub.yaml
+----
+
+WARNING: Do not add `startingCSV: rhods-operator.3.6.0-ea.2`. It does not pin anything useful - with `installPlanApproval: Automatic` OLM still follows the channel head afterwards - and it makes the *initial* resolution fail hard once that bundle is gone. `beta` holds a single bundle, so when ea.3 lands and ea.2 is pruned, a Subscription naming ea.2 resolves against a channel that no longer contains it: `constraints not satisfiable`, no InstallPlan, no CSV, and the old operator has already been deleted. Omit it and take whatever `beta` currently serves, then confirm the version in <<verification,Step 9>>.
+
+NOTE: If you genuinely must stay on one exact build, `installPlanApproval: Manual` is the only mechanism that does it - but then the *first* InstallPlan also needs approving, or no CSV is ever created and nothing reconciles the DSC:
+
+[source,bash]
+----
+# Only if you chose installPlanApproval: Manual.
+# OLM takes 30-60s to create the InstallPlan, so poll for it.
+IP=""
+for i in $(seq 1 20); do
+  IP=$(oc get installplan -n redhat-ods-operator \
+    -o jsonpath='{range .items[?(@.status.phase=="RequiresApproval")]}{.metadata.name}{"\n"}{end}' \
+    | head -1)
+  [ -n "$IP" ] && break
+  echo "attempt ${i}: no InstallPlan awaiting approval yet"
+  sleep 10
+done
+
+if [ -z "$IP" ]; then
+  echo "No InstallPlan appeared. Check the Subscription resolved at all:"
+  oc get sub rhods-operator -n redhat-ods-operator -o yaml | sed -n '/^status:/,$p'
+else
+  echo "approving ${IP}"
+  oc patch installplan "$IP" -n redhat-ods-operator --type=merge \
+    -p '{"spec":{"approved":true}}'
+fi
+----
+
+NOTE: Poll and take only the first match. Run immediately after the `oc apply`, the plain jsonpath returns nothing because OLM has not created the InstallPlan yet, and `oc patch installplan ""` fails with `resource name may not be empty`; with two pending plans it returns both names and fails on the malformed argument. Either way no CSV is created and nothing reconciles the DSC.
+
+The existing OperatorGroup in `redhat-ods-operator` is reused. Now wait for the CSV to appear and reach `Succeeded`:
+
+[source,bash]
+----
+INSTALLED=""
+for i in $(seq 1 60); do
+  PHASE=$(oc get csv -n redhat-ods-operator \
+    -o jsonpath='{range .items[*]}{.metadata.name}={.status.phase}{"\n"}{end}' 2>/dev/null \
+    | grep '^rhods-operator\.3\.6')
+  echo "attempt ${i}: ${PHASE:-<no rhods-operator 3.6 CSV yet>}"
+  if echo "$PHASE" | grep -q '=Succeeded$'; then INSTALLED=yes; break; fi
+  sleep 10
+done
+
+if [ -z "$INSTALLED" ]; then
+  echo "################################################################"
+  echo "# STOP. No rhods-operator 3.6 CSV reached Succeeded.           #"
+  echo "# Do NOT continue to Step 4 - there is no operator installed.  #"
+  echo "################################################################"
+  oc get csv,installplan,sub -n redhat-ods-operator
+fi
+----
+
+IMPORTANT: Match on the CSV *name*, not the version alone. An AllNamespaces OperatorGroup makes OLM copy other operators' CSVs into this namespace - on the test cluster 10 of the 11 CSVs in `redhat-ods-operator` were copies - so a version match alone can be satisfied by an unrelated 3.6.x operator while `rhods-operator` is still `Pending`.
+
+NOTE: The failure path prints a banner rather than calling `exit`. Every snippet here is meant to be pasted into an interactive shell, and `exit` in that context closes your terminal, taking `$H`, `check_paths`, `apply_host` and the rest of your session with it, mid-upgrade. Read the output before pasting the next block.
+
+IMPORTANT: Do not use `oc wait csv rhods-operator.3.6.0-ea.2 ...` here. OLM needs 30 to 60 seconds to resolve and create the CSV, and `oc wait` on a named resource that does not exist yet fails immediately with `Error from server (NotFound)` instead of waiting. The label-selector form fails too, with `error: no matching resources found`. Both were confirmed on a live cluster, so poll instead. Polling also survives OLM landing a later EA drop than the one you named.
+
+NOTE: Immediately after install, `ModelRegistryReady` can fail with `no matches for kind "AIHub" in version "components.platform.opendatahub.io/v1alpha1"`. This is a start-up ordering race: the new `aihubs` CRD is not registered before the modelregistry module first reconciles. It clears on its own, so do not act on it.
+
+At this point {maas} is already working again, but the DSC is not `Ready`. Steps 4 to 7 fix that.
+
+[[trustyai-schema]]
+== Step 4: Fix the TrustyAI Schema Mismatch
+
+TIP: If you ran <<prestrip,the pre-strip>> before the reinstall, this step should find nothing to do. Confirm with `oc get dsc default-dsc -o jsonpath='{.spec.components.trustyai.eval}'` - empty means you are already clear, and you can skip to <<stale-crs,Step 5>>.
+
+The DSC and the TrustyAI component CRD disagree about the type of two fields in 3.6.0-ea.2.
+
+The DSC (`datascienceclusters...v2`) declares them as a *string* enum:
+
+[source]
+----
+trustyai.eval.lmeval.permitCodeExecution:  type: string, enum: [allow, deny], default: "deny"
+trustyai.eval.lmeval.permitOnline:         type: string, enum: [allow, deny], default: "deny"
+----
+
+The component CRD (`trustyais.components.platform.opendatahub.io/v1alpha1`) declares the same fields as *boolean*:
+
+[source]
+----
+spec.eval.lmeval.permitCodeExecution:  type: boolean, default: false
+spec.eval.lmeval.permitOnline:         type: boolean, default: false
+----
+
+The operator copies the DSC value straight onto the component CR, so a 3.5 DSC carrying `permitOnline: deny` produces:
+
+[source]
+----
+Ready  False  Error  failure deploying resource /default-trustyai: apply failed
+  components.platform.opendatahub.io/v1alpha1, Kind=TrustyAI: ... failed to create typed live object:
+  .spec.eval.lmeval.permitOnline: expected boolean, got &{deny}
+  .spec.eval.lmeval.permitCodeExecution: expected boolean, got &{deny}
+----
+
+This blocks `ProvisioningSucceeded` and `Ready` for the entire DSC, not just TrustyAI.
+
+Remove the `eval` block from the DSC. Use a merge patch with `null`, not a JSON Patch `remove`:
+
+[source,bash]
+----
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"trustyai":{"eval":null}}}}'
+----
+
+That alone is not enough. The component CR created by 3.5 still holds the string values, and the operator keeps failing to apply over them. Strip it there too:
+
+[source,bash]
+----
+if oc get trustyais.components.platform.opendatahub.io default-trustyai \
+     >/dev/null 2>&1; then
+  oc patch trustyais.components.platform.opendatahub.io default-trustyai \
+    --type=merge -p '{"spec":{"eval":null}}'
+else
+  echo "no default-trustyai CR (trustyai is Removed) - nothing to strip"
+fi
+----
+
+NOTE: Guard this with `oc get`. `oc patch` has no `--ignore-not-found` flag, so on a DSC with `trustyai: Removed` the component CR does not exist and the bare patch stops a pasted block with `Error from server (NotFound)` in the middle of the reinstall.
+
+NOTE: A JSON Patch (`--type=json`) `remove` on these paths fails with `The request is invalid` whenever the block is already absent, which is a normal state here. The merge-patch form is idempotent: running it twice just reports `patched (no change)`. Both behaviours were confirmed on a live cluster.
+
+The operator then repopulates the CR with correct boolean defaults. Confirm:
+
+[source,bash]
+----
+oc get trustyais.components.platform.opendatahub.io default-trustyai -o jsonpath='{.spec}{"\n"}'
+# Expected to include: "eval":{"lmeval":{"permitCodeExecution":false,"permitOnline":false}}
+----
+
+WARNING: Do not re-add `trustyai.eval` to the DSC on 3.6 EA2. Because the DSC field defaults to `"deny"`, setting the block at all reintroduces the string and breaks the DSC again. Leave it absent and let the component default to `false`.
+
+[[caution-manifest]]
+[CAUTION]
+====
+*This guide's own Phase 4 manifest will undo this fix.* `manifests/04-rhoai-config/datasciencecluster.yaml` sets:
+
+[source,yaml]
+----
+trustyai:
+  eval:
+    lmeval:
+      permitCodeExecution: deny
+      permitOnline: deny
+----
+
+Those values are correct for 3.5 and break the DSC on 3.6 EA2. Any re-apply of that manifest puts the strings back and returns you to `expected boolean, got &\{deny}`.
+
+The main trigger is a manual re-apply:
+
+* `oc apply -f manifests/04-rhoai-config/datasciencecluster.yaml` from xref:04-rhoai-config.adoc[Phase 4]
+
+`scripts/setup-maas.sh` is usually safe *after* this upgrade: its Phase 4 skips the DSC apply when {maas} is already `Managed` (`log_info "DSC already has MaaS: Managed, skipping"`). It does re-apply, and so does a `--from-phase 3`/`--from-phase 4` resume, whenever that guard does not fire - a DSC with {maas} set to `Removed`, or a partial install.
+
+On 3.6 EA2, comment the `eval:` block out of your local copy of that manifest before running any of them, and re-check the DSC afterwards:
+
+The same manifest also sets `trainingoperator: managementState: Managed` (line 61). That one is harmless on 3.6 - the field is still in the schema - but it reports no condition any more, so do not wait on `TrainingOperatorReady`.
+
+
+[source,bash]
+----
+oc get dsc default-dsc \
+  -o jsonpath='{.spec.components.trustyai.eval}{"\n"}'
+# Expected on 3.6 EA2: empty
+----
+====
+
+IMPORTANT: This loses any non-default LMEval permission you had on 3.5. Check what you were running before you remove the block:
+
+[source,bash]
+----
+# From the backup taken in Step 1
+grep -A3 lmeval dsc-backup.yaml
+----
+
+If either value was `allow`, the component now defaults to `false` and LMEval jobs lose online access and code execution.
+
+On 3.6.0-ea.2 there is no way to get them back. Setting the value in the DSC reintroduces the string and breaks the DSC, and patching the component CR directly does not survive: the operator reverted `permitOnline: true` back to `false` within 10 seconds on a live cluster, while the DSC stayed `Ready`.
+
+[source,bash]
+----
+# Does NOT work on 3.6.0-ea.2 - reverted by the operator within ~10s
+oc patch trustyais.components.platform.opendatahub.io default-trustyai --type=merge \
+  -p '{"spec":{"eval":{"lmeval":{"permitOnline":true}}}}'
+----
+
+If your evaluations depend on LMEval online access or code execution, this EA build cannot provide it. Plan to stay on 3.5 for that workload.
+
+[[stale-crs]]
+== Step 5: Delete Stale 3.5 Component CRs
+
+3.6 renames the pipelines component CRD from `datasciencepipelines` to `aipipelines`. The operator creates the new CR, but the 3.5 CR is left behind and still owns shared resources, so the new module cannot adopt them:
+
+[source]
+----
+AIPipelines  ProvisioningSucceeded  False  MonitoringReconcileFailed
+  reconcile core ServiceMonitor: ServiceMonitor "data-science-pipelines-operator-service-monitor"
+  is controlled by DataSciencePipelines "default-datasciencepipelines" with UID "7d00cfe5-..."
+----
+
+Delete the orphaned 3.5 CR:
+
+[source,bash]
+----
+oc get datasciencepipelines.components.platform.opendatahub.io
+# Check for a finalizer first - in 3.6 nothing watches this kind any more,
+# so a finalizer here has no controller left to clear it.
+oc get datasciencepipelines.components.platform.opendatahub.io \
+  default-datasciencepipelines \
+  -o jsonpath='finalizers={.metadata.finalizers}{"\n"}' 2>/dev/null
+
+oc delete datasciencepipelines.components.platform.opendatahub.io \
+  default-datasciencepipelines --ignore-not-found --timeout=60s
+----
+
+NOTE: On the test cluster this CR had no finalizers and the delete returned immediately. If yours does have one, the delete hangs in `Terminating` with no controller to release it; clear it by hand:
+
+[source,bash]
+----
+oc patch datasciencepipelines.components.platform.opendatahub.io \
+  default-datasciencepipelines --type=merge \
+  -p '{"metadata":{"finalizers":null}}'
+----
+
+The ServiceMonitor is garbage-collected with its old owner and the `AIPipelines` controller recreates it. Confirm every condition is `True`:
+
+[source,bash]
+----
+oc get aipipelines.components.platform.opendatahub.io \
+  -o jsonpath='{range .items[*].status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}'
+----
+
+NOTE: Use `+.items[*]+`, not `.items[0]`. Right after the delete the `AIPipelines` controller may not have created `default-aipipelines` yet, and an out-of-bounds index makes `oc get` exit 1 with `array index out of bounds` plus a dump of the whole template. `+.items[*]+` just prints nothing.
+
+[[immutable]]
+== Step 6: Fix Immutable Fields on 3.5-Era Resources
+
+3.6 changes fields that Kubernetes does not allow to be patched in place. The operator cannot reconcile over objects that 3.5 created, and the fix in both cases is to delete the object so it is recreated.
+
+=== TrustyAI operator Deployment (spec.selector)
+
+3.6 drops `app.opendatahub.io/trustyai: "true"` from the Deployment's label selector, and `spec.selector` is immutable:
+
+[source]
+----
+TrustyAIReady  False  DeployFailed
+  Deployment.apps "trustyai-service-operator-controller-manager" is invalid:
+  spec.selector: Invalid value: {"matchLabels":{"app.kubernetes.io/part-of":"trustyai",
+  "control-plane":"trustyai-service-operator"}}: field is immutable
+----
+
+[source,bash]
+----
+oc delete deploy trustyai-service-operator-controller-manager \
+  -n redhat-ods-applications --ignore-not-found
+----
+
+The operator recreates it within about 20 seconds and `TrustyAIReady` turns `True`.
+
+=== OGX playground RoleBinding (roleRef)
+
+3.6 tightens the SCC bound to each OGX playground from `system:openshift:scc:anyuid` to `system:openshift:scc:nonroot-v2`. A RoleBinding's `roleRef` is immutable, so every OGXServer created on 3.5 fails with:
+
+[source]
+----
+OGXServer  DeploymentReady  False  DeploymentFailed
+  RoleBinding.rbac.authorization.k8s.io "<name>-rb" is invalid:
+  roleRef: Invalid value: {... "Name":"system:openshift:scc:nonroot-v2"}: cannot change roleRef
+----
+
+Find and delete the affected RoleBindings. They are owned by the OGXServer, so the operator recreates them:
+
+[source,bash]
+----
+# List the instances and their state
+oc get ogxserver -A
+
+# Delete the stale RoleBinding for every instance (name is <ogxserver-name>-rb)
+oc get ogxserver -A \
+  -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do
+      [ -n "$ns" ] || continue
+      oc delete rolebinding "${name}-rb" -n "$ns" --ignore-not-found
+    done
+----
+
+TIP: Drive this off the cluster rather than typing a namespace per instance. The test cluster had four OGXServers in four namespaces, and a typo in any one leaves that instance `DeploymentFailed` and the DSC `Ready=False` for a reason <<stale-conditions,Step 7>> cannot clear.
+
+The OGX operator does not re-reconcile on its own after the delete, so nudge it:
+
+[source,bash]
+----
+oc rollout restart deploy/ogx-k8s-operator-controller-manager -n redhat-ods-applications
+oc rollout status deploy/ogx-k8s-operator-controller-manager \
+  -n redhat-ods-applications --timeout=180s
+
+# Give the new pod time to reconcile before judging the result
+for i in $(seq 1 30); do
+  BAD=$(oc get ogxserver -A --no-headers 2>/dev/null | grep -cv 'Ready' || true)
+  echo "attempt ${i}: ${BAD} OGXServer(s) not Ready"
+  [ "$BAD" = "0" ] && break
+  sleep 10
+done
+----
+
+NOTE: Poll rather than reading straight after the restart. The new pod takes tens of seconds to become ready and recreate the RoleBindings, so an immediate check shows empty `roleRef=` values and `DeploymentFailed` for every instance, which looks exactly like the fix having failed.
+
+Confirm the RoleBindings came back with the new role and that the instances recovered:
+
+[source,bash]
+----
+oc get ogxserver -A \
+  -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do
+      [ -n "$ns" ] || continue
+      printf '%s/%s roleRef=%s\n' "$ns" "$name" \
+        "$(oc get rolebinding "${name}-rb" -n "$ns" \
+             -o jsonpath='{.roleRef.name}' 2>/dev/null)"
+    done
+# Expected: roleRef=system:openshift:scc:nonroot-v2 for every instance
+
+oc get ogxserver -A
+# Expected: PHASE=Ready for every instance
+----
+
+[[stale-conditions]]
+== Step 7: Clear Stale Module Conditions
+
+3.6.0-ea.2 does not reliably re-aggregate module health after you fix the underlying resource. Conditions keep reporting an error that no longer exists, and because the DSC rolls module health up into `Ready`, the DSC stays `False` on stale data.
+
+Two cases showed up, each needing a different nudge.
+
+*Stale `ProvisioningSucceeded` after the TrustyAI fix.* The DSC kept quoting the `expected boolean, got &\{deny}` error after the component CR was already correct. Restarting the operator cleared it:
+
+[source,bash]
+----
+oc rollout restart deploy/rhods-operator -n redhat-ods-operator
+oc rollout status deploy/rhods-operator -n redhat-ods-operator --timeout=300s
+----
+
+*Stale `Degraded: UnhealthyOGXServers`.* After Step 6 every OGXServer reported `phase=Ready` with `DeploymentReady=True` and `HealthCheck=True`, but the OGX module still listed them all as unhealthy and held the DSC at `Ready=False`:
+
+[source]
+----
+OGXReady  True   AllDependentsHealthy
+Degraded  True   UnhealthyOGXServers: Unhealthy OGXServer instances: ns1/x, ns2/x, ns3/x, ns4/x
+----
+
+Restarting the OGX operator, restarting `rhods-operator`, and annotating the OGXServer instances all failed to clear this. Toggling the module off and back on does work.
+
+Record the state you started from, so the second patch restores it rather than forcing `Managed` on a cluster that had OGX disabled:
+
+[source,bash]
+----
+# Two different waits. The intermediate one only needs the operator to have
+# OBSERVED the new generation - the DSC is legitimately still Ready=False at
+# that point, which is why this step exists. Only the final wait needs Ready.
+wait_dsc_observed() {
+  local i gen obs
+  for i in $(seq 1 60); do
+    IFS='|' read -r gen obs <<<"$(oc get dsc default-dsc -o jsonpath='{.metadata.generation}|{.status.observedGeneration}')"
+    echo "  generation=${gen} observed=${obs}"
+    [ -n "$obs" ] && [ "$gen" = "$obs" ] && return 0
+    sleep 10
+  done
+  echo "  operator never observed generation ${gen}"
+  return 1
+}
+
+wait_dsc_ready() {
+  local i gen obs rdy
+  for i in $(seq 1 60); do
+    IFS='|' read -r gen obs rdy <<<"$(oc get dsc default-dsc -o jsonpath='{.metadata.generation}|{.status.observedGeneration}|{.status.conditions[?(@.type=="Ready")].status}')"
+    echo "  generation=${gen} observed=${obs} Ready=${rdy}"
+    if [ -n "$obs" ] && [ "$gen" = "$obs" ] && [ "$rdy" = "True" ]; then
+      return 0
+    fi
+    sleep 10
+  done
+  echo "  DSC did not reach Ready for generation ${gen}"
+  return 1
+}
+
+CUR=$(oc get dsc default-dsc -o jsonpath='{.spec.components.ogx.managementState}')
+LSO=$(oc get dsc default-dsc -o jsonpath='{.spec.components.llamastackoperator.managementState}')
+
+if [ "$LSO" = "Managed" ]; then
+  echo "################################################################"
+  echo "# STOP. llamastackoperator is Managed. Re-enabling ogx with it  #"
+  echo "# Managed aborts the whole module batch, taking aigateway and   #"
+  echo "# MaaS down with it. Set it to Removed first - see Issue 14 in  #"
+  echo "# the 3.4->3.5 post-upgrade troubleshooting page.               #"
+  echo "################################################################"
+elif [ "$CUR" = "Removed" ]; then
+  echo "################################################################"
+  echo "# STOP. ogx is already Removed, so this block cannot tell what  #"
+  echo "# to restore it to. If a previous run got this far, patch ogx   #"
+  echo "# back to Managed by hand and re-check the DSC.                 #"
+  echo "################################################################"
+else
+  OGX_STATE=$CUR
+  if [ -z "$OGX_STATE" ]; then
+    if [ "$(oc get ogxserver -A --no-headers 2>/dev/null | wc -l | tr -d ' ')" != "0" ]; then
+      OGX_STATE=Managed
+      echo "ogx not set explicitly, but OGXServers exist - will restore to Managed"
+    else
+      OGX_STATE=Removed
+      echo "ogx not set explicitly and no OGXServers - will restore to Removed"
+    fi
+  fi
+
+  oc patch dsc default-dsc --type=merge \
+    -p '{"spec":{"components":{"ogx":{"managementState":"Removed"}}}}'
+
+  if ! wait_dsc_observed; then
+    echo "############################################################"
+    echo "# STOP. The operator never observed ogx=Removed, so the    #"
+    echo "# restore was NOT run. ogx is currently Removed. Check:    #"
+    echo "#   oc get dsc default-dsc -o yaml | sed -n '/^status:/,$p' #"
+    echo "############################################################"
+  else
+    echo "restoring ogx to ${OGX_STATE}"
+    oc patch dsc default-dsc --type=merge \
+      -p "{\"spec\":{\"components\":{\"ogx\":{\"managementState\":\"${OGX_STATE}\"}}}}"
+    if ! wait_dsc_ready; then
+      echo "STOP: ogx restored but the DSC did not come back Ready."
+      echo "Do not continue to Step 8 until this is resolved."
+    fi
+  fi
+fi
+----
+
+IMPORTANT: The wait between the two patches is what makes this work. Without it both patches land in the same second, the operator never observes `ogx: Removed`, the stale condition is never re-aggregated, and the DSC stays `Ready=False` with no error anywhere. It has to be generation-aware: `oc wait --for=condition=Ready` has no `observedGeneration` check, so straight after a patch it returns on the previous `True` and verifies nothing.
+
+NOTE: The block refuses to run in two cases rather than guessing: if `llamastackoperator` is `Managed` (re-enabling `ogx` alongside it aborts the whole module batch and takes {maas} down - see xref:10-post-upgrade-troubleshooting.adoc#issue-14[Issue 14]), and if `ogx` is already `Removed` from a previous partial run, where the original value is no longer recoverable from the cluster. When `ogx` was never set explicitly, it restores to `Managed` only if OGXServer instances exist, which is the situation this step applies to.
+
+After the toggle the DSC reached `Ready=True` with `OGXReady=True` and all OGXServer instances still `Ready`.
+
+NOTE: If you do not use the AI Playground, leaving `ogx` at `Removed` is a valid shortcut: it was verified to bring the DSC to `Ready=True` on its own, and {maas} does not depend on OGX.
+
+[[portal-404]]
+== Step 8: Enable the MaaS Consumer Portal (new in 3.6)
+
+WARNING: Enabling this submodule on 3.6.0-ea.2 takes down the entire {rhoai} Dashboard with HTTP 404, including `/oauth2`, so you cannot even log in. See link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^] (Critical). A default install is unaffected because the field defaults to `Removed`. If you do not need the portal, skip this whole step.
+
+3.6 adds a {maas} Consumer Portal as a dashboard submodule. It defaults to `Removed`, so it is opt-in. From the CRD description:
+
+[quote]
+____
+MaaSConsumerPortal controls the MaaS Consumer Portal submodule, shipped in the dashboard-operator. It is managed independently of the core Dashboard: the dashboard-operator Deployment stays up while either the core Dashboard or the portal is Managed.
+____
+
+IMPORTANT: Do the host-pinning in <<portal-prepin,Step 8a>> *before* you enable the portal. Enabling first and repairing afterwards works, but it 404s the Dashboard for everyone in the meantime. Pinning first was measured at zero downtime: 25 consecutive polls of `/` returned `302` across the whole transition, including the moment the portal HTTPRoute appeared.
+
+[[portal-prepin]]
+=== Step 8a: Host-pin the Sibling Routes First
+
+The 404 happens because the portal's HTTPRoute is the only one on the Gateway carrying a `spec.hostnames`, which puts it in its own exact-match virtual host (see <<portal-mechanism,the mechanism>> below). The sibling routes already exist and are hostname-less, so pinning them to the dashboard hostname now is harmless, and the portal then joins the same virtual host instead of hijacking it. Pin *every* hostname-less route on that Gateway, not a fixed list of four: on the test cluster the set also included a running workbench route.
+
+Set up the helpers and confirm the Dashboard is healthy before you touch anything:
+
+[source,bash]
+----
+H=$(oc get dashboard default-dashboard \
+  -o jsonpath='{.status.url}' | sed -E 's#https?://##; s#/$##')
+
+if [ -z "$H" ]; then
+  # Fall back to the route, which is what the rest of this repo reads
+  H=$(oc get route rhods-dashboard -n redhat-ods-applications \
+    -o jsonpath='{.spec.host}' 2>/dev/null)
+fi
+
+if [ -z "$H" ]; then
+  echo "STOP. Could not determine the dashboard hostname from either"
+  echo "  oc get dashboard default-dashboard -o jsonpath='{.status.url}'"
+  echo "  oc get route rhods-dashboard -n redhat-ods-applications"
+  echo "Do not run the pin below with an empty hostname."
+else
+  echo "dashboard host: $H"
+fi
+
+check_paths() {
+  [ -n "$H" ] || { echo "  no hostname - refusing to probe"; return 1; }
+  for p in / /oauth2 /mlflow /catalog/ /maas-consumer-portal; do
+    printf '  %-24s -> %s\n' "$p" \
+      "$(curl -sk -o /dev/null --max-time 10 -w '%{http_code}' "https://${H}${p}")"
+  done
+}
+
+check_paths   # /maas-consumer-portal 404s or redirects here; the other four should be 302
+----
+
+Pin the four siblings:
+
+[source,bash]
+----
+# Which Gateway does the dashboard route attach to? Match any parentRef.
+GW=$(oc get httproute rhods-dashboard -n redhat-ods-applications \
+  -o jsonpath='{.spec.parentRefs[0].name}' 2>/dev/null)
+
+if [ -z "$GW" ] || [ -z "$H" ]; then
+  echo "STOP. Could not determine the Gateway (GW='${GW}') or host (H='${H}')."
+  echo "Do not run the pin until both are known."
+else
+  echo "gateway=${GW} host=${H}"
+
+  # Every route on that Gateway with NO hostname is about to lose the dashboard
+  # hostname to the portal. oauth-callback-route is deliberately excluded - see
+  # the warning below; decide on that one by hand.
+  if ! oc get httproute -A -o json | python3 -c '
+import json,sys
+gw=sys.argv[1]
+for i in json.load(sys.stdin)["items"]:
+    s=i.get("spec",{}); m=i["metadata"]
+    if m["name"]=="oauth-callback-route":
+        continue
+    if any(p.get("name")==gw for p in s.get("parentRefs") or []) \
+       and not s.get("hostnames"):
+        print(m["namespace"], m["name"])
+' "$GW" > /tmp/to-pin.txt; then
+    echo "STOP. Could not enumerate routes (is python3 present?)."
+  elif [ ! -s /tmp/to-pin.txt ]; then
+    echo "No hostname-less routes found on ${GW}."
+    echo "Either they are already pinned, or the filter is wrong - check by hand:"
+    echo "  oc get httproute -A -o wide"
+    echo "Do NOT assume this means you are safe to enable the portal."
+  else
+    echo "routes to pin:"; sed 's/^/  /' /tmp/to-pin.txt
+
+    apply_host() {
+      if ! oc get httproute "$2" -n "$1" >/dev/null 2>&1; then
+        echo "  skipping $2 in $1 (route not present)"
+        return 1
+      fi
+      if ! cat <<EOF | oc apply --server-side --field-manager=maas-portal-coexist -f - >/dev/null
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: $2
+  namespace: $1
+spec:
+  hostnames:
+    - $H
+EOF
+      then
+        echo "  FAILED to pin $2 in $1"
+        return 1
+      fi
+      # Read it back - an apply can report success and still not persist
+      got=$(oc get httproute "$2" -n "$1" -o jsonpath='{.spec.hostnames[0]}')
+      if [ "$got" = "$H" ]; then
+        echo "  pinned $2 in $1"
+      else
+        echo "  REVERTED $2 in $1: hostnames[0]='${got}' expected '${H}'"
+        return 1
+      fi
+    }
+
+    FAILED=0
+    while read -r ns name; do
+      [ -n "$ns" ] || continue
+      apply_host "$ns" "$name" || FAILED=1
+    done < /tmp/to-pin.txt
+
+    if [ "$FAILED" != "0" ]; then
+      echo "################################################################"
+      echo "# At least one route was not pinned. Read the lines above.      #"
+      echo "# If any non-notebook route failed, do NOT enable the portal.   #"
+      echo "################################################################"
+    else
+      echo "all enumerated routes pinned"
+    fi
+  fi
+fi
+----
+
+Now decide on `oauth-callback-route` separately. It is excluded from the loop on purpose, because it is shared: it serves the OAuth callback for *every* hostname on that Gateway, so pinning it to the dashboard host breaks login for any other host - the same 404 symptom, moved somewhere `check_paths` cannot see.
+
+[source,bash]
+----
+# What else does that Gateway serve?
+oc get httproute -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name} parents={range .spec.parentRefs[*]}{.name},{end} hostnames={.spec.hostnames}{"\n"}{end}' \
+  | grep "${GW}"
+----
+
+If that Gateway serves only the dashboard hostname, pin it too:
+
+[source,bash]
+----
+apply_host openshift-ingress oauth-callback-route
+----
+
+If it serves anything else, stop here and leave the portal `Removed`. Logging in matters more than the portal, and there is no way to have both on 3.6 EA2.
+
+
+WARNING: Some routes cannot be pinned. A controller that owns `spec.hostnames` reverts the value immediately, and `oc apply --server-side` still reports `serverside-applied` when that happens - which is why the read-back above is not optional. On the test cluster a running workbench route (`nb-<ns>-<name>`, labelled `notebook-name`) reverted to hostname-less on every attempt: its UID never changed, so it was not being recreated, the notebook controller simply rewrote the field.
+
+A route you cannot pin is not present in the pinned virtual host, so requests to its path are served by the catch-all `/` route - the Dashboard - instead of its own backend. If the `STOP` banner names only notebook routes, the Dashboard itself is fine and the cost is confined to those paths. Weigh that against the portal before continuing, because there is no workaround for it on 3.6 EA2.
+
+
+TIP: Use the `apply_host` function rather than a `for` loop over `"name namespace"` strings. zsh does not word-split unquoted expansions, so the loop form sends `name namespace` as a single resource name and every apply fails RFC 1123 validation. The function form behaves the same in bash and zsh.
+
+=== Step 8b: Enable the Portal
+
+[source,bash]
+----
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"dashboard":{"maasConsumerPortal":{"managementState":"Managed"}}}}}'
+----
+
+Verify:
+
+[source,bash]
+----
+oc get dsc default-dsc \
+  -o jsonpath='{.status.conditions[?(@.type=="MaaSConsumerPortalAvailable")].status}{"\n"}'
+# Expected: True
+
+oc get deploy maas-consumer-portal -n redhat-ods-applications
+----
+
+The portal deploys as its own `maas-consumer-portal` Deployment and `maas-consumer-portal` Service (port 8443) in `redhat-ods-applications`, alongside the existing `maas-ui`.
+
+[[portal-mechanism]]
+=== Why It Breaks, and Recovery If You Already Enabled It
+
+`dashboard-operator` creates the `maas-consumer-portal` HTTPRoute *with* `spec.hostnames` set to the dashboard hostname, while the other four routes on the same Gateway have no hostname at all. In Gateway API a hostname-less route attaches to the listener wildcard, and a route with a hostname gets its own exact-match virtual host. Envoy picks the most specific virtual host for the `Host` header and then only looks at the routes inside it, so every request to the dashboard hostname lands in a virtual host that contains only the portal paths.
+
+If you enabled the portal before pinning, this is what you see:
+
+[source]
+----
+/                        -> 404
+/oauth2                  -> 404
+/mlflow                  -> 404
+/catalog/                -> 404
+/maas-consumer-portal    -> 302
+----
+
+IMPORTANT: Every status stays green while this is broken. DSC `Ready=True`, `MaaSConsumerPortalAvailable=True`, `DashboardReady=True`, both Gateways `Programmed=True`, and the `rhods-dashboard` HTTPRoute `Accepted=True`. Nothing in any condition points at routing, so this is only visible from an HTTP request.
+
+To recover, run <<portal-prepin,Step 8a>> now: the same `apply_host` calls fix a cluster that is already 404ing. Then `check_paths` should show all five paths at `302`.
+
+NOTE: Removing the hostname from the portal route instead does not work. `dashboard-operator` owns `spec.hostnames` there and writes it straight back. On the other four routes it does not own that field, so a value written by a different field manager is kept.
+
+WARNING: The pin lives only on the operator-owned HTTPRoutes, so it is lost whenever those routes are recreated: a dashboard restart or an {rhoai-short} upgrade. Re-apply <<portal-prepin,Step 8a>> and re-run `check_paths` after any of those. Toggling the portal off and on does *not* clear it - the sibling pins survived a portal removal and re-enable on a live cluster.
+
+[[verification]]
+== Step 9: Verification Checklist
+
+[cols="2,3", options="header"]
+|===
+| Check | Command
+
+| Operator is on the EA build
+| `oc get csv -n redhat-ods-operator \| grep rhods-operator` +
+Expected: `rhods-operator.3.6.0-ea.2 ... Succeeded`
+
+| Subscription really moved
+| `oc get sub rhods-operator -n redhat-ods-operator -o jsonpath='{.status.installedCSV}'` +
+Expected: `rhods-operator.3.6.0-ea.2` (not just `state=AtLatestKnown`)
+
+| DSC is Ready
+| `oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'` +
+Expected: `True`
+
+| MaaS is Ready
+| `oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="ModelsAsAServiceReady")].status}'` +
+Expected: `True`
+
+| maas-api still running
+| `oc get deploy maas-api -n redhat-ai-gateway-infra` +
+Expected: `1/1`
+
+| MaaS field untouched
+| `oc get dsc default-dsc -o jsonpath='{.spec.components.aigateway.modelsAsAService.managementState}'` +
+Expected: `Managed`
+
+| No stale 3.5 pipelines CR
+| `oc get datasciencepipelines.components.platform.opendatahub.io` +
+Expected: `No resources found`
+
+| TrustyAI eval is boolean
+| `oc get trustyais.components.platform.opendatahub.io default-trustyai -o jsonpath='{.spec.eval}'` +
+Expected: `{"lmeval":{"permitCodeExecution":false,"permitOnline":false}}`
+
+| OGX instances healthy
+| `oc get ogxserver -A` +
+Expected: `PHASE=Ready` for all
+
+| Dashboard still serves all paths
+| Only if you enabled the portal in <<portal-404,Step 8>>: re-run the five-path check +
+Expected: `302` on `/`, `/oauth2`, `/mlflow`, `/catalog/` and `/maas-consumer-portal` (a `404` on the first four means the host-pin workaround is missing or was reverted)
+
+| End to end
+| `./manifests/06-verification/verify.sh` +
+Expected: `Passed: 15  Failed: 0`
+|===
+
+[[verify-schema]]
+=== Confirm the Schema Changes on Your Own Cluster
+
+Re-capture the DSC component schema and diff it against the snapshot from <<backup,Step 1>>:
+
+[source,bash]
+----
+oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
+  jq -r '.spec.versions[] | select(.name=="v2") |
+    .schema.openAPIV3Schema.properties.spec.properties.components.properties |
+    to_entries[] | "\(.key): \(.value.properties // {} | keys | join(","))"' \
+  > dsc-schema-after.txt
+
+diff dsc-schema-before.txt dsc-schema-after.txt
+----
+
+On 3.5.2 -> 3.6.0-ea.2 this should show two changed keys, matching the <<what-changes,What Changes>> table (line numbers will vary):
+
+[source]
+----
+3c3
+< dashboard: managementState
+---
+> dashboard: maasConsumerPortal,managementState
+17c17
+< workbenches: managementState,workbenchNamespace
+---
+> workbenches: managementState,workbenchNamespace,workbenchesV2
+----
+
+If `aigateway` shows up in that diff, stop: the {maas} configuration surface changed in your build and the rest of this page may not apply.
+
+NOTE: This jq lists one nesting level only - component names and their immediate children - so it catches `aigateway.modelsAsAService` appearing or disappearing but not a change *inside* it. To check that surface properly, diff the subtree: `oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o jsonpath='{.spec.versions[?(@.name=="v2")].schema.openAPIV3Schema.properties.spec.properties.components.properties.aigateway}' | python3 -m json.tool`.
+
+== Known Issues in 3.6 EA2
+
+[cols="2,1,2", options="header"]
+|===
+| Issue | Blocks | Workaround
+
+| `beta` channel has no upgrade edge from 3.5.x; channel change is a silent no-op reported as `AtLatestKnown`
+| The whole upgrade
+| Reinstall the operator (<<channel-noop,Step 2>> and Step 3)
+
+| DSC declares `trustyai.eval.lmeval.permit*` as string, component CRD declares boolean
+| Entire DSC `Ready`
+| Remove `eval` from the DSC *and* the component CR (<<trustyai-schema,Step 4>>)
+
+| LMEval online access and code execution cannot be enabled at all: the DSC path breaks the DSC, and a direct component CR patch is reverted by the operator in about 10 seconds
+| LMEval jobs needing network or code execution
+| None. Stay on 3.5 for that workload (<<trustyai-schema,Step 4>>)
+
+| 3.5 `DataSciencePipelines` CR keeps ownership of the DSPO ServiceMonitor
+| `AIPipelines` module
+| Delete the stale CR (<<stale-crs,Step 5>>)
+
+| TrustyAI Deployment `spec.selector` changed and is immutable
+| `TrustyAIReady`
+| Delete the Deployment (<<immutable,Step 6>>)
+
+| OGX playground RoleBinding `roleRef` changed `anyuid` -> `nonroot-v2` and is immutable
+| Every pre-existing OGXServer
+| Delete the RoleBinding, restart the OGX operator (<<immutable,Step 6>>)
+
+| Module conditions do not re-aggregate after the underlying fix
+| DSC `Ready` on stale data
+| Restart `rhods-operator`, or toggle the module `Removed` -> `Managed` (<<stale-conditions,Step 7>>)
+
+| `ModelRegistryReady` reports `no matches for kind "AIHub"` right after install
+| Nothing, it is transient
+| Wait, it self-resolves
+
+| Enabling `dashboard.maasConsumerPortal` returns HTTP 404 for the whole Dashboard including `/oauth2`, while every status stays green (link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^], Critical)
+| The entire {rhoai-short} Dashboard, no way to log in
+| Host-pin every hostname-less HTTPRoute on the Gateway (<<portal-prepin,Step 8a>>), or leave the portal `Removed`
+|===
+
+== References
+
+* xref:12-platform-upgrade.adoc[Platform Upgrade (3.4 -> 3.5)]
+* xref:10-post-upgrade-troubleshooting.adoc[Post-Upgrade Troubleshooting (3.4 -> 3.5)]
+* xref:06-verification.adoc[Phase 6: MaaS Verification]
+* link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[RHOAI 3.5 MaaS Official Docs]
