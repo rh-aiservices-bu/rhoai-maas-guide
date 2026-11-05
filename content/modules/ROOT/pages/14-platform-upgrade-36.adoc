@@ -80,11 +80,16 @@ oc get dsci -o yaml > dsci-backup.yaml
 oc get sub rhods-operator -n redhat-ods-operator -o yaml > sub-backup.yaml
 oc get odhdashboardconfig -n redhat-ods-applications -o yaml > dashboard-backup.yaml
 
-# MaaS custom resources
-oc get maasmodelrefs,maassubscriptions,maastenantconfigs,maasauthpolicies,configs.maas.opendatahub.io,aitenants \
-  -A -o yaml > maas-crs-backup.yaml
-oc get externalproviders.inference.opendatahub.io -A -o yaml > externalproviders-backup.yaml
+# MaaS custom resources, one kind per call
+for k in maasmodelrefs maassubscriptions maastenantconfigs maasauthpolicies \
+         configs.maas.opendatahub.io aitenants \
+         externalproviders.inference.opendatahub.io; do
+  oc get "$k" -A -o yaml > "backup-${k}.yaml" 2>/dev/null \
+    || { echo "skipped ${k} (not present)"; rm -f "backup-${k}.yaml"; }
+done
 ----
+
+IMPORTANT: Back the kinds up one at a time, not as a single comma-separated `oc get`. A combined call validates every type up front and aborts with `error: the server doesn't have a resource type "x"` if any one is missing, which happens on partial installs and on 3.5.0/3.5.1. The shell has already truncated the output file by then, so you are left with a 0-byte backup and no warning, one step before Step 4 deletes the operator.
 
 Record the DSC component schema so you can diff it afterwards:
 
@@ -102,19 +107,33 @@ oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
 
 If the operator Subscription and the DSC are managed by OpenShift GitOps with `selfHeal: true`, Argo CD reverts your changes before OLM ever sees them. On the RHDP `rhai-features-workshop` environment the Subscription is owned by `admin-openshift-ai-operator` and the DSC by `admin-openshift-ai`, both with `selfHeal: true`.
 
-Check which applications own them:
+Find which Applications own them. Argo CD records ownership either as the `argocd.argoproj.io/tracking-id` annotation or as the `app.kubernetes.io/instance` label, depending on `application.resourceTrackingMethod`, so check both:
 
 [source,bash]
 ----
-oc get sub rhods-operator -n redhat-ods-operator \
-  -o jsonpath='{.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}'
-oc get dsc default-dsc \
-  -o jsonpath='{.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}'
+for res in "sub/rhods-operator -n redhat-ods-operator" "dsc/default-dsc"; do
+  echo "== ${res}"
+  oc get ${res} -o jsonpath='  tracking-id: {.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}  instance:    {.metadata.labels.app\.kubernetes\.io/instance}{"\n"}'
+done
+
+# Which method is this Argo CD using? Empty means the default, 'label'.
+oc get cm argocd-cm -n openshift-gitops \
+  -o jsonpath='{.data.application\.resourceTrackingMethod}{"\n"}'
 ----
+
+IMPORTANT: Both lines can come back empty and still exit 0, because `oc get -o jsonpath` is silent on a missing key. Empty output does not prove the resource is unmanaged. If both are blank, list the Applications and find the owner directly rather than assuming you can skip this step:
+
+[source,bash]
+----
+oc get applications.argoproj.io -A \
+  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,AUTO:.spec.syncPolicy.automated'
+----
+
+NOTE: A tracking-id is not an Application name. It looks like `admin-openshift-ai-operator:operators.coreos.com/Subscription:redhat-ods-operator/rhods-operator` - the Application name is only the part before the first colon. The `app.kubernetes.io/instance` label does hold the bare name.
 
 WARNING: Without this step the channel patch is reverted in seconds. On a live cluster a patch applied at `12:05:30` was undone by an automated sync that started at `12:05:31`. The Subscription showed `channel: stable-3.5` again on the next read, with nothing in the Subscription status to explain it.
 
-Set the two variables below to the Application names your tracking-id output reported. The defaults are the RHDP workshop names and will not match every cluster: if they are wrong, the patch silently targets nothing and the real owners keep reverting your changes.
+Set the two variables below to the bare Application names from the check above. The defaults are the RHDP workshop names and will not match every cluster. A wrong name fails loudly with `Error from server (NotFound): applications.argoproj.io "x" not found` - treat that as the signal to go back and get the real name, not as a transient error.
 
 Record the current policy first so you can put it back, then disable automated sync:
 
@@ -122,18 +141,22 @@ Record the current policy first so you can put it back, then disable automated s
 ----
 SUB_APP=admin-openshift-ai-operator   # owner of the Subscription
 DSC_APP=admin-openshift-ai            # owner of the DataScienceCluster
+ARGO_NS=openshift-gitops              # namespace holding the Applications
 
 # Save the current syncPolicy for each application
 for app in "$SUB_APP" "$DSC_APP"; do
-  oc get application.argoproj.io "$app" -n openshift-gitops \
-    -o jsonpath='{.spec.syncPolicy}' > "syncpolicy-${app}.json"
+  oc get application.argoproj.io "$app" -n "$ARGO_NS" \
+    -o jsonpath='{.spec.syncPolicy}' > "syncpolicy-${app}.json" || continue
+  echo "saved syncpolicy-${app}.json: $(cat "syncpolicy-${app}.json")"
 done
 
 for app in "$SUB_APP" "$DSC_APP"; do
-  oc patch application.argoproj.io "$app" -n openshift-gitops --type=merge \
+  oc patch application.argoproj.io "$app" -n "$ARGO_NS" --type=merge \
     -p '{"spec":{"syncPolicy":{"automated":null}}}'
 done
 ----
+
+TIP: Keep these three variables in the shell you use for the whole upgrade, or write them down. The re-enable step at the end needs them and the saved files.
 
 NOTE: The cleaner alternative is to change the channel in Git (`automation/gitops/deployments/admin/openshift-ai-operator/values.yaml` pins `channel: stable-3.5`) and let Argo CD roll it out. Pausing self-heal is the right move only when you are testing an EA build you do not want committed.
 
@@ -188,16 +211,24 @@ IMPORTANT: `AtLatestKnown` on a channel that does not contain your installed CSV
 
 Deleting the Subscription and CSV removes the operator Deployment. It does *not* remove CRDs, the DSC, the DSCInitialization, or any {maas} custom resource, so your configuration and models survive.
 
-Read the installed CSV name rather than assuming `3.5.2`, so this works from any 3.5.x patch level:
+Read the installed CSV name rather than assuming `3.5.2`, so this works from any 3.5.x patch level. Capture it *before* deleting the Subscription, and stop if it comes back empty:
 
 [source,bash]
 ----
-OLD_CSV=$(oc get sub rhods-operator -n redhat-ods-operator -o jsonpath='{.status.installedCSV}')
-echo "removing ${OLD_CSV}"
+OLD_CSV=$(oc get sub rhods-operator -n redhat-ods-operator \
+  -o jsonpath='{.status.installedCSV}')
 
-oc delete sub rhods-operator -n redhat-ods-operator
-oc delete csv "${OLD_CSV}" -n redhat-ods-operator
+if [ -z "$OLD_CSV" ]; then
+  echo "installedCSV is empty - Subscription may be mid-resolution or re-created by Argo."
+  echo "Fix that first; deleting now would orphan the old CSV."
+else
+  echo "removing ${OLD_CSV}"
+  oc delete sub rhods-operator -n redhat-ods-operator
+  oc delete csv "${OLD_CSV}" -n redhat-ods-operator --ignore-not-found
+fi
 ----
+
+WARNING: If the old CSV survives this step, the new Subscription fails resolution with a `constraints not satisfiable` message that points nowhere near the real cause, because another version of the operator still owns the namespace. Confirm with `oc get csv -n redhat-ods-operator | grep rhods` before moving on.
 
 Confirm the configuration is still there before continuing:
 
@@ -208,11 +239,24 @@ oc get configs.maas.opendatahub.io default
 oc get maasmodelref -A
 ----
 
-Recreate the Subscription on `beta`, pinned to the EA build:
+Recreate the Subscription on `beta`. Carry `source`, `sourceNamespace` and `spec.config` over from the `sub-backup.yaml` you took in Step 1 rather than copying the values below blindly:
 
 [source,bash]
 ----
-cat <<'EOF' | oc apply -f -
+# What did the original Subscription actually use?
+grep -E 'source:|sourceNamespace:' sub-backup.yaml
+oc get -f sub-backup.yaml -o jsonpath='{.spec.config}{"\n"}' 2>/dev/null \
+  || echo "(no spec.config)"
+----
+
+WARNING: `redhat-operators` is not universal. On a disconnected or mirrored cluster the CatalogSource has a different name (see xref:00-disconnected.adoc[Phase 0: Disconnected Setup]), and a Subscription pointing at a CatalogSource that does not exist never resolves: no InstallPlan, no CSV, and you already deleted the old operator. Any `spec.config` on the original (proxy env, `nodeSelector`, `tolerations`) must be carried over too, or the new operator pod cannot reach the registry or lands on the wrong nodes.
+
+[source,bash]
+----
+SOURCE_NS=openshift-marketplace
+SOURCE=redhat-operators          # replace with your CatalogSource name
+
+cat <<EOF | oc apply -f -
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -221,22 +265,40 @@ metadata:
 spec:
   channel: beta
   name: rhods-operator
-  source: redhat-operators
-  sourceNamespace: openshift-marketplace
+  source: ${SOURCE}
+  sourceNamespace: ${SOURCE_NS}
   installPlanApproval: Automatic
   startingCSV: rhods-operator.3.6.0-ea.2
+  # Re-add spec.config here if the backup had one
 EOF
 ----
 
-IMPORTANT: `startingCSV` only chooses which bundle the *initial* install lands on. It does not pin the version: with `installPlanApproval: Automatic`, OLM still follows the channel head afterwards, so a later EA drop into `beta` is installed automatically. If you need to stay on exactly `3.6.0-ea.2`, set `installPlanApproval: Manual` instead and approve InstallPlans yourself.
-
-The existing OperatorGroup in `redhat-ods-operator` is reused. Wait for the CSV:
+IMPORTANT: `startingCSV` only chooses which bundle the *initial* install lands on. It does not pin the version: with `installPlanApproval: Automatic`, OLM still follows the channel head afterwards, so a later EA drop into `beta` is installed automatically. To stay on exactly `3.6.0-ea.2`, set `installPlanApproval: Manual` - but then the *first* InstallPlan also needs approving, or no CSV is ever created and you are left with no operator reconciling the DSC:
 
 [source,bash]
 ----
-oc wait csv rhods-operator.3.6.0-ea.2 -n redhat-ods-operator \
-  --for=jsonpath='{.status.phase}'=Succeeded --timeout=600s
+# Only if you chose installPlanApproval: Manual
+IP=$(oc get installplan -n redhat-ods-operator \
+  -o jsonpath='{.items[?(@.status.phase=="RequiresApproval")].metadata.name}')
+oc patch installplan "$IP" -n redhat-ods-operator --type=merge \
+  -p '{"spec":{"approved":true}}'
 ----
+
+The existing OperatorGroup in `redhat-ods-operator` is reused. Now wait for the CSV to appear and reach `Succeeded`:
+
+[source,bash]
+----
+for i in $(seq 1 60); do
+  PHASE=$(oc get csv -n redhat-ods-operator \
+    -l operators.coreos.com/rhods-operator.redhat-ods-operator="" \
+    -o jsonpath='{.items[*].status.phase}' 2>/dev/null)
+  echo "attempt ${i}: phase='${PHASE}'"
+  [ "$PHASE" = "Succeeded" ] && break
+  sleep 10
+done
+----
+
+IMPORTANT: Do not use `oc wait csv rhods-operator.3.6.0-ea.2 ...` here. OLM needs 30 to 60 seconds to resolve and create the CSV, and `oc wait` on a named resource that does not exist yet fails immediately with `Error from server (NotFound)` instead of waiting. The label-selector form fails too, with `error: no matching resources found`. Both were confirmed on a live cluster, so poll instead. Polling also survives OLM landing a later EA drop than the one you named.
 
 NOTE: Immediately after install, `ModelRegistryReady` can fail with `no matches for kind "AIHub" in version "components.platform.opendatahub.io/v1alpha1"`. This is a start-up ordering race: the new `aihubs` CRD is not registered before the modelregistry module first reconciles. It clears on its own, so do not act on it.
 
@@ -275,21 +337,23 @@ Ready  False  Error  failure deploying resource /default-trustyai: apply failed
 
 This blocks `ProvisioningSucceeded` and `Ready` for the entire DSC, not just TrustyAI.
 
-Remove the `eval` block from the DSC:
+Remove the `eval` block from the DSC. Use a merge patch with `null`, not a JSON Patch `remove`:
 
 [source,bash]
 ----
-oc patch dsc default-dsc --type=json \
-  -p '[{"op":"remove","path":"/spec/components/trustyai/eval"}]'
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"trustyai":{"eval":null}}}}'
 ----
 
 That alone is not enough. The component CR created by 3.5 still holds the string values, and the operator keeps failing to apply over them. Strip it there too:
 
 [source,bash]
 ----
-oc patch trustyais.components.platform.opendatahub.io default-trustyai --type=json \
-  -p '[{"op":"remove","path":"/spec/eval"}]'
+oc patch trustyais.components.platform.opendatahub.io default-trustyai --type=merge \
+  -p '{"spec":{"eval":null}}'
 ----
+
+NOTE: A JSON Patch (`--type=json`) `remove` on these paths fails with `The request is invalid` whenever the block is already absent, which is a normal state here. The merge-patch form is idempotent: running it twice just reports `patched (no change)`. Both behaviours were confirmed on a live cluster.
 
 The operator then repopulates the CR with correct boolean defaults. Confirm:
 
@@ -347,8 +411,10 @@ The ServiceMonitor is garbage-collected with its old owner and the `AIPipelines`
 [source,bash]
 ----
 oc get aipipelines.components.platform.opendatahub.io \
-  -o jsonpath='{range .items[0].status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}'
+  -o jsonpath='{range .items[*].status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}'
 ----
+
+NOTE: Use `.items[*]`, not `.items[0]`. Right after the delete the `AIPipelines` controller may not have created `default-aipipelines` yet, and an out-of-bounds index makes `oc get` exit 1 with `array index out of bounds` plus a dump of the whole template. `.items[*]` just prints nothing.
 
 [[immutable]]
 == Step 7: Fix Immutable Fields on 3.5-Era Resources
@@ -445,21 +511,31 @@ Record the state you started from, so the second patch restores it rather than f
 ----
 OGX_STATE=$(oc get dsc default-dsc \
   -o jsonpath='{.spec.components.ogx.managementState}')
-echo "restoring to ${OGX_STATE} afterwards"
+[ -n "$OGX_STATE" ] || OGX_STATE=Managed
+echo "will restore ogx to ${OGX_STATE}"
 
 oc patch dsc default-dsc --type=merge \
   -p '{"spec":{"components":{"ogx":{"managementState":"Removed"}}}}'
 
-# wait for DSC Ready=True (about 20s), then put it back
+# Block until the operator has actually observed Removed
+oc wait dsc/default-dsc --for=condition=Ready --timeout=300s
+
 oc patch dsc default-dsc --type=merge \
   -p "{\"spec\":{\"components\":{\"ogx\":{\"managementState\":\"${OGX_STATE}\"}}}}"
+
+oc wait dsc/default-dsc --for=condition=Ready --timeout=300s
 ----
+
+IMPORTANT: The `oc wait` between the two patches is what makes this work. Without it both patches land in the same second, the operator never observes `ogx: Removed`, the stale condition is never re-aggregated, and the DSC stays `Ready=False` with no error anywhere. The `OGX_STATE` fallback matters too: a DSC that relies on CRD defaulting returns an empty string, and patching `managementState: ""` is rejected by the enum, which would leave OGX `Removed` for good.
 
 After the toggle the DSC reached `Ready=True` with `OGXReady=True` and all OGXServer instances still `Ready`.
 
 NOTE: If you do not use the AI Playground, leaving `ogx` at `Removed` is a valid shortcut: it was verified to bring the DSC to `Ready=True` on its own, and {maas} does not depend on OGX.
 
+[[portal-404]]
 == Step 9: Enable the MaaS Consumer Portal (new in 3.6)
+
+WARNING: Enabling this submodule on 3.6.0-ea.2 takes down the entire {rhoai} Dashboard with HTTP 404, including `/oauth2`, so you cannot even log in. See link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^] (Critical). The workaround below is required, not optional. A default install is unaffected because the field defaults to `Removed`. If you do not need the portal, skip this step entirely.
 
 3.6 adds a {maas} Consumer Portal as a dashboard submodule. It defaults to `Removed`, so it is opt-in. From the CRD description:
 
@@ -486,6 +562,76 @@ oc get deploy maas-consumer-portal -n redhat-ods-applications
 ----
 
 The portal deploys as its own `maas-consumer-portal` Deployment and `maas-consumer-portal` Service (port 8443) in `redhat-ods-applications`, alongside the existing `maas-ui`.
+
+=== The Dashboard is now 404 (RHOAIENG-101883)
+
+Check it before you go any further:
+
+[source,bash]
+----
+H=$(oc get dashboard default-dashboard -o jsonpath='{.status.url}' | sed -E 's#https?://##; s#/$##')
+for p in / /oauth2 /mlflow /catalog/ /maas-consumer-portal; do
+  printf '%-24s -> %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' "https://${H}${p}")"
+done
+----
+
+Reproduced on a live 3.6.0-ea.2 cluster the moment the portal came up:
+
+[source]
+----
+/                        -> 404
+/oauth2                  -> 404
+/mlflow                  -> 404
+/catalog/                -> 404
+/maas-consumer-portal    -> 302
+----
+
+`dashboard-operator` creates the `maas-consumer-portal` HTTPRoute *with* `spec.hostnames` set to the dashboard hostname, while the other four routes on the same Gateway have no hostname at all. In Gateway API a hostname-less route attaches to the listener wildcard, and a route with a hostname gets its own exact-match virtual host. Envoy picks the most specific virtual host for the `Host` header and then only looks at the routes inside it, so every request to the dashboard hostname lands in a virtual host that contains only the portal paths.
+
+IMPORTANT: Every status stays green while this is broken. DSC `Ready=True`, `MaaSConsumerPortalAvailable=True`, `DashboardReady=True`, both Gateways `Programmed=True`, and the `rhods-dashboard` HTTPRoute `Accepted=True`. Nothing in any condition points at routing, so this is only visible from an HTTP request.
+
+=== Workaround
+
+Give the four sibling routes the same hostname, so all five land in the same virtual host and normal longest-prefix matching works again.
+
+NOTE: Removing the hostname from the portal route does not work. `dashboard-operator` owns `spec.hostnames` there and writes it straight back. On the other four routes it does not own that field, so a value written by a different field manager is kept.
+
+[source,bash]
+----
+H=$(oc get dashboard default-dashboard -o jsonpath='{.status.url}' | sed -E 's#https?://##; s#/$##')
+echo "dashboard host: $H"
+
+apply_host() {
+  cat <<EOF | oc apply --server-side --field-manager=maas-portal-coexist -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: $1
+  namespace: $2
+spec:
+  hostnames:
+    - $H
+EOF
+}
+
+apply_host rhods-dashboard      redhat-ods-applications
+apply_host model-catalog        redhat-ods-applications
+apply_host mlflow               redhat-ods-applications
+apply_host oauth-callback-route openshift-ingress
+----
+
+TIP: Use the `apply_host` function above rather than a `for` loop over `"name namespace"` strings. zsh does not word-split unquoted expansions, so the loop form sends `name namespace` as a single resource name and every apply fails RFC 1123 validation. The function form behaves the same in bash and zsh.
+
+Re-run the path check. All five should now answer `302`:
+
+[source,bash]
+----
+for p in / /oauth2 /mlflow /catalog/ /maas-consumer-portal; do
+  printf '%-24s -> %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' "https://${H}${p}")"
+done
+----
+
+WARNING: This patch lives only on the operator-owned HTTPRoutes, so it is lost whenever those routes are recreated: toggling the portal off and on, a dashboard restart, or an {rhoai-short} upgrade. Re-apply it and re-test all five paths after any of those. It also makes the Gateway serve only the dashboard hostname.
 
 == Step 10: Verification Checklist
 
@@ -529,6 +675,10 @@ Expected: `{"lmeval":{"permitCodeExecution":false,"permitOnline":false}}`
 | `oc get ogxserver -A` +
 Expected: `PHASE=Ready` for all
 
+| Dashboard still serves all paths
+| Only if you enabled the portal in <<portal-404,Step 9>>: re-run the five-path check +
+Expected: `302` on `/`, `/oauth2`, `/mlflow`, `/catalog/` and `/maas-consumer-portal` (a `404` on the first four means the host-pin workaround is missing or was reverted)
+
 | End to end
 | `./manifests/06-verification/verify.sh` +
 Expected: `Passed: 15  Failed: 0`
@@ -538,15 +688,26 @@ Expected: `Passed: 15  Failed: 0`
 
 WARNING: Do not blindly re-enable automated sync. Git still pins `channel: stable-3.5` and the 3.5 DSC layout, so a sync on the Subscription owner tries to drag the operator back to 3.5, and a sync on the DSC owner re-adds `trustyai.eval` (breaking the DSC again) and drops `dashboard.maasConsumerPortal`. Either commit the 3.6 values to Git first, or leave automated sync off for the lifetime of the EA test.
 
-When you do want it back, restore the policy you saved in <<gitops,Step 2>> rather than guessing:
+When you do want it back, restore the policy you saved in <<gitops,Step 2>> rather than guessing. Re-declare the variables, since this is usually a different shell and possibly a different day, and `cd` to wherever you saved the files:
 
 [source,bash]
 ----
+SUB_APP=admin-openshift-ai-operator   # same values as Step 2
+DSC_APP=admin-openshift-ai
+ARGO_NS=openshift-gitops
+
 for app in "$SUB_APP" "$DSC_APP"; do
-  oc patch application.argoproj.io "$app" -n openshift-gitops --type=merge \
-    -p "{\"spec\":{\"syncPolicy\":$(cat "syncpolicy-${app}.json")}}"
+  f="syncpolicy-${app}.json"
+  if [ ! -s "$f" ]; then
+    echo "no saved policy in ${f} - skipping ${app}, set its syncPolicy by hand"
+    continue
+  fi
+  oc patch application.argoproj.io "$app" -n "$ARGO_NS" --type=merge \
+    -p "{\"spec\":{\"syncPolicy\":$(cat "$f")}}"
 done
 ----
+
+NOTE: The `-s` check is not cosmetic. If an Application genuinely had no `spec.syncPolicy`, the saved file is empty and the patch body becomes `{"spec":{"syncPolicy":}}`, which is malformed JSON. `oc patch` rejects it and automated sync stays off while you believe it was restored.
 
 == Known Issues in 3.6 EA2
 
@@ -585,6 +746,10 @@ done
 | `ModelRegistryReady` reports `no matches for kind "AIHub"` right after install
 | Nothing, it is transient
 | Wait, it self-resolves
+
+| Enabling `dashboard.maasConsumerPortal` returns HTTP 404 for the whole Dashboard including `/oauth2`, while every status stays green (link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^], Critical)
+| The entire {rhoai-short} Dashboard, no way to log in
+| Host-pin the four sibling HTTPRoutes (<<portal-404,Step 9>>), or leave the portal `Removed`
 |===
 
 == References
