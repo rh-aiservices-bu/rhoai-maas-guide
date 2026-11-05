@@ -31,6 +31,7 @@ oc get csv -n redhat-ods-operator | grep rhods-operator
 oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}{"\n"}'
 ----
 
+[[what-changes]]
 == What Changes
 
 [cols="1,2", options="header"]
@@ -71,14 +72,24 @@ oc get dsc default-dsc -o jsonpath='{.status.conditions[?(@.type=="Ready")].stat
 | KServe `v0.19.0` -> `v0.21.0`, vLLM `v0.24.0` -> `v0.28.0`, llm-d-router `v0.10.0` -> `v0.11.0`. New: `llm-d-autoscaling v0.9.0`, `vLLM-Omni v0.26.0`.
 |===
 
+[[backup]]
 == Step 1: Back Up Current State
 
 [source,bash]
 ----
-oc get dsc default-dsc -o yaml > dsc-backup.yaml
-oc get dsci -o yaml > dsci-backup.yaml
-oc get sub rhods-operator -n redhat-ods-operator -o yaml > sub-backup.yaml
-oc get odhdashboardconfig -n redhat-ods-applications -o yaml > dashboard-backup.yaml
+save() {  # save <outfile> <oc get args...>
+  out=$1; shift
+  oc get "$@" -o yaml > "$out" 2>/dev/null \
+    || { echo "skipped ${out} (not present)"; rm -f "$out"; }
+}
+
+save dsc-backup.yaml       dsc default-dsc
+save dsci-backup.yaml      dsci
+save sub-backup.yaml       sub rhods-operator -n redhat-ods-operator
+save dashboard-backup.yaml odhdashboardconfig -n redhat-ods-applications
+
+# HTTPRoutes, in case you need to undo the Step 8 host-pinning
+save httproutes-backup.yaml httproute -A
 
 # MaaS custom resources, one kind per call
 for k in maasmodelrefs maassubscriptions maastenantconfigs maasauthpolicies \
@@ -91,7 +102,7 @@ done
 
 IMPORTANT: Back the kinds up one at a time, not as a single comma-separated `oc get`. A combined call validates every type up front and aborts with `error: the server doesn't have a resource type "x"` if any one is missing, which happens on partial installs and on 3.5.0/3.5.1. The shell has already truncated the output file by then, so you are left with a 0-byte backup and no warning, one step before Step 3 deletes the operator.
 
-Record the DSC component schema so you can diff it afterwards:
+Record the DSC component schema. The <<verify-schema,verification step>> re-runs this against 3.6 and diffs it, which confirms the field changes in the <<what-changes,What Changes>> table on your own cluster:
 
 [source,bash]
 ----
@@ -99,7 +110,7 @@ oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
   jq -r '.spec.versions[] | select(.name=="v2") |
     .schema.openAPIV3Schema.properties.spec.properties.components.properties |
     to_entries[] | "\(.key): \(.value.properties // {} | keys | join(","))"' \
-  > dsc-schema-3.5.txt
+  > dsc-schema-before.txt
 ----
 
 [[channel-noop]]
@@ -185,11 +196,14 @@ Recreate the Subscription on `beta`. Carry `source`, `sourceNamespace` and `spec
 
 [source,bash]
 ----
-# What did the original Subscription actually use?
-grep -E 'source:|sourceNamespace:' sub-backup.yaml
-oc get -f sub-backup.yaml -o jsonpath='{.spec.config}{"\n"}' 2>/dev/null \
-  || echo "(no spec.config)"
+# What did the original Subscription actually use? Read the FILE, not the cluster.
+grep -E '^  (source|sourceNamespace|channel):' sub-backup.yaml
+
+# spec.config, if it had one
+sed -n '/^  config:/,/^  [a-z]/p' sub-backup.yaml | sed '$d'
 ----
+
+IMPORTANT: Read these from `sub-backup.yaml`, not with `oc get -f sub-backup.yaml`. The `-f` flag only uses the file to identify the resource and then queries the live cluster, where you just deleted the Subscription, so it reports nothing and you would silently drop `spec.config`.
 
 WARNING: `redhat-operators` is not universal. On a disconnected or mirrored cluster the CatalogSource has a different name (see xref:00-disconnected.adoc[Phase 0: Disconnected Setup]), and a Subscription pointing at a CatalogSource that does not exist never resolves: no InstallPlan, no CSV, and you already deleted the old operator. Any `spec.config` on the original (proxy env, `nodeSelector`, `tolerations`) must be carried over too, or the new operator pod cannot reach the registry or lands on the wrong nodes.
 
@@ -230,21 +244,31 @@ The existing OperatorGroup in `redhat-ods-operator` is reused. Now wait for the 
 
 [source,bash]
 ----
+INSTALLED=""
 for i in $(seq 1 60); do
   PHASE=$(oc get csv -n redhat-ods-operator \
-    -l operators.coreos.com/rhods-operator.redhat-ods-operator="" \
-    -o jsonpath='{.items[*].status.phase}' 2>/dev/null)
-  echo "attempt ${i}: phase='${PHASE}'"
-  [ "$PHASE" = "Succeeded" ] && break
+    -o jsonpath='{range .items[*]}{.spec.version}={.status.phase}{"\n"}{end}' 2>/dev/null \
+    | grep '^3\.6')
+  echo "attempt ${i}: ${PHASE:-<no 3.6 CSV yet>}"
+  case "$PHASE" in
+    *=Succeeded) INSTALLED=yes; break ;;
+  esac
   sleep 10
 done
+
+if [ -z "$INSTALLED" ]; then
+  echo "TIMED OUT - no 3.6 CSV reached Succeeded. Investigate before continuing:"
+  oc get csv,installplan,sub -n redhat-ods-operator
+fi
 ----
+
+IMPORTANT: Scope the check to the 3.6 version and fail loudly. A bare `{.items[*].status.phase}` joins every CSV phase with a space, so if the old CSV survived or OLM leaves a transient one you get `Replacing Succeeded`, which never equals `Succeeded`; the loop then spins for ten minutes and exits 0 anyway, and you walk into the next step believing the operator installed.
 
 IMPORTANT: Do not use `oc wait csv rhods-operator.3.6.0-ea.2 ...` here. OLM needs 30 to 60 seconds to resolve and create the CSV, and `oc wait` on a named resource that does not exist yet fails immediately with `Error from server (NotFound)` instead of waiting. The label-selector form fails too, with `error: no matching resources found`. Both were confirmed on a live cluster, so poll instead. Polling also survives OLM landing a later EA drop than the one you named.
 
 NOTE: Immediately after install, `ModelRegistryReady` can fail with `no matches for kind "AIHub" in version "components.platform.opendatahub.io/v1alpha1"`. This is a start-up ordering race: the new `aihubs` CRD is not registered before the modelregistry module first reconciles. It clears on its own, so do not act on it.
 
-At this point {maas} is already working again, but the DSC is not `Ready`. Steps 5 to 8 fix that.
+At this point {maas} is already working again, but the DSC is not `Ready`. Steps 4 to 7 fix that.
 
 [[trustyai-schema]]
 == Step 4: Fix the TrustyAI Schema Mismatch
@@ -397,12 +421,19 @@ Find and delete the affected RoleBindings. They are owned by the OGXServer, so t
 
 [source,bash]
 ----
-# List failing instances
+# List the instances and their state
 oc get ogxserver -A
 
-# Delete the stale RoleBinding in each namespace (name is <ogxserver-name>-rb)
-oc delete rolebinding <ogxserver-name>-rb -n <namespace>
+# Delete the stale RoleBinding for every instance (name is <ogxserver-name>-rb)
+oc get ogxserver -A \
+  -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do
+      [ -n "$ns" ] || continue
+      oc delete rolebinding "${name}-rb" -n "$ns" --ignore-not-found
+    done
 ----
+
+TIP: Drive this off the cluster rather than typing a namespace per instance. The test cluster had four OGXServers in four namespaces, and a typo in any one leaves that instance `DeploymentFailed` and the DSC `Ready=False` for a reason <<stale-conditions,Step 7>> cannot clear.
 
 The OGX operator does not re-reconcile on its own after the delete, so nudge it:
 
@@ -411,12 +442,19 @@ The OGX operator does not re-reconcile on its own after the delete, so nudge it:
 oc rollout restart deploy/ogx-k8s-operator-controller-manager -n redhat-ods-applications
 ----
 
-Confirm the RoleBinding came back with the new role and that the instances recovered:
+Confirm the RoleBindings came back with the new role and that the instances recovered:
 
 [source,bash]
 ----
-oc get rolebinding <ogxserver-name>-rb -n <namespace> -o jsonpath='{.roleRef.name}{"\n"}'
-# Expected: system:openshift:scc:nonroot-v2
+oc get ogxserver -A \
+  -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' \
+  | while read -r ns name; do
+      [ -n "$ns" ] || continue
+      printf '%s/%s roleRef=%s\n' "$ns" "$name" \
+        "$(oc get rolebinding "${name}-rb" -n "$ns" \
+             -o jsonpath='{.roleRef.name}' 2>/dev/null)"
+    done
+# Expected: roleRef=system:openshift:scc:nonroot-v2 for every instance
 
 oc get ogxserver -A
 # Expected: PHASE=Ready for every instance
@@ -451,24 +489,47 @@ Record the state you started from, so the second patch restores it rather than f
 
 [source,bash]
 ----
+# Wait until the operator has reconciled the CURRENT generation, not just
+# until Ready is True - a plain `oc wait --for=condition=Ready` returns
+# instantly on the Ready=True left over from before the patch.
+wait_dsc_ready() {
+  for i in $(seq 1 60); do
+    GEN=$(oc get dsc default-dsc -o jsonpath='{.metadata.generation}')
+    OBS=$(oc get dsc default-dsc -o jsonpath='{.status.observedGeneration}')
+    RDY=$(oc get dsc default-dsc \
+      -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
+    echo "  generation=${GEN} observed=${OBS} Ready=${RDY}"
+    if [ -n "$OBS" ] && [ "$GEN" = "$OBS" ] && [ "$RDY" = "True" ]; then
+      return 0
+    fi
+    sleep 10
+  done
+  echo "  DSC did not become Ready for generation ${GEN}"
+  return 1
+}
+
+# Was ogx set explicitly, or is it absent and relying on the CRD default?
 OGX_STATE=$(oc get dsc default-dsc \
   -o jsonpath='{.spec.components.ogx.managementState}')
-[ -n "$OGX_STATE" ] || OGX_STATE=Managed
-echo "will restore ogx to ${OGX_STATE}"
 
 oc patch dsc default-dsc --type=merge \
   -p '{"spec":{"components":{"ogx":{"managementState":"Removed"}}}}'
+wait_dsc_ready
 
-# Block until the operator has actually observed Removed
-oc wait dsc/default-dsc --for=condition=Ready --timeout=300s
-
-oc patch dsc default-dsc --type=merge \
-  -p "{\"spec\":{\"components\":{\"ogx\":{\"managementState\":\"${OGX_STATE}\"}}}}"
-
-oc wait dsc/default-dsc --for=condition=Ready --timeout=300s
+if [ -n "$OGX_STATE" ]; then
+  echo "restoring ogx to ${OGX_STATE}"
+  oc patch dsc default-dsc --type=merge \
+    -p "{\"spec\":{\"components\":{\"ogx\":{\"managementState\":\"${OGX_STATE}\"}}}}"
+  wait_dsc_ready
+else
+  echo "ogx was not set explicitly in the DSC - leaving it Removed."
+  echo "If you do want the AI Playground, set it to Managed deliberately."
+fi
 ----
 
-IMPORTANT: The `oc wait` between the two patches is what makes this work. Without it both patches land in the same second, the operator never observes `ogx: Removed`, the stale condition is never re-aggregated, and the DSC stays `Ready=False` with no error anywhere. The `OGX_STATE` fallback matters too: a DSC that relies on CRD defaulting returns an empty string, and patching `managementState: ""` is rejected by the enum, which would leave OGX `Removed` for good.
+IMPORTANT: The wait between the two patches is what makes this work. Without it both patches land in the same second, the operator never observes `ogx: Removed`, the stale condition is never re-aggregated, and the DSC stays `Ready=False` with no error anywhere. It has to be generation-aware: `oc wait --for=condition=Ready` has no `observedGeneration` check, so straight after a patch it returns on the previous `True` and verifies nothing.
+
+NOTE: If `spec.components.ogx` was absent, the restore is skipped on purpose. Writing `managementState: ""` is rejected by the enum, and defaulting it to `Managed` would switch on a component the cluster never asked for, pulling in the OGX playground Deployments and the `nonroot-v2` RoleBindings from <<immutable,Step 6>>.
 
 After the toggle the DSC reached `Ready=True` with `OGXReady=True` and all OGXServer instances still `Ready`.
 
@@ -507,15 +568,30 @@ The portal deploys as its own `maas-consumer-portal` Deployment and `maas-consum
 
 === The Dashboard is now 404 (RHOAIENG-101883)
 
-Check it before you go any further:
+Check it before you go any further. Define these two helpers once and reuse them for the rest of this step:
 
 [source,bash]
 ----
-H=$(oc get dashboard default-dashboard -o jsonpath='{.status.url}' | sed -E 's#https?://##; s#/$##')
-for p in / /oauth2 /mlflow /catalog/ /maas-consumer-portal; do
-  printf '%-24s -> %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' "https://${H}${p}")"
-done
+H=$(oc get dashboard default-dashboard \
+  -o jsonpath='{.status.url}' | sed -E 's#https?://##; s#/$##')
+
+if [ -z "$H" ]; then
+  echo "could not read the dashboard hostname - stop and check 'oc get dashboard'"
+else
+  echo "dashboard host: $H"
+fi
+
+check_paths() {
+  for p in / /oauth2 /mlflow /catalog/ /maas-consumer-portal; do
+    printf '  %-24s -> %s\n' "$p" \
+      "$(curl -sk -o /dev/null --max-time 10 -w '%{http_code}' "https://${H}${p}")"
+  done
+}
+
+check_paths
 ----
+
+NOTE: Guard the hostname and use `--max-time`. With an empty `$H` every request goes to `https:///...` and all five print `000`, which reads like an even worse outage and leads to applying the workaround with `hostnames: [null]`.
 
 Reproduced on a live 3.6.0-ea.2 cluster the moment the portal came up:
 
@@ -540,10 +616,14 @@ NOTE: Removing the hostname from the portal route does not work. `dashboard-oper
 
 [source,bash]
 ----
-H=$(oc get dashboard default-dashboard -o jsonpath='{.status.url}' | sed -E 's#https?://##; s#/$##')
-echo "dashboard host: $H"
-
 apply_host() {
+  # Only pin routes that already exist. --server-side would otherwise CREATE a
+  # hostname-only HTTPRoute with no parentRefs and no rules, which attaches to
+  # nothing and later collides with dashboard-operator's own Create.
+  if ! oc get httproute "$1" -n "$2" >/dev/null 2>&1; then
+    echo "  skipping $1 in $2 (route not present)"
+    return 0
+  fi
   cat <<EOF | oc apply --server-side --field-manager=maas-portal-coexist -f -
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -562,18 +642,27 @@ apply_host mlflow               redhat-ods-applications
 apply_host oauth-callback-route openshift-ingress
 ----
 
-TIP: Use the `apply_host` function above rather than a `for` loop over `"name namespace"` strings. zsh does not word-split unquoted expansions, so the loop form sends `name namespace` as a single resource name and every apply fails RFC 1123 validation. The function form behaves the same in bash and zsh.
+TIP: Use the `apply_host` function rather than a `for` loop over `"name namespace"` strings. zsh does not word-split unquoted expansions, so the loop form sends `name namespace` as a single resource name and every apply fails RFC 1123 validation. The function form behaves the same in bash and zsh.
 
-Re-run the path check. All five should now answer `302`:
+Re-run the check. All five should now answer `302`:
 
 [source,bash]
 ----
-for p in / /oauth2 /mlflow /catalog/ /maas-consumer-portal; do
-  printf '%-24s -> %s\n' "$p" "$(curl -sk -o /dev/null -w '%{http_code}' "https://${H}${p}")"
-done
+check_paths
 ----
 
-WARNING: This patch lives only on the operator-owned HTTPRoutes, so it is lost whenever those routes are recreated: toggling the portal off and on, a dashboard restart, or an {rhoai-short} upgrade. Re-apply it and re-test all five paths after any of those. It also makes the Gateway serve only the dashboard hostname.
+WARNING: This patch lives only on the operator-owned HTTPRoutes, so it is lost whenever those routes are recreated: toggling the portal off and on, a dashboard restart, or an {rhoai-short} upgrade. Re-apply it and re-run `check_paths` after any of those.
+
+WARNING: `oauth-callback-route` in `openshift-ingress` is shared. It serves the OAuth callback for *every* hostname attached to that Gateway, so pinning it to the dashboard hostname breaks login for any other host on the same Gateway - the same 404 symptom, moved somewhere `check_paths` cannot see it. List the other hostnames before you decide, and re-test each one afterwards:
+
+[source,bash]
+----
+# Every hostname served by this Gateway
+oc get httproute -A \
+  -o jsonpath='{range .items[?(@.spec.parentRefs[0].name=="data-science-gateway")]}{.metadata.namespace}/{.metadata.name}: {.spec.hostnames}{"\n"}{end}'
+----
+
+If that Gateway only ever serves the dashboard, as on a single-tenant install, this is safe. If it serves anything else, prefer leaving the portal `Removed` until the upstream fix lands.
 
 == Step 9: Verification Checklist
 
@@ -625,6 +714,34 @@ Expected: `302` on `/`, `/oauth2`, `/mlflow`, `/catalog/` and `/maas-consumer-po
 | `./manifests/06-verification/verify.sh` +
 Expected: `Passed: 15  Failed: 0`
 |===
+
+[[verify-schema]]
+=== Confirm the Schema Changes on Your Own Cluster
+
+Re-capture the DSC component schema and diff it against the snapshot from <<backup,Step 1>>:
+
+[source,bash]
+----
+oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
+  jq -r '.spec.versions[] | select(.name=="v2") |
+    .schema.openAPIV3Schema.properties.spec.properties.components.properties |
+    to_entries[] | "\(.key): \(.value.properties // {} | keys | join(","))"' \
+  > dsc-schema-after.txt
+
+diff dsc-schema-before.txt dsc-schema-after.txt
+----
+
+On 3.5.2 -> 3.6.0-ea.2 this should show exactly two changed lines, matching the <<what-changes,What Changes>> table:
+
+[source]
+----
+< dashboard: managementState
+> dashboard: maasConsumerPortal,managementState
+< workbenches: managementState,workbenchNamespace
+> workbenches: managementState,workbenchNamespace,workbenchesV2
+----
+
+If `aigateway` shows up in that diff, stop: the {maas} configuration surface changed in your build and the rest of this page may not apply.
 
 == Known Issues in 3.6 EA2
 
