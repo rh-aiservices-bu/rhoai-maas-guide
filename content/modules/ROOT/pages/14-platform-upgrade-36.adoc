@@ -114,11 +114,22 @@ oc get dsc default-dsc \
 
 WARNING: Without this step the channel patch is reverted in seconds. On a live cluster a patch applied at `12:05:30` was undone by an automated sync that started at `12:05:31`. The Subscription showed `channel: stable-3.5` again on the next read, with nothing in the Subscription status to explain it.
 
-Disable automated sync on both applications:
+Set the two variables below to the Application names your tracking-id output reported. The defaults are the RHDP workshop names and will not match every cluster: if they are wrong, the patch silently targets nothing and the real owners keep reverting your changes.
+
+Record the current policy first so you can put it back, then disable automated sync:
 
 [source,bash]
 ----
-for app in admin-openshift-ai-operator admin-openshift-ai; do
+SUB_APP=admin-openshift-ai-operator   # owner of the Subscription
+DSC_APP=admin-openshift-ai            # owner of the DataScienceCluster
+
+# Save the current syncPolicy for each application
+for app in "$SUB_APP" "$DSC_APP"; do
+  oc get application.argoproj.io "$app" -n openshift-gitops \
+    -o jsonpath='{.spec.syncPolicy}' > "syncpolicy-${app}.json"
+done
+
+for app in "$SUB_APP" "$DSC_APP"; do
   oc patch application.argoproj.io "$app" -n openshift-gitops --type=merge \
     -p '{"spec":{"syncPolicy":{"automated":null}}}'
 done
@@ -177,10 +188,15 @@ IMPORTANT: `AtLatestKnown` on a channel that does not contain your installed CSV
 
 Deleting the Subscription and CSV removes the operator Deployment. It does *not* remove CRDs, the DSC, the DSCInitialization, or any {maas} custom resource, so your configuration and models survive.
 
+Read the installed CSV name rather than assuming `3.5.2`, so this works from any 3.5.x patch level:
+
 [source,bash]
 ----
+OLD_CSV=$(oc get sub rhods-operator -n redhat-ods-operator -o jsonpath='{.status.installedCSV}')
+echo "removing ${OLD_CSV}"
+
 oc delete sub rhods-operator -n redhat-ods-operator
-oc delete csv rhods-operator.3.5.2 -n redhat-ods-operator
+oc delete csv "${OLD_CSV}" -n redhat-ods-operator
 ----
 
 Confirm the configuration is still there before continuing:
@@ -212,7 +228,7 @@ spec:
 EOF
 ----
 
-TIP: `startingCSV` is not strictly required while `beta` holds a single bundle, but pinning it makes the intent explicit and stops a later catalog refresh from moving you to a different EA drop.
+IMPORTANT: `startingCSV` only chooses which bundle the *initial* install lands on. It does not pin the version: with `installPlanApproval: Automatic`, OLM still follows the channel head afterwards, so a later EA drop into `beta` is installed automatically. If you need to stay on exactly `3.6.0-ea.2`, set `installPlanApproval: Manual` instead and approve InstallPlans yourself.
 
 The existing OperatorGroup in `redhat-ods-operator` is reused. Wait for the CSV:
 
@@ -284,6 +300,27 @@ oc get trustyais.components.platform.opendatahub.io default-trustyai -o jsonpath
 ----
 
 WARNING: Do not re-add `trustyai.eval` to the DSC on 3.6 EA2. Because the DSC field defaults to `"deny"`, setting the block at all reintroduces the string and breaks the DSC again. Leave it absent and let the component default to `false`.
+
+IMPORTANT: This loses any non-default LMEval permission you had on 3.5. Check what you were running before you remove the block:
+
+[source,bash]
+----
+# From the backup taken in Step 1
+grep -A3 lmeval dsc-backup.yaml
+----
+
+If either value was `allow`, the component now defaults to `false` and LMEval jobs lose online access and code execution.
+
+On 3.6.0-ea.2 there is no way to get them back. Setting the value in the DSC reintroduces the string and breaks the DSC, and patching the component CR directly does not survive: the operator reverted `permitOnline: true` back to `false` within 10 seconds on a live cluster, while the DSC stayed `Ready`.
+
+[source,bash]
+----
+# Does NOT work on 3.6.0-ea.2 - reverted by the operator within ~10s
+oc patch trustyais.components.platform.opendatahub.io default-trustyai --type=merge \
+  -p '{"spec":{"eval":{"lmeval":{"permitOnline":true}}}}'
+----
+
+If your evaluations depend on LMEval online access or code execution, this EA build cannot provide it. Plan to stay on 3.5 for that workload.
 
 [[stale-crs]]
 == Step 6: Delete Stale 3.5 Component CRs
@@ -400,15 +437,22 @@ OGXReady  True   AllDependentsHealthy
 Degraded  True   UnhealthyOGXServers: Unhealthy OGXServer instances: ns1/x, ns2/x, ns3/x, ns4/x
 ----
 
-Restarting the OGX operator, restarting `rhods-operator`, and annotating the OGXServer instances all failed to clear this. Toggling the module off and back on does work:
+Restarting the OGX operator, restarting `rhods-operator`, and annotating the OGXServer instances all failed to clear this. Toggling the module off and back on does work.
+
+Record the state you started from, so the second patch restores it rather than forcing `Managed` on a cluster that had OGX disabled:
 
 [source,bash]
 ----
+OGX_STATE=$(oc get dsc default-dsc \
+  -o jsonpath='{.spec.components.ogx.managementState}')
+echo "restoring to ${OGX_STATE} afterwards"
+
 oc patch dsc default-dsc --type=merge \
   -p '{"spec":{"components":{"ogx":{"managementState":"Removed"}}}}'
-# wait for DSC Ready=True (about 20s), then
+
+# wait for DSC Ready=True (about 20s), then put it back
 oc patch dsc default-dsc --type=merge \
-  -p '{"spec":{"components":{"ogx":{"managementState":"Managed"}}}}'
+  -p "{\"spec\":{\"components\":{\"ogx\":{\"managementState\":\"${OGX_STATE}\"}}}}"
 ----
 
 After the toggle the DSC reached `Ready=True` with `OGXReady=True` and all OGXServer instances still `Ready`.
@@ -490,7 +534,19 @@ Expected: `PHASE=Ready` for all
 Expected: `Passed: 15  Failed: 0`
 |===
 
-Re-enable GitOps self-heal once you are done, if you paused it in <<gitops,Step 2>>. Remember that Git still pins `stable-3.5`, so re-enabling automated sync on `admin-openshift-ai-operator` will try to move the Subscription channel back.
+=== Re-enabling GitOps
+
+WARNING: Do not blindly re-enable automated sync. Git still pins `channel: stable-3.5` and the 3.5 DSC layout, so a sync on the Subscription owner tries to drag the operator back to 3.5, and a sync on the DSC owner re-adds `trustyai.eval` (breaking the DSC again) and drops `dashboard.maasConsumerPortal`. Either commit the 3.6 values to Git first, or leave automated sync off for the lifetime of the EA test.
+
+When you do want it back, restore the policy you saved in <<gitops,Step 2>> rather than guessing:
+
+[source,bash]
+----
+for app in "$SUB_APP" "$DSC_APP"; do
+  oc patch application.argoproj.io "$app" -n openshift-gitops --type=merge \
+    -p "{\"spec\":{\"syncPolicy\":$(cat "syncpolicy-${app}.json")}}"
+done
+----
 
 == Known Issues in 3.6 EA2
 
@@ -505,6 +561,10 @@ Re-enable GitOps self-heal once you are done, if you paused it in <<gitops,Step 
 | DSC declares `trustyai.eval.lmeval.permit*` as string, component CRD declares boolean
 | Entire DSC `Ready`
 | Remove `eval` from the DSC *and* the component CR (<<trustyai-schema,Step 5>>)
+
+| LMEval online access and code execution cannot be enabled at all: the DSC path breaks the DSC, and a direct component CR patch is reverted by the operator in about 10 seconds
+| LMEval jobs needing network or code execution
+| None. Stay on 3.5 for that workload (<<trustyai-schema,Step 5>>)
 
 | 3.5 `DataSciencePipelines` CR keeps ownership of the DSPO ServiceMonitor
 | `AIPipelines` module
