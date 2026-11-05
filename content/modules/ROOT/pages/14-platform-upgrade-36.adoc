@@ -95,8 +95,7 @@ save httproutes-backup.yaml httproute -A
 for k in maasmodelrefs maassubscriptions maastenantconfigs maasauthpolicies \
          configs.maas.opendatahub.io aitenants \
          externalproviders.inference.opendatahub.io; do
-  oc get "$k" -A -o yaml > "backup-${k}.yaml" 2>/dev/null \
-    || { echo "skipped ${k} (not present)"; rm -f "backup-${k}.yaml"; }
+  save "backup-${k}.yaml" "$k" -A
 done
 ----
 
@@ -197,13 +196,16 @@ Recreate the Subscription on `beta`. Carry `source`, `sourceNamespace` and `spec
 [source,bash]
 ----
 # What did the original Subscription actually use? Read the FILE, not the cluster.
-grep -E '^  (source|sourceNamespace|channel):' sub-backup.yaml
+# Only source and sourceNamespace carry over - NOT channel, which is the old one.
+grep -E '^  (source|sourceNamespace):' sub-backup.yaml
 
 # spec.config, if it had one
 sed -n '/^  config:/,/^  [a-z]/p' sub-backup.yaml | sed '$d'
 ----
 
 IMPORTANT: Read these from `sub-backup.yaml`, not with `oc get -f sub-backup.yaml`. The `-f` flag only uses the file to identify the resource and then queries the live cluster, where you just deleted the Subscription, so it reports nothing and you would silently drop `spec.config`.
+
+WARNING: Do not carry `channel` over from the backup. The backup was taken in <<backup,Step 1>>, before anything changed, so it still says `stable-3.5`. Reusing it recreates the Subscription on the old channel and quietly reinstalls 3.5.2, and you would then work through the remaining steps against a 3.5 operator wondering why nothing matches.
 
 WARNING: `redhat-operators` is not universal. On a disconnected or mirrored cluster the CatalogSource has a different name (see xref:00-disconnected.adoc[Phase 0: Disconnected Setup]), and a Subscription pointing at a CatalogSource that does not exist never resolves: no InstallPlan, no CSV, and you already deleted the old operator. Any `spec.config` on the original (proxy env, `nodeSelector`, `tolerations`) must be carried over too, or the new operator pod cannot reach the registry or lands on the wrong nodes.
 
@@ -233,12 +235,29 @@ IMPORTANT: `startingCSV` only chooses which bundle the *initial* install lands o
 
 [source,bash]
 ----
-# Only if you chose installPlanApproval: Manual
-IP=$(oc get installplan -n redhat-ods-operator \
-  -o jsonpath='{.items[?(@.status.phase=="RequiresApproval")].metadata.name}')
-oc patch installplan "$IP" -n redhat-ods-operator --type=merge \
-  -p '{"spec":{"approved":true}}'
+# Only if you chose installPlanApproval: Manual.
+# OLM takes 30-60s to create the InstallPlan, so poll for it.
+IP=""
+for i in $(seq 1 20); do
+  IP=$(oc get installplan -n redhat-ods-operator \
+    -o jsonpath='{range .items[?(@.status.phase=="RequiresApproval")]}{.metadata.name}{"\n"}{end}' \
+    | head -1)
+  [ -n "$IP" ] && break
+  echo "attempt ${i}: no InstallPlan awaiting approval yet"
+  sleep 10
+done
+
+if [ -z "$IP" ]; then
+  echo "No InstallPlan appeared. Check the Subscription resolved at all:"
+  oc get sub rhods-operator -n redhat-ods-operator -o yaml | sed -n '/^status:/,$p'
+else
+  echo "approving ${IP}"
+  oc patch installplan "$IP" -n redhat-ods-operator --type=merge \
+    -p '{"spec":{"approved":true}}'
+fi
 ----
+
+NOTE: Poll and take only the first match. Run immediately after the `oc apply`, the plain jsonpath returns nothing because OLM has not created the InstallPlan yet, and `oc patch installplan ""` fails with `resource name may not be empty`; with two pending plans it returns both names and fails on the malformed argument. Either way no CSV is created and nothing reconciles the DSC.
 
 The existing OperatorGroup in `redhat-ods-operator` is reused. Now wait for the CSV to appear and reach `Succeeded`:
 
@@ -247,22 +266,21 @@ The existing OperatorGroup in `redhat-ods-operator` is reused. Now wait for the 
 INSTALLED=""
 for i in $(seq 1 60); do
   PHASE=$(oc get csv -n redhat-ods-operator \
-    -o jsonpath='{range .items[*]}{.spec.version}={.status.phase}{"\n"}{end}' 2>/dev/null \
-    | grep '^3\.6')
-  echo "attempt ${i}: ${PHASE:-<no 3.6 CSV yet>}"
-  case "$PHASE" in
-    *=Succeeded) INSTALLED=yes; break ;;
-  esac
+    -o jsonpath='{range .items[*]}{.metadata.name}={.status.phase}{"\n"}{end}' 2>/dev/null \
+    | grep '^rhods-operator\.3\.6')
+  echo "attempt ${i}: ${PHASE:-<no rhods-operator 3.6 CSV yet>}"
+  if echo "$PHASE" | grep -q '=Succeeded$'; then INSTALLED=yes; break; fi
   sleep 10
 done
 
 if [ -z "$INSTALLED" ]; then
-  echo "TIMED OUT - no 3.6 CSV reached Succeeded. Investigate before continuing:"
+  echo "TIMED OUT - no rhods-operator 3.6 CSV reached Succeeded. Investigate before continuing:"
   oc get csv,installplan,sub -n redhat-ods-operator
+  return 1 2>/dev/null || exit 1
 fi
 ----
 
-IMPORTANT: Scope the check to the 3.6 version and fail loudly. A bare `{.items[*].status.phase}` joins every CSV phase with a space, so if the old CSV survived or OLM leaves a transient one you get `Replacing Succeeded`, which never equals `Succeeded`; the loop then spins for ten minutes and exits 0 anyway, and you walk into the next step believing the operator installed.
+IMPORTANT: Match on the CSV *name*, not the version alone, and fail with a non-zero status. An AllNamespaces OperatorGroup makes OLM copy other operators' CSVs into this namespace, so a version match alone can be satisfied by an unrelated 3.6.x operator while `rhods-operator` is still `Pending`. And without the explicit `exit 1`, the timeout branch ends on a successful `oc get` and returns 0, so a pasted multi-step script walks into the next step with no operator installed.
 
 IMPORTANT: Do not use `oc wait csv rhods-operator.3.6.0-ea.2 ...` here. OLM needs 30 to 60 seconds to resolve and create the CSV, and `oc wait` on a named resource that does not exist yet fails immediately with `Error from server (NotFound)` instead of waiting. The label-selector form fails too, with `error: no matching resources found`. Both were confirmed on a live cluster, so poll instead. Polling also survives OLM landing a later EA drop than the one you named.
 
@@ -315,9 +333,16 @@ That alone is not enough. The component CR created by 3.5 still holds the string
 
 [source,bash]
 ----
-oc patch trustyais.components.platform.opendatahub.io default-trustyai --type=merge \
-  -p '{"spec":{"eval":null}}'
+if oc get trustyais.components.platform.opendatahub.io default-trustyai \
+     >/dev/null 2>&1; then
+  oc patch trustyais.components.platform.opendatahub.io default-trustyai \
+    --type=merge -p '{"spec":{"eval":null}}'
+else
+  echo "no default-trustyai CR (trustyai is Removed) - nothing to strip"
+fi
 ----
+
+NOTE: Guard this with `oc get`. `oc patch` has no `--ignore-not-found` flag, so on a DSC with `trustyai: Removed` the component CR does not exist and the bare patch stops a pasted block with `Error from server (NotFound)` in the middle of the reinstall.
 
 NOTE: A JSON Patch (`--type=json`) `remove` on these paths fails with `The request is invalid` whenever the block is already absent, which is a normal state here. The merge-patch form is idempotent: running it twice just reports `patched (no change)`. Both behaviours were confirmed on a live cluster.
 
@@ -330,6 +355,35 @@ oc get trustyais.components.platform.opendatahub.io default-trustyai -o jsonpath
 ----
 
 WARNING: Do not re-add `trustyai.eval` to the DSC on 3.6 EA2. Because the DSC field defaults to `"deny"`, setting the block at all reintroduces the string and breaks the DSC again. Leave it absent and let the component default to `false`.
+
+[CAUTION]
+====
+*This guide's own Phase 4 manifest will undo this fix.* `manifests/04-rhoai-config/datasciencecluster.yaml` sets:
+
+[source,yaml]
+----
+trustyai:
+  eval:
+    lmeval:
+      permitCodeExecution: deny
+      permitOnline: deny
+----
+
+Those values are correct for 3.5 and break the DSC on 3.6 EA2. Anything that re-applies that manifest puts the strings back and returns you to `expected boolean, got &\{deny}`:
+
+* `scripts/setup-maas.sh` (it applies the manifest during Phase 4)
+* a `--from-phase 3` or `--from-phase 4` resume
+* re-running the `oc apply -f manifests/04-rhoai-config/datasciencecluster.yaml` from xref:04-rhoai-config.adoc[Phase 4]
+
+On 3.6 EA2, comment the `eval:` block out of your local copy of that manifest before running any of them, and re-check the DSC afterwards:
+
+[source,bash]
+----
+oc get dsc default-dsc \
+  -o jsonpath='{.spec.components.trustyai.eval}{"\n"}'
+# Expected on 3.6 EA2: empty
+----
+====
 
 IMPORTANT: This loses any non-default LMEval permission you had on 3.5. Check what you were running before you remove the block:
 
@@ -369,7 +423,8 @@ Delete the orphaned 3.5 CR:
 [source,bash]
 ----
 oc get datasciencepipelines.components.platform.opendatahub.io
-oc delete datasciencepipelines.components.platform.opendatahub.io default-datasciencepipelines
+oc delete datasciencepipelines.components.platform.opendatahub.io \
+  default-datasciencepipelines --ignore-not-found
 ----
 
 The ServiceMonitor is garbage-collected with its old owner and the `AIPipelines` controller recreates it. Confirm every condition is `True`:
@@ -380,7 +435,7 @@ oc get aipipelines.components.platform.opendatahub.io \
   -o jsonpath='{range .items[*].status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}'
 ----
 
-NOTE: Use `.items[*]`, not `.items[0]`. Right after the delete the `AIPipelines` controller may not have created `default-aipipelines` yet, and an out-of-bounds index makes `oc get` exit 1 with `array index out of bounds` plus a dump of the whole template. `.items[*]` just prints nothing.
+NOTE: Use `+.items[*]+`, not `.items[0]`. Right after the delete the `AIPipelines` controller may not have created `default-aipipelines` yet, and an out-of-bounds index makes `oc get` exit 1 with `array index out of bounds` plus a dump of the whole template. `+.items[*]+` just prints nothing.
 
 [[immutable]]
 == Step 6: Fix Immutable Fields on 3.5-Era Resources
@@ -401,7 +456,8 @@ TrustyAIReady  False  DeployFailed
 
 [source,bash]
 ----
-oc delete deploy trustyai-service-operator-controller-manager -n redhat-ods-applications
+oc delete deploy trustyai-service-operator-controller-manager \
+  -n redhat-ods-applications --ignore-not-found
 ----
 
 The operator recreates it within about 20 seconds and `TrustyAIReady` turns `True`.
@@ -493,38 +549,48 @@ Record the state you started from, so the second patch restores it rather than f
 # until Ready is True - a plain `oc wait --for=condition=Ready` returns
 # instantly on the Ready=True left over from before the patch.
 wait_dsc_ready() {
+  local i gen obs rdy
   for i in $(seq 1 60); do
-    GEN=$(oc get dsc default-dsc -o jsonpath='{.metadata.generation}')
-    OBS=$(oc get dsc default-dsc -o jsonpath='{.status.observedGeneration}')
-    RDY=$(oc get dsc default-dsc \
-      -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
-    echo "  generation=${GEN} observed=${OBS} Ready=${RDY}"
-    if [ -n "$OBS" ] && [ "$GEN" = "$OBS" ] && [ "$RDY" = "True" ]; then
+    # One atomic read, so the three values cannot come from different versions
+    read -r gen obs rdy <<<"$(oc get dsc default-dsc -o jsonpath='{.metadata.generation} {.status.observedGeneration} {.status.conditions[?(@.type=="Ready")].status}')"
+    echo "  generation=${gen} observed=${obs} Ready=${rdy}"
+    if [ -n "$obs" ] && [ "$gen" = "$obs" ] && [ "$rdy" = "True" ]; then
       return 0
     fi
     sleep 10
   done
-  echo "  DSC did not become Ready for generation ${GEN}"
+  echo "  DSC did not reach Ready for generation ${gen}"
   return 1
 }
 
-# Was ogx set explicitly, or is it absent and relying on the CRD default?
+# What should ogx go back to? Prefer the explicit value; if the field is
+# absent, fall back to whether OGXServer instances actually exist, since
+# this step only applies when OGX was running.
 OGX_STATE=$(oc get dsc default-dsc \
   -o jsonpath='{.spec.components.ogx.managementState}')
+if [ -z "$OGX_STATE" ]; then
+  if [ "$(oc get ogxserver -A --no-headers 2>/dev/null | wc -l | tr -d ' ')" != "0" ]; then
+    OGX_STATE=Managed
+    echo "ogx not set explicitly, but OGXServers exist - will restore to Managed"
+  else
+    OGX_STATE=Removed
+    echo "ogx not set explicitly and no OGXServers - will leave it Removed"
+  fi
+fi
 
 oc patch dsc default-dsc --type=merge \
   -p '{"spec":{"components":{"ogx":{"managementState":"Removed"}}}}'
-wait_dsc_ready
 
-if [ -n "$OGX_STATE" ]; then
-  echo "restoring ogx to ${OGX_STATE}"
-  oc patch dsc default-dsc --type=merge \
-    -p "{\"spec\":{\"components\":{\"ogx\":{\"managementState\":\"${OGX_STATE}\"}}}}"
-  wait_dsc_ready
-else
-  echo "ogx was not set explicitly in the DSC - leaving it Removed."
-  echo "If you do want the AI Playground, set it to Managed deliberately."
+if ! wait_dsc_ready; then
+  echo "STOP: the operator never observed ogx=Removed. Do not restore yet -"
+  echo "investigate with: oc get dsc default-dsc -o yaml | grep -A5 conditions"
+  return 1 2>/dev/null || exit 1
 fi
+
+echo "restoring ogx to ${OGX_STATE}"
+oc patch dsc default-dsc --type=merge \
+  -p "{\"spec\":{\"components\":{\"ogx\":{\"managementState\":\"${OGX_STATE}\"}}}}"
+wait_dsc_ready
 ----
 
 IMPORTANT: The wait between the two patches is what makes this work. Without it both patches land in the same second, the operator never observes `ogx: Removed`, the stale condition is never re-aggregated, and the DSC stays `Ready=False` with no error anywhere. It has to be generation-aware: `oc wait --for=condition=Ready` has no `observedGeneration` check, so straight after a patch it returns on the previous `True` and verifies nothing.
@@ -538,7 +604,7 @@ NOTE: If you do not use the AI Playground, leaving `ogx` at `Removed` is a valid
 [[portal-404]]
 == Step 8: Enable the MaaS Consumer Portal (new in 3.6)
 
-WARNING: Enabling this submodule on 3.6.0-ea.2 takes down the entire {rhoai} Dashboard with HTTP 404, including `/oauth2`, so you cannot even log in. See link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^] (Critical). The workaround below is required, not optional. A default install is unaffected because the field defaults to `Removed`. If you do not need the portal, skip this step entirely.
+WARNING: Enabling this submodule on 3.6.0-ea.2 takes down the entire {rhoai} Dashboard with HTTP 404, including `/oauth2`, so you cannot even log in. See link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^] (Critical). A default install is unaffected because the field defaults to `Removed`. If you do not need the portal, skip this whole step.
 
 3.6 adds a {maas} Consumer Portal as a dashboard submodule. It defaults to `Removed`, so it is opt-in. From the CRD description:
 
@@ -547,28 +613,14 @@ ____
 MaaSConsumerPortal controls the MaaS Consumer Portal submodule, shipped in the dashboard-operator. It is managed independently of the core Dashboard: the dashboard-operator Deployment stays up while either the core Dashboard or the portal is Managed.
 ____
 
-[source,bash]
-----
-oc patch dsc default-dsc --type=merge \
-  -p '{"spec":{"components":{"dashboard":{"maasConsumerPortal":{"managementState":"Managed"}}}}}'
-----
+IMPORTANT: Do the host-pinning in <<portal-prepin,Step 8a>> *before* you enable the portal. Enabling first and repairing afterwards works, but it 404s the Dashboard for everyone in the meantime. Pinning first was measured at zero downtime: 25 consecutive polls of `/` returned `302` across the whole transition, including the moment the portal HTTPRoute appeared.
 
-Verify:
+[[portal-prepin]]
+=== Step 8a: Host-pin the Sibling Routes First
 
-[source,bash]
-----
-oc get dsc default-dsc \
-  -o jsonpath='{.status.conditions[?(@.type=="MaaSConsumerPortalAvailable")].status}{"\n"}'
-# Expected: True
+The 404 happens because the portal's HTTPRoute is the only one on the Gateway carrying a `spec.hostnames`, which puts it in its own exact-match virtual host (see <<portal-mechanism,the mechanism>> below). The four sibling routes already exist and are hostname-less, so pinning them to the dashboard hostname now is harmless, and the portal then joins the same virtual host instead of hijacking it.
 
-oc get deploy maas-consumer-portal -n redhat-ods-applications
-----
-
-The portal deploys as its own `maas-consumer-portal` Deployment and `maas-consumer-portal` Service (port 8443) in `redhat-ods-applications`, alongside the existing `maas-ui`.
-
-=== The Dashboard is now 404 (RHOAIENG-101883)
-
-Check it before you go any further. Define these two helpers once and reuse them for the rest of this step:
+Set up the helpers and confirm the Dashboard is healthy before you touch anything:
 
 [source,bash]
 ----
@@ -577,46 +629,27 @@ H=$(oc get dashboard default-dashboard \
 
 if [ -z "$H" ]; then
   echo "could not read the dashboard hostname - stop and check 'oc get dashboard'"
-else
-  echo "dashboard host: $H"
+  return 2>/dev/null || exit 1
 fi
+echo "dashboard host: $H"
 
 check_paths() {
+  [ -n "$H" ] || { echo "  no hostname - refusing to probe"; return 1; }
   for p in / /oauth2 /mlflow /catalog/ /maas-consumer-portal; do
     printf '  %-24s -> %s\n' "$p" \
       "$(curl -sk -o /dev/null --max-time 10 -w '%{http_code}' "https://${H}${p}")"
   done
 }
 
-check_paths
+check_paths   # /maas-consumer-portal 404s or redirects here; the other four should be 302
 ----
 
-NOTE: Guard the hostname and use `--max-time`. With an empty `$H` every request goes to `https:///...` and all five print `000`, which reads like an even worse outage and leads to applying the workaround with `hostnames: [null]`.
-
-Reproduced on a live 3.6.0-ea.2 cluster the moment the portal came up:
-
-[source]
-----
-/                        -> 404
-/oauth2                  -> 404
-/mlflow                  -> 404
-/catalog/                -> 404
-/maas-consumer-portal    -> 302
-----
-
-`dashboard-operator` creates the `maas-consumer-portal` HTTPRoute *with* `spec.hostnames` set to the dashboard hostname, while the other four routes on the same Gateway have no hostname at all. In Gateway API a hostname-less route attaches to the listener wildcard, and a route with a hostname gets its own exact-match virtual host. Envoy picks the most specific virtual host for the `Host` header and then only looks at the routes inside it, so every request to the dashboard hostname lands in a virtual host that contains only the portal paths.
-
-IMPORTANT: Every status stays green while this is broken. DSC `Ready=True`, `MaaSConsumerPortalAvailable=True`, `DashboardReady=True`, both Gateways `Programmed=True`, and the `rhods-dashboard` HTTPRoute `Accepted=True`. Nothing in any condition points at routing, so this is only visible from an HTTP request.
-
-=== Workaround
-
-Give the four sibling routes the same hostname, so all five land in the same virtual host and normal longest-prefix matching works again.
-
-NOTE: Removing the hostname from the portal route does not work. `dashboard-operator` owns `spec.hostnames` there and writes it straight back. On the other four routes it does not own that field, so a value written by a different field manager is kept.
+Pin the four siblings:
 
 [source,bash]
 ----
 apply_host() {
+  [ -n "$H" ] || { echo "  refusing to pin with an empty hostname"; return 1; }
   # Only pin routes that already exist. --server-side would otherwise CREATE a
   # hostname-only HTTPRoute with no parentRefs and no rules, which attaches to
   # nothing and later collides with dashboard-operator's own Create.
@@ -640,29 +673,70 @@ apply_host rhods-dashboard      redhat-ods-applications
 apply_host model-catalog        redhat-ods-applications
 apply_host mlflow               redhat-ods-applications
 apply_host oauth-callback-route openshift-ingress
+
+check_paths   # the four dashboard paths must still be 302 before you continue
 ----
 
 TIP: Use the `apply_host` function rather than a `for` loop over `"name namespace"` strings. zsh does not word-split unquoted expansions, so the loop form sends `name namespace` as a single resource name and every apply fails RFC 1123 validation. The function form behaves the same in bash and zsh.
 
-Re-run the check. All five should now answer `302`:
+WARNING: `oauth-callback-route` in `openshift-ingress` is shared. It serves the OAuth callback for *every* hostname attached to that Gateway, so pinning it to the dashboard hostname breaks login for any other host on the same Gateway - the same 404 symptom, moved somewhere `check_paths` cannot see it. Check what else that route serves before you pin it, matching any parentRef rather than just the first:
 
 [source,bash]
 ----
-check_paths
-----
+# Which Gateways does the OAuth route attach to?
+oc get httproute oauth-callback-route -n openshift-ingress \
+  -o jsonpath='{range .spec.parentRefs[*]}{.namespace}/{.name}{"\n"}{end}'
 
-WARNING: This patch lives only on the operator-owned HTTPRoutes, so it is lost whenever those routes are recreated: toggling the portal off and on, a dashboard restart, or an {rhoai-short} upgrade. Re-apply it and re-run `check_paths` after any of those.
-
-WARNING: `oauth-callback-route` in `openshift-ingress` is shared. It serves the OAuth callback for *every* hostname attached to that Gateway, so pinning it to the dashboard hostname breaks login for any other host on the same Gateway - the same 404 symptom, moved somewhere `check_paths` cannot see it. List the other hostnames before you decide, and re-test each one afterwards:
-
-[source,bash]
-----
-# Every hostname served by this Gateway
-oc get httproute -A \
-  -o jsonpath='{range .items[?(@.spec.parentRefs[0].name=="data-science-gateway")]}{.metadata.namespace}/{.metadata.name}: {.spec.hostnames}{"\n"}{end}'
+# Every hostname served by those Gateways
+oc get httproute -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name} parents={range .spec.parentRefs[*]}{.name},{end} hostnames={.spec.hostnames}{"\n"}{end}'
 ----
 
 If that Gateway only ever serves the dashboard, as on a single-tenant install, this is safe. If it serves anything else, prefer leaving the portal `Removed` until the upstream fix lands.
+
+=== Step 8b: Enable the Portal
+
+[source,bash]
+----
+oc patch dsc default-dsc --type=merge \
+  -p '{"spec":{"components":{"dashboard":{"maasConsumerPortal":{"managementState":"Managed"}}}}}'
+----
+
+Verify:
+
+[source,bash]
+----
+oc get dsc default-dsc \
+  -o jsonpath='{.status.conditions[?(@.type=="MaaSConsumerPortalAvailable")].status}{"\n"}'
+# Expected: True
+
+oc get deploy maas-consumer-portal -n redhat-ods-applications
+----
+
+The portal deploys as its own `maas-consumer-portal` Deployment and `maas-consumer-portal` Service (port 8443) in `redhat-ods-applications`, alongside the existing `maas-ui`.
+
+[[portal-mechanism]]
+=== Why It Breaks, and Recovery If You Already Enabled It
+
+`dashboard-operator` creates the `maas-consumer-portal` HTTPRoute *with* `spec.hostnames` set to the dashboard hostname, while the other four routes on the same Gateway have no hostname at all. In Gateway API a hostname-less route attaches to the listener wildcard, and a route with a hostname gets its own exact-match virtual host. Envoy picks the most specific virtual host for the `Host` header and then only looks at the routes inside it, so every request to the dashboard hostname lands in a virtual host that contains only the portal paths.
+
+If you enabled the portal before pinning, this is what you see:
+
+[source]
+----
+/                        -> 404
+/oauth2                  -> 404
+/mlflow                  -> 404
+/catalog/                -> 404
+/maas-consumer-portal    -> 302
+----
+
+IMPORTANT: Every status stays green while this is broken. DSC `Ready=True`, `MaaSConsumerPortalAvailable=True`, `DashboardReady=True`, both Gateways `Programmed=True`, and the `rhods-dashboard` HTTPRoute `Accepted=True`. Nothing in any condition points at routing, so this is only visible from an HTTP request.
+
+To recover, run <<portal-prepin,Step 8a>> now: the same `apply_host` calls fix a cluster that is already 404ing. Then `check_paths` should show all five paths at `302`.
+
+NOTE: Removing the hostname from the portal route instead does not work. `dashboard-operator` owns `spec.hostnames` there and writes it straight back. On the other four routes it does not own that field, so a value written by a different field manager is kept.
+
+WARNING: The pin lives only on the operator-owned HTTPRoutes, so it is lost whenever those routes are recreated: a dashboard restart or an {rhoai-short} upgrade. Re-apply <<portal-prepin,Step 8a>> and re-run `check_paths` after any of those. Toggling the portal off and on does *not* clear it - the sibling pins survived a portal removal and re-enable on a live cluster.
 
 == Step 9: Verification Checklist
 
