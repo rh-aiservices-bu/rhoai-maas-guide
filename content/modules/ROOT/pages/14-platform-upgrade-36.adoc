@@ -89,7 +89,7 @@ for k in maasmodelrefs maassubscriptions maastenantconfigs maasauthpolicies \
 done
 ----
 
-IMPORTANT: Back the kinds up one at a time, not as a single comma-separated `oc get`. A combined call validates every type up front and aborts with `error: the server doesn't have a resource type "x"` if any one is missing, which happens on partial installs and on 3.5.0/3.5.1. The shell has already truncated the output file by then, so you are left with a 0-byte backup and no warning, one step before Step 4 deletes the operator.
+IMPORTANT: Back the kinds up one at a time, not as a single comma-separated `oc get`. A combined call validates every type up front and aborts with `error: the server doesn't have a resource type "x"` if any one is missing, which happens on partial installs and on 3.5.0/3.5.1. The shell has already truncated the output file by then, so you are left with a 0-byte backup and no warning, one step before Step 3 deletes the operator.
 
 Record the DSC component schema so you can diff it afterwards:
 
@@ -102,66 +102,8 @@ oc get crd datascienceclusters.datasciencecluster.opendatahub.io -o json | \
   > dsc-schema-3.5.txt
 ----
 
-[[gitops]]
-== Step 2: Pause GitOps Self-Heal
-
-If the operator Subscription and the DSC are managed by OpenShift GitOps with `selfHeal: true`, Argo CD reverts your changes before OLM ever sees them. On the RHDP `rhai-features-workshop` environment the Subscription is owned by `admin-openshift-ai-operator` and the DSC by `admin-openshift-ai`, both with `selfHeal: true`.
-
-Find which Applications own them. Argo CD records ownership either as the `argocd.argoproj.io/tracking-id` annotation or as the `app.kubernetes.io/instance` label, depending on `application.resourceTrackingMethod`, so check both:
-
-[source,bash]
-----
-for res in "sub/rhods-operator -n redhat-ods-operator" "dsc/default-dsc"; do
-  echo "== ${res}"
-  oc get ${res} -o jsonpath='  tracking-id: {.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}  instance:    {.metadata.labels.app\.kubernetes\.io/instance}{"\n"}'
-done
-
-# Which method is this Argo CD using? Empty means the default, 'label'.
-oc get cm argocd-cm -n openshift-gitops \
-  -o jsonpath='{.data.application\.resourceTrackingMethod}{"\n"}'
-----
-
-IMPORTANT: Both lines can come back empty and still exit 0, because `oc get -o jsonpath` is silent on a missing key. Empty output does not prove the resource is unmanaged. If both are blank, list the Applications and find the owner directly rather than assuming you can skip this step:
-
-[source,bash]
-----
-oc get applications.argoproj.io -A \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,AUTO:.spec.syncPolicy.automated'
-----
-
-NOTE: A tracking-id is not an Application name. It looks like `admin-openshift-ai-operator:operators.coreos.com/Subscription:redhat-ods-operator/rhods-operator` - the Application name is only the part before the first colon. The `app.kubernetes.io/instance` label does hold the bare name.
-
-WARNING: Without this step the channel patch is reverted in seconds. On a live cluster a patch applied at `12:05:30` was undone by an automated sync that started at `12:05:31`. The Subscription showed `channel: stable-3.5` again on the next read, with nothing in the Subscription status to explain it.
-
-Set the two variables below to the bare Application names from the check above. The defaults are the RHDP workshop names and will not match every cluster. A wrong name fails loudly with `Error from server (NotFound): applications.argoproj.io "x" not found` - treat that as the signal to go back and get the real name, not as a transient error.
-
-Record the current policy first so you can put it back, then disable automated sync:
-
-[source,bash]
-----
-SUB_APP=admin-openshift-ai-operator   # owner of the Subscription
-DSC_APP=admin-openshift-ai            # owner of the DataScienceCluster
-ARGO_NS=openshift-gitops              # namespace holding the Applications
-
-# Save the current syncPolicy for each application
-for app in "$SUB_APP" "$DSC_APP"; do
-  oc get application.argoproj.io "$app" -n "$ARGO_NS" \
-    -o jsonpath='{.spec.syncPolicy}' > "syncpolicy-${app}.json" || continue
-  echo "saved syncpolicy-${app}.json: $(cat "syncpolicy-${app}.json")"
-done
-
-for app in "$SUB_APP" "$DSC_APP"; do
-  oc patch application.argoproj.io "$app" -n "$ARGO_NS" --type=merge \
-    -p '{"spec":{"syncPolicy":{"automated":null}}}'
-done
-----
-
-TIP: Keep these three variables in the shell you use for the whole upgrade, or write them down. The re-enable step at the end needs them and the saved files.
-
-NOTE: The cleaner alternative is to change the channel in Git (`automation/gitops/deployments/admin/openshift-ai-operator/values.yaml` pins `channel: stable-3.5`) and let Argo CD roll it out. Pausing self-heal is the right move only when you are testing an EA build you do not want committed.
-
 [[channel-noop]]
-== Step 3: Why the Channel Bump Alone Does Nothing
+== Step 2: Why the Channel Bump Alone Does Nothing
 
 This is the finding that costs the most time, because nothing reports an error.
 
@@ -207,7 +149,7 @@ Because `3.6.0-ea.2` does not declare that it replaces or skips any 3.5.x releas
 
 IMPORTANT: `AtLatestKnown` on a channel that does not contain your installed CSV means "I found nothing I can upgrade to", not "you are up to date". Always confirm `installedCSV` after a channel change rather than trusting `state`.
 
-== Step 4: Reinstall the Operator from the beta Channel
+== Step 3: Reinstall the Operator from the beta Channel
 
 Deleting the Subscription and CSV removes the operator Deployment. It does *not* remove CRDs, the DSC, the DSCInitialization, or any {maas} custom resource, so your configuration and models survive.
 
@@ -219,7 +161,7 @@ OLD_CSV=$(oc get sub rhods-operator -n redhat-ods-operator \
   -o jsonpath='{.status.installedCSV}')
 
 if [ -z "$OLD_CSV" ]; then
-  echo "installedCSV is empty - Subscription may be mid-resolution or re-created by Argo."
+  echo "installedCSV is empty - Subscription may still be resolving, or be managed by something that re-created it."
   echo "Fix that first; deleting now would orphan the old CSV."
 else
   echo "removing ${OLD_CSV}"
@@ -305,7 +247,7 @@ NOTE: Immediately after install, `ModelRegistryReady` can fail with `no matches 
 At this point {maas} is already working again, but the DSC is not `Ready`. Steps 5 to 8 fix that.
 
 [[trustyai-schema]]
-== Step 5: Fix the TrustyAI Schema Mismatch
+== Step 4: Fix the TrustyAI Schema Mismatch
 
 The DSC and the TrustyAI component CRD disagree about the type of two fields in 3.6.0-ea.2.
 
@@ -387,7 +329,7 @@ oc patch trustyais.components.platform.opendatahub.io default-trustyai --type=me
 If your evaluations depend on LMEval online access or code execution, this EA build cannot provide it. Plan to stay on 3.5 for that workload.
 
 [[stale-crs]]
-== Step 6: Delete Stale 3.5 Component CRs
+== Step 5: Delete Stale 3.5 Component CRs
 
 3.6 renames the pipelines component CRD from `datasciencepipelines` to `aipipelines`. The operator creates the new CR, but the 3.5 CR is left behind and still owns shared resources, so the new module cannot adopt them:
 
@@ -417,7 +359,7 @@ oc get aipipelines.components.platform.opendatahub.io \
 NOTE: Use `.items[*]`, not `.items[0]`. Right after the delete the `AIPipelines` controller may not have created `default-aipipelines` yet, and an out-of-bounds index makes `oc get` exit 1 with `array index out of bounds` plus a dump of the whole template. `.items[*]` just prints nothing.
 
 [[immutable]]
-== Step 7: Fix Immutable Fields on 3.5-Era Resources
+== Step 6: Fix Immutable Fields on 3.5-Era Resources
 
 3.6 changes fields that Kubernetes does not allow to be patched in place. The operator cannot reconcile over objects that 3.5 created, and the fix in both cases is to delete the object so it is recreated.
 
@@ -451,7 +393,7 @@ OGXServer  DeploymentReady  False  DeploymentFailed
   roleRef: Invalid value: {... "Name":"system:openshift:scc:nonroot-v2"}: cannot change roleRef
 ----
 
-Find and delete the affected RoleBindings. They are owned by the OGXServer, not by GitOps, so the operator recreates them:
+Find and delete the affected RoleBindings. They are owned by the OGXServer, so the operator recreates them:
 
 [source,bash]
 ----
@@ -481,7 +423,7 @@ oc get ogxserver -A
 ----
 
 [[stale-conditions]]
-== Step 8: Clear Stale Module Conditions
+== Step 7: Clear Stale Module Conditions
 
 3.6.0-ea.2 does not reliably re-aggregate module health after you fix the underlying resource. Conditions keep reporting an error that no longer exists, and because the DSC rolls module health up into `Ready`, the DSC stays `False` on stale data.
 
@@ -495,7 +437,7 @@ oc rollout restart deploy/rhods-operator -n redhat-ods-operator
 oc rollout status deploy/rhods-operator -n redhat-ods-operator --timeout=300s
 ----
 
-*Stale `Degraded: UnhealthyOGXServers`.* After Step 7 every OGXServer reported `phase=Ready` with `DeploymentReady=True` and `HealthCheck=True`, but the OGX module still listed them all as unhealthy and held the DSC at `Ready=False`:
+*Stale `Degraded: UnhealthyOGXServers`.* After Step 6 every OGXServer reported `phase=Ready` with `DeploymentReady=True` and `HealthCheck=True`, but the OGX module still listed them all as unhealthy and held the DSC at `Ready=False`:
 
 [source]
 ----
@@ -533,7 +475,7 @@ After the toggle the DSC reached `Ready=True` with `OGXReady=True` and all OGXSe
 NOTE: If you do not use the AI Playground, leaving `ogx` at `Removed` is a valid shortcut: it was verified to bring the DSC to `Ready=True` on its own, and {maas} does not depend on OGX.
 
 [[portal-404]]
-== Step 9: Enable the MaaS Consumer Portal (new in 3.6)
+== Step 8: Enable the MaaS Consumer Portal (new in 3.6)
 
 WARNING: Enabling this submodule on 3.6.0-ea.2 takes down the entire {rhoai} Dashboard with HTTP 404, including `/oauth2`, so you cannot even log in. See link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^] (Critical). The workaround below is required, not optional. A default install is unaffected because the field defaults to `Removed`. If you do not need the portal, skip this step entirely.
 
@@ -633,7 +575,7 @@ done
 
 WARNING: This patch lives only on the operator-owned HTTPRoutes, so it is lost whenever those routes are recreated: toggling the portal off and on, a dashboard restart, or an {rhoai-short} upgrade. Re-apply it and re-test all five paths after any of those. It also makes the Gateway serve only the dashboard hostname.
 
-== Step 10: Verification Checklist
+== Step 9: Verification Checklist
 
 [cols="2,3", options="header"]
 |===
@@ -676,38 +618,13 @@ Expected: `{"lmeval":{"permitCodeExecution":false,"permitOnline":false}}`
 Expected: `PHASE=Ready` for all
 
 | Dashboard still serves all paths
-| Only if you enabled the portal in <<portal-404,Step 9>>: re-run the five-path check +
+| Only if you enabled the portal in <<portal-404,Step 8>>: re-run the five-path check +
 Expected: `302` on `/`, `/oauth2`, `/mlflow`, `/catalog/` and `/maas-consumer-portal` (a `404` on the first four means the host-pin workaround is missing or was reverted)
 
 | End to end
 | `./manifests/06-verification/verify.sh` +
 Expected: `Passed: 15  Failed: 0`
 |===
-
-=== Re-enabling GitOps
-
-WARNING: Do not blindly re-enable automated sync. Git still pins `channel: stable-3.5` and the 3.5 DSC layout, so a sync on the Subscription owner tries to drag the operator back to 3.5, and a sync on the DSC owner re-adds `trustyai.eval` (breaking the DSC again) and drops `dashboard.maasConsumerPortal`. Either commit the 3.6 values to Git first, or leave automated sync off for the lifetime of the EA test.
-
-When you do want it back, restore the policy you saved in <<gitops,Step 2>> rather than guessing. Re-declare the variables, since this is usually a different shell and possibly a different day, and `cd` to wherever you saved the files:
-
-[source,bash]
-----
-SUB_APP=admin-openshift-ai-operator   # same values as Step 2
-DSC_APP=admin-openshift-ai
-ARGO_NS=openshift-gitops
-
-for app in "$SUB_APP" "$DSC_APP"; do
-  f="syncpolicy-${app}.json"
-  if [ ! -s "$f" ]; then
-    echo "no saved policy in ${f} - skipping ${app}, set its syncPolicy by hand"
-    continue
-  fi
-  oc patch application.argoproj.io "$app" -n "$ARGO_NS" --type=merge \
-    -p "{\"spec\":{\"syncPolicy\":$(cat "$f")}}"
-done
-----
-
-NOTE: The `-s` check is not cosmetic. If an Application genuinely had no `spec.syncPolicy`, the saved file is empty and the patch body becomes `{"spec":{"syncPolicy":}}`, which is malformed JSON. `oc patch` rejects it and automated sync stays off while you believe it was restored.
 
 == Known Issues in 3.6 EA2
 
@@ -717,31 +634,31 @@ NOTE: The `-s` check is not cosmetic. If an Application genuinely had no `spec.s
 
 | `beta` channel has no upgrade edge from 3.5.x; channel change is a silent no-op reported as `AtLatestKnown`
 | The whole upgrade
-| Reinstall the operator (<<channel-noop,Step 3>> and Step 4)
+| Reinstall the operator (<<channel-noop,Step 2>> and Step 3)
 
 | DSC declares `trustyai.eval.lmeval.permit*` as string, component CRD declares boolean
 | Entire DSC `Ready`
-| Remove `eval` from the DSC *and* the component CR (<<trustyai-schema,Step 5>>)
+| Remove `eval` from the DSC *and* the component CR (<<trustyai-schema,Step 4>>)
 
 | LMEval online access and code execution cannot be enabled at all: the DSC path breaks the DSC, and a direct component CR patch is reverted by the operator in about 10 seconds
 | LMEval jobs needing network or code execution
-| None. Stay on 3.5 for that workload (<<trustyai-schema,Step 5>>)
+| None. Stay on 3.5 for that workload (<<trustyai-schema,Step 4>>)
 
 | 3.5 `DataSciencePipelines` CR keeps ownership of the DSPO ServiceMonitor
 | `AIPipelines` module
-| Delete the stale CR (<<stale-crs,Step 6>>)
+| Delete the stale CR (<<stale-crs,Step 5>>)
 
 | TrustyAI Deployment `spec.selector` changed and is immutable
 | `TrustyAIReady`
-| Delete the Deployment (<<immutable,Step 7>>)
+| Delete the Deployment (<<immutable,Step 6>>)
 
 | OGX playground RoleBinding `roleRef` changed `anyuid` -> `nonroot-v2` and is immutable
 | Every pre-existing OGXServer
-| Delete the RoleBinding, restart the OGX operator (<<immutable,Step 7>>)
+| Delete the RoleBinding, restart the OGX operator (<<immutable,Step 6>>)
 
 | Module conditions do not re-aggregate after the underlying fix
 | DSC `Ready` on stale data
-| Restart `rhods-operator`, or toggle the module `Removed` -> `Managed` (<<stale-conditions,Step 8>>)
+| Restart `rhods-operator`, or toggle the module `Removed` -> `Managed` (<<stale-conditions,Step 7>>)
 
 | `ModelRegistryReady` reports `no matches for kind "AIHub"` right after install
 | Nothing, it is transient
@@ -749,7 +666,7 @@ NOTE: The `-s` check is not cosmetic. If an Application genuinely had no `spec.s
 
 | Enabling `dashboard.maasConsumerPortal` returns HTTP 404 for the whole Dashboard including `/oauth2`, while every status stays green (link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^], Critical)
 | The entire {rhoai-short} Dashboard, no way to log in
-| Host-pin the four sibling HTTPRoutes (<<portal-404,Step 9>>), or leave the portal `Removed`
+| Host-pin the four sibling HTTPRoutes (<<portal-404,Step 8>>), or leave the portal `Removed`
 |===
 
 == References
