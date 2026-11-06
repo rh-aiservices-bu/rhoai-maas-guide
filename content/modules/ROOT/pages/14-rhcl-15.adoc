@@ -2,7 +2,7 @@
 
 Field notes from installing {rhoai} 3.5.2 {maas} on Red Hat Connectivity Link (RHCL) 1.5.0, side by side with the MCP Gateway GA that ships inside RHCL 1.5. The rest of this guide is written against RHCL 1.4.x.
 
-IMPORTANT: At the time of writing (November 2026) the link:https://access.redhat.com/articles/7092611[RHCL supported configurations article^] only lists releases up to 1.4, and the link:https://access.redhat.com/articles/rhoai-supported-configs-3.x[{rhoai-short} 3.x supported configurations matrix^] points to it for RHCL versions. So this page is a validation run, not a support statement. Check both articles before you go to production with this combination.
+IMPORTANT: At the time of writing (November 2026) the link:https://access.redhat.com/articles/7092611[RHCL supported configurations article^] only lists releases up to 1.4, and the link:https://access.redhat.com/articles/rhoai-supported-configs-3.x[{rhoai-short} 3.x supported configurations matrix^] points to it for RHCL versions. So this page is a validation run, not a support statement. Check both articles before you go to production with this combination. A support statement is requested in link:https://redhat.atlassian.net/browse/RHOAIENG-103137[RHOAIENG-103137^].
 
 TIP: All file paths and `oc apply` commands in this guide are relative to the link:{repo-url}[rhoai-maas-guide] repository root.
 
@@ -116,6 +116,8 @@ oc apply -k manifests/01-prerequisites/operators/leader-worker-set/
 
 This one breaks {maas} on a fresh RHCL 1.5 install if you follow the documented order.
 
+Tracked as link:https://redhat.atlassian.net/browse/RHOAIENG-103136[RHOAIENG-103136^] ({maas} and docs) and link:https://redhat.atlassian.net/browse/CONNLINK-1976[CONNLINK-1976^] (Authorino operator).
+
 === Symptoms
 
 The install finishes, the model is `Ready`, but every call through the gateway that needs Authorino fails. `verify-maas.sh` reports `Failed to create API key` with `Internal Server Error`, and `maas-api` never logs the request:
@@ -133,7 +135,7 @@ listener secret name authorino-server-cert not found, err: Secret "authorino-ser
 
 === Diagnosis
 
-xref:02-platform-config.adoc[Phase 2] (and the {rhoai-short} docs) create the `authorino-authorino-authorization` Service with the `service.beta.openshift.io/serving-cert-secret-name` annotation *before* the `Kuadrant` CR, so service-ca issues the certificate. With RHCL 1.5 the Authorino operator takes that Service over when it reconciles the new `Authorino` CR and rewrites it without the annotation. No annotation means no Secret, and Authorino's TLS listener never starts:
+xref:02-platform-config.adoc[Phase 2] (and the {rhoai-short} docs) create the `authorino-authorino-authorization` Service with the `service.beta.openshift.io/serving-cert-secret-name` annotation *before* the `Kuadrant` CR, so service-ca issues the certificate. With RHCL 1.5 the Authorino operator takes that Service over when it reconciles the new `Authorino` CR and rewrites it without the annotation. Since authorino-operator 0.27.0 that Service is headless (link:https://redhat.atlassian.net/browse/CONNLINK-1913[CONNLINK-1913^]), and `clusterIP` cannot change in place, so the operator replaces the `ClusterIP` Service the manifest created. RHCL 1.4.4 ships the same operator change, so it is likely affected too (not tested). No annotation means no Secret, and Authorino's TLS listener never starts:
 
 [source,bash]
 ----
@@ -168,6 +170,8 @@ oc wait kuadrant/kuadrant -n kuadrant-system --for=condition=Ready --timeout=180
 `scripts/setup-maas.sh` now re-applies the annotation after it patches the `Authorino` CR and waits for the Secret, which is harmless on 1.4.
 
 == Issue 2: The Kuadrant Operator Runs Close to Its Memory Limit
+
+Tracked as link:https://redhat.atlassian.net/browse/CONNLINK-1878[CONNLINK-1878^], filed on RHCL 1.4.3 where the limit was 300Mi and the memory growth came from repeated Wasm EnvoyFilter reconciles.
 
 === Symptoms
 
@@ -205,6 +209,8 @@ The RHCL 1.5 CSV contains only this one Deployment, so the setting does not touc
 These apply when you also follow the link:https://github.com/rh-aiservices-bu/mcp-gateway-guide[MCP Gateway guide^] on the same cluster.
 
 === One Kuadrant Instance
+
+Tracked as link:https://redhat.atlassian.net/browse/CONNLINK-1713[CONNLINK-1713^] (reject a second instance instead of ignoring it) and link:https://redhat.atlassian.net/browse/CONNLINK-1886[CONNLINK-1886^] (RFE for several isolated instances).
 
 RHCL 1.5 treats `Kuadrant` as a singleton. A second CR in another namespace gets no status, no event and no Authorino or Limitador. It is ignored without any message. The MCP Gateway guide creates its own `Kuadrant` in `mcp-gateway` for authentication, so:
 
@@ -260,7 +266,7 @@ MetalLB then hands the address to `maas-default-gateway` within seconds.
 
 == Upgrading an Existing RHCL 1.4 Install
 
-Not tested here. Two things to know from the upstream code (`kuadrant-operator` v1.6.0, which is what RHCL 1.5.0 is built from):
+Upgrade guidance is requested in link:https://redhat.atlassian.net/browse/CONNLINK-1973[CONNLINK-1973^]. Not tested here. Two things to know from the upstream code (`kuadrant-operator` v1.6.0, which is what RHCL 1.5.0 is built from):
 
 * At startup the 1.5 operator removes the old Authorino, Limitador and DNS operator Subscriptions and CSVs, then deploys those components itself.
 * It looks for the old `mcp-gateway` Subscription only in the `mcp-system` namespace. The MCP Gateway guide installs it in `mcp-gateway`, so the TP 0.7.1 operator would be left running next to the GA controller. Remove the `mcp-gateway` Subscription and CSV yourself before upgrading, and migrate your MCP manifests to `mcp.kuadrant.io/v1`.
@@ -271,3 +277,5 @@ Do this on a test cluster first.
 
 * Field reports that triggered this validation: RHCL 1.5 with {rhoai} 3.5.2 {maas} for the GA MCP Gateway, with operator memory pressure and an EnvoyFilter/Wasm reconcile loop when using the MCP Gateway. The memory issue reproduced (Issue 2). The loop did not reproduce on this setup with one `Kuadrant` instance, nor after adding a second one.
 * xref:13-openshift5.adoc#issue-2[Running MaaS on OpenShift 5, Issue 2]: on {ocp-short} 5 only `stable-1.5` is published.
+* link:https://redhat.atlassian.net/browse/RHOAIENG-103137[RHOAIENG-103137^]: docs request for an RHCL 1.5 support statement with {rhoai-short} 3.5.x and for {maas} and the MCP Gateway on one cluster.
+* link:https://redhat.atlassian.net/browse/RHOAIENG-98735[RHOAIENG-98735^]: MCP Gateway GA documentation, targeted at {rhoai-short} 3.6.

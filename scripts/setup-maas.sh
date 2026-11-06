@@ -1102,7 +1102,8 @@ if should_run 3; then
     fi
     # RHCL 1.5 Authorino operator rewrites the pre-created Service when it adopts
     # it and drops the serving-cert annotation, so the cert Secret never appears
-    # and Kuadrant stays AuthorinoNotReady. Re-annotate once Authorino exists.
+    # and Kuadrant stays AuthorinoNotReady (RHOAIENG-103136, CONNLINK-1976).
+    # Re-annotate once Authorino exists.
     SVC_CERT_ANN=$(oc get svc authorino-authorino-authorization -n kuadrant-system \
         -o jsonpath='{.metadata.annotations.service\.beta\.openshift\.io/serving-cert-secret-name}' 2>/dev/null || echo "")
     if oc get svc authorino-authorino-authorization -n kuadrant-system &>/dev/null && \
