@@ -101,7 +101,16 @@ spec:
 EOF
 ----
 
-Then continue with the rest of xref:01-prerequisites.adoc[Phase 1]. `scripts/setup-maas.sh` leaves an RHCL Subscription that already has an installed CSV alone, so it will not flip it back to `stable`.
+Then install the other three operators one by one. Do not run `oc apply -k manifests/01-prerequisites/operators/` as a whole, because it also applies the checked-in RHCL Subscription and resets the channel to `stable`:
+
+[source,bash]
+----
+oc apply -k manifests/01-prerequisites/operators/rhoai-operator/
+oc apply -k manifests/01-prerequisites/operators/cert-manager/
+oc apply -k manifests/01-prerequisites/operators/leader-worker-set/
+----
+
+`scripts/setup-maas.sh` leaves an existing RHCL Subscription alone, installed or still pending, so it will not flip it back to `stable`.
 
 == Issue 1: Kuadrant Stuck on AuthorinoNotReady, API Keys Return 500
 
@@ -145,7 +154,12 @@ Annotate the Service again once Authorino is running, then restart Authorino:
 oc annotate svc authorino-authorino-authorization -n kuadrant-system \
   service.beta.openshift.io/serving-cert-secret-name=authorino-server-cert --overwrite
 
-until oc get secret authorino-server-cert -n kuadrant-system &>/dev/null; do sleep 5; done
+for i in $(seq 1 24); do
+  oc get secret authorino-server-cert -n kuadrant-system &>/dev/null && break
+  sleep 5
+done
+oc get secret authorino-server-cert -n kuadrant-system \
+  || { echo "Secret not created after 120s, check the service-ca operator"; false; }
 
 oc rollout restart deployment/authorino -n kuadrant-system
 oc wait kuadrant/kuadrant -n kuadrant-system --for=condition=Ready --timeout=180s
