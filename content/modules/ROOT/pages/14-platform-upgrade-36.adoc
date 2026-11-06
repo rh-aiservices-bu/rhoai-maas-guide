@@ -136,6 +136,8 @@ NOTE: One kind per call, not a single comma-separated `oc get`. A combined call 
 [[channel-noop]]
 == Step 2: Why the Channel Bump Alone Does Nothing
 
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-103131[RHOAIENG-103131^]
+
 This is the finding that costs the most time, because nothing reports an error.
 
 Patching the channel to `beta` appears to succeed and then has no effect:
@@ -182,6 +184,8 @@ IMPORTANT: `AtLatestKnown` on a channel that does not contain your installed CSV
 
 [[prestrip]]
 === Strip trustyai.eval Before You Reinstall
+
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-100833[RHOAIENG-100833^]
 
 Do this while 3.5 is still installed and you avoid the TrustyAI breakage in <<trustyai-schema,Step 4>> entirely, rather than walking into it and cleaning up afterwards.
 
@@ -362,6 +366,8 @@ At this point {maas} is already working again, but the DSC is not `Ready`. Steps
 [[trustyai-schema]]
 == Step 4: Fix the TrustyAI Schema Mismatch
 
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-100833[RHOAIENG-100833^]
+
 TIP: If you ran <<prestrip,the pre-strip>> before the reinstall, this step should find nothing to do. Confirm with `oc get dsc default-dsc -o jsonpath='{.spec.components.trustyai.eval}'` - empty means you are already clear, and you can skip to <<stale-crs,Step 5>>.
 
 The DSC and the TrustyAI component CRD disagree about the type of two fields in 3.6.0-ea.2.
@@ -488,6 +494,8 @@ If your evaluations depend on LMEval online access or code execution, this EA bu
 [[stale-crs]]
 == Step 5: Delete Stale 3.5 Component CRs
 
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-103132[RHOAIENG-103132^]
+
 3.6 renames the pipelines component CRD from `datasciencepipelines` to `aipipelines`. The operator creates the new CR, but the 3.5 CR is left behind and still owns shared resources, so the new module cannot adopt them:
 
 [source]
@@ -533,6 +541,8 @@ NOTE: Use `+.items[*]+`, not `.items[0]`. Right after the delete the `AIPipeline
 
 [[immutable]]
 == Step 6: Fix Immutable Fields on 3.5-Era Resources
+
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-103133[RHOAIENG-103133^]
 
 3.6 changes fields that Kubernetes does not allow to be patched in place. The operator cannot reconcile over objects that 3.5 created, and the fix in both cases is to delete the object so it is recreated.
 
@@ -624,6 +634,8 @@ oc get ogxserver -A
 
 [[stale-conditions]]
 == Step 7: Clear Stale Module Conditions
+
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-103134[RHOAIENG-103134^]
 
 3.6.0-ea.2 does not reliably re-aggregate module health after you fix the underlying resource. Conditions keep reporting an error that no longer exists, and because the DSC rolls module health up into `Ready`, the DSC stays `False` on stale data.
 
@@ -739,6 +751,8 @@ NOTE: If you do not use the AI Playground, leaving `ogx` at `Removed` is a valid
 
 [[portal-404]]
 == Step 8: Enable the MaaS Consumer Portal (new in 3.6)
+
+*Jira:* link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^]
 
 WARNING: Enabling this submodule on 3.6.0-ea.2 takes down the entire {rhoai} Dashboard with HTTP 404, including `/oauth2`, so you cannot even log in. See link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^] (Critical). A default install is unaffected because the field defaults to `Removed`. If you do not need the portal, skip this whole step.
 
@@ -1032,45 +1046,56 @@ NOTE: This jq lists one nesting level only - component names and their immediate
 
 == Known Issues in 3.6 EA2
 
-[cols="2,1,2", options="header"]
+Every issue on this page has a Jira. Four were filed from this upgrade run; the rest already existed.
+
+[cols="2,1,2,1", options="header"]
 |===
-| Issue | Blocks | Workaround
+| Issue | Blocks | Workaround | Jira
 
 | `beta` channel has no upgrade edge from 3.5.x; channel change is a silent no-op reported as `AtLatestKnown`
 | The whole upgrade
-| Reinstall the operator (<<channel-noop,Step 2>> and Step 3)
+| Reinstall the operator (<<channel-noop,Step 2>> and <<subscription,Step 3>>)
+| link:https://redhat.atlassian.net/browse/RHOAIENG-103131[RHOAIENG-103131^]
 
 | DSC declares `trustyai.eval.lmeval.permit*` as string, component CRD declares boolean
 | Entire DSC `Ready`
-| Remove `eval` from the DSC *and* the component CR (<<trustyai-schema,Step 4>>)
+| Strip `eval` before the reinstall (<<prestrip,Step 2a>>), or remove it from the DSC *and* the component CR afterwards (<<trustyai-schema,Step 4>>)
+| link:https://redhat.atlassian.net/browse/RHOAIENG-100833[RHOAIENG-100833^]
 
 | LMEval online access and code execution cannot be enabled at all: the DSC path breaks the DSC, and a direct component CR patch is reverted by the operator in about 10 seconds
 | LMEval jobs needing network or code execution
 | None. Stay on 3.5 for that workload (<<trustyai-schema,Step 4>>)
+| link:https://redhat.atlassian.net/browse/RHOAIENG-100833[RHOAIENG-100833^]
 
 | 3.5 `DataSciencePipelines` CR keeps ownership of the DSPO ServiceMonitor
 | `AIPipelines` module
 | Delete the stale CR (<<stale-crs,Step 5>>)
+| link:https://redhat.atlassian.net/browse/RHOAIENG-103132[RHOAIENG-103132^]
 
 | TrustyAI Deployment `spec.selector` changed and is immutable
 | `TrustyAIReady`
 | Delete the Deployment (<<immutable,Step 6>>)
+| link:https://redhat.atlassian.net/browse/RHOAIENG-103133[RHOAIENG-103133^]
 
 | OGX playground RoleBinding `roleRef` changed `anyuid` -> `nonroot-v2` and is immutable
 | Every pre-existing OGXServer
 | Delete the RoleBinding, restart the OGX operator (<<immutable,Step 6>>)
+| link:https://redhat.atlassian.net/browse/RHOAIENG-103133[RHOAIENG-103133^]
 
 | Module conditions do not re-aggregate after the underlying fix
 | DSC `Ready` on stale data
 | Restart `rhods-operator`, or toggle the module `Removed` -> `Managed` (<<stale-conditions,Step 7>>)
+| link:https://redhat.atlassian.net/browse/RHOAIENG-103134[RHOAIENG-103134^]
 
 | `ModelRegistryReady` reports `no matches for kind "AIHub"` right after install
-| Nothing, it is transient
+| Nothing on EA2, it is transient. On EA1 it was permanent and blocked the Dashboard.
 | Wait, it self-resolves
+| link:https://redhat.atlassian.net/browse/RHOAIENG-94188[RHOAIENG-94188^]
 
-| Enabling `dashboard.maasConsumerPortal` returns HTTP 404 for the whole Dashboard including `/oauth2`, while every status stays green (link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^], Critical)
+| Enabling `dashboard.maasConsumerPortal` returns HTTP 404 for the whole Dashboard including `/oauth2`, while every status stays green
 | The entire {rhoai-short} Dashboard, no way to log in
 | Host-pin every hostname-less HTTPRoute on the Gateway (<<portal-prepin,Step 8a>>), or leave the portal `Removed`
+| link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^]
 |===
 
 == References
@@ -1079,3 +1104,19 @@ NOTE: This jq lists one nesting level only - component names and their immediate
 * xref:10-post-upgrade-troubleshooting.adoc[Post-Upgrade Troubleshooting (3.4 -> 3.5)]
 * xref:06-verification.adoc[Phase 6: MaaS Verification]
 * link:https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index[RHOAI 3.5 MaaS Official Docs]
+
+=== Jira Issues
+
+Filed from this upgrade run:
+
+* link:https://redhat.atlassian.net/browse/RHOAIENG-103131[RHOAIENG-103131^] - `beta` channel has no upgrade edge from 3.5.x, channel switch is a silent no-op
+* link:https://redhat.atlassian.net/browse/RHOAIENG-103132[RHOAIENG-103132^] - old `DataSciencePipelines` CR still owns the DSPO ServiceMonitor, blocks `AIPipelines`
+* link:https://redhat.atlassian.net/browse/RHOAIENG-103133[RHOAIENG-103133^] - immutable fields changed, so TrustyAI and OGX cannot reconcile 3.5-era objects
+* link:https://redhat.atlassian.net/browse/RHOAIENG-103134[RHOAIENG-103134^] - DSC module conditions keep the old error after the real problem is fixed
+
+Already open before this run:
+
+* link:https://redhat.atlassian.net/browse/RHOAIENG-100833[RHOAIENG-100833^] - TrustyAI CR keeps `permitCodeExecution: deny` (string) but the 3.6 CRD expects boolean
+* link:https://redhat.atlassian.net/browse/RHOAIENG-101883[RHOAIENG-101883^] - deploying MaaSConsumerPortal breaks the {rhoai-short} Dashboard
+* link:https://redhat.atlassian.net/browse/RHOAIENG-94188[RHOAIENG-94188^] - 3.4/3.5 to 3.6 upgrade does not install the `AIHub` CRD, blocking DSC reconciliation
+* link:https://redhat.atlassian.net/browse/RHOAIENG-65204[RHOAIENG-65204^] - the same missing-upgrade-path problem in `rhoai-3.5-ea.1.RC1`
