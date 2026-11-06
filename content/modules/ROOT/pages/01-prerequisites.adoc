@@ -24,7 +24,7 @@ The versions this guide is written against, for orientation only. This is not a 
 
 | Red Hat Connectivity Link (RHCL)
 | 1.4.2+
-| Any 1.4.x release is generally reported to work with {rhoai} 3.4 and 3.5. The manifests here assume >= 1.4.2, which is what the gateway-scoped AuthPolicy used by xref:08d-multi-tenancy.adoc[Multi-Tenancy] needs.
+| Any 1.4.x release is generally reported to work with {rhoai} 3.4 and 3.5. The manifests here assume >= 1.4.2, which is what the gateway-scoped AuthPolicy used by xref:08d-multi-tenancy.adoc[Multi-Tenancy] needs. RHCL 1.5.0 (channel `stable-1.5`, with the GA MCP Gateway) was validated with {rhoai} 3.5.2, with two fixes, see xref:14-rhcl-15.adoc[Running MaaS with RHCL 1.5].
 |===
 
 On RHCL specifically: 1.3.x does not appear in the matrix for these {rhoai-short} versions, so downgrading to it is probably not a good way out of a problem. For issues seen in earlier RHCL releases, see link:https://access.redhat.com/solutions/7144055[KCS 7144055^].

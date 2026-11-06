@@ -30,6 +30,9 @@
 .OpenShift 5
 * xref:13-openshift5.adoc[Running MaaS on OpenShift 5]
 
+.RHCL 1.5
+* xref:14-rhcl-15.adoc[Running MaaS with RHCL 1.5]
+
 .Reference
 * xref:08-architecture.adoc[Architecture & Request Flow]
 * xref:08b-request-deepdive.adoc[Request Deep Dive]

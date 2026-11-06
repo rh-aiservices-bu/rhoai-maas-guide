@@ -165,11 +165,11 @@ oc patch subscription rhcl-operator -n openshift-operators --type=merge \
   -p '{"spec":{"channel":"stable-1.5"}}'
 ----
 
-That installs RHCL 1.5.0. The manifests in this repo are written against 1.4.2, which is what xref:08d-multi-tenancy.adoc[Multi-Tenancy] needs for the gateway-scoped AuthPolicy, and 1.5.0 is not yet exercised by this guide.
+That installs RHCL 1.5.0. The manifests in this repo are written against 1.4.2, which is what xref:08d-multi-tenancy.adoc[Multi-Tenancy] needs for the gateway-scoped AuthPolicy, and 1.5.0 is covered separately in xref:14-rhcl-15.adoc[Running MaaS with RHCL 1.5].
 
 `scripts/setup-maas.sh` therefore looks for a catalog that publishes the channel the manifest asks for *before* falling back to any catalog's default channel. On a cluster that also carries the 4.22 snapshot, RHCL resolves to `redhat-operators-v422` / `stable` and stays on 1.4.2. `redhat-operators` wins ties, so a snapshot catalog never shadows the official index for an operator both of them publish. Only when no catalog offers the requested channel does the installer fall back to a default, and it warns when it does.
 
-NOTE: On a cluster carrying only the 5.0 index, `stable-1.5` is the single option and you get RHCL 1.5.0. Treat that combination as untested.
+NOTE: On a cluster carrying only the 5.0 index, `stable-1.5` is the single option and you get RHCL 1.5.0. That was validated on {ocp-short} 4.21 with {rhoai} 3.5.2, not on {ocp-short} 5, see xref:14-rhcl-15.adoc[Running MaaS with RHCL 1.5].
 
 [id=issue-3]
 == Issue 3: The Installer Assumes 3.5 While the Catalog Gives 3.4

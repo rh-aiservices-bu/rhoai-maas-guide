@@ -572,6 +572,14 @@ if should_run 1; then
                     log_warn "${OP_PKG} already subscribed in ${EXISTING_NS} - skipping duplicate Subscription in ${OP_NS}"
                     continue
                 fi
+                # Do not re-apply the checked-in channel over an operator that is
+                # already installed (e.g. RHCL on stable-1.5 vs manifest stable).
+                if [ -n "$EXISTING_NS" ] && oc get subscription -n "$EXISTING_NS" \
+                     -o jsonpath='{range .items[*]}{.spec.name}{" "}{.status.installedCSV}{"\n"}{end}' 2>/dev/null \
+                     | awk -v p="$OP_PKG" '$1==p && $2!="" {f=1} END {exit !f}'; then
+                    log_info "${OP_PKG} already installed in ${EXISTING_NS}, leaving its Subscription as is"
+                    continue
+                fi
             fi
             for f in "$op_dir"*.yaml; do
                 [ -f "$f" ] || continue
@@ -1091,6 +1099,28 @@ if should_run 3; then
         run_cmd oc -n kuadrant-system set env deployment/authorino \
             SSL_CERT_FILE=/etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt \
             REQUESTS_CA_BUNDLE=/etc/ssl/certs/openshift-service-ca/service-ca-bundle.crt
+    fi
+    # RHCL 1.5 Authorino operator rewrites the pre-created Service when it adopts
+    # it and drops the serving-cert annotation, so the cert Secret never appears
+    # and Kuadrant stays AuthorinoNotReady. Re-annotate once Authorino exists.
+    SVC_CERT_ANN=$(oc get svc authorino-authorino-authorization -n kuadrant-system \
+        -o jsonpath='{.metadata.annotations.service\.beta\.openshift\.io/serving-cert-secret-name}' 2>/dev/null || echo "")
+    if oc get svc authorino-authorino-authorization -n kuadrant-system &>/dev/null && \
+       [ "$SVC_CERT_ANN" != "authorino-server-cert" ]; then
+        log_warn "Authorino Service lost its serving-cert annotation (seen with RHCL 1.5) - re-applying"
+        run_cmd oc annotate svc authorino-authorino-authorization -n kuadrant-system \
+            service.beta.openshift.io/serving-cert-secret-name=authorino-server-cert --overwrite
+        if [ "$DRY_RUN" = false ]; then
+            for _ in $(seq 1 24); do
+                oc get secret authorino-server-cert -n kuadrant-system &>/dev/null && break
+                sleep 5
+            done
+            oc get secret authorino-server-cert -n kuadrant-system &>/dev/null && \
+                log_info "Authorino TLS cert generated" || \
+                log_warn "Authorino TLS cert still missing after 120s"
+            oc rollout restart deployment/authorino -n kuadrant-system
+            oc rollout status deployment/authorino -n kuadrant-system --timeout=180s || true
+        fi
     fi
     EXISTING_ANNOTATION=$(oc get gateway maas-default-gateway -n openshift-ingress \
         -o jsonpath='{.metadata.annotations.security\.opendatahub\.io/authorino-tls-bootstrap}' 2>/dev/null || echo "")
