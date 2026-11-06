@@ -13,6 +13,8 @@ Requires OpenShift 4.19+ with cluster-admin access.
 
 > **OpenShift 5:** MaaS runs on OpenShift 5.0, but two operators need a different catalog and channel than the manifests assume. See [Running MaaS on OpenShift 5](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/13-openshift5.html).
 
+> **RHCL 1.5:** MaaS on RHOAI 3.5.2 was validated with RHCL 1.5.0 and the GA MCP Gateway on the same cluster. See [Running MaaS with RHCL 1.5](https://rh-aiservices-bu.github.io/rhoai-maas-guide/modules/main/14-rhcl-15.html) for the fixes it needs.
+
 > **Note:** This guide is not a replacement for the official RHOAI MaaS documentation ([3.5](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/govern_llm_access_with_models-as-a-service/index) | [3.4](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/govern_llm_access_with_models-as-a-service/index)). It is a companion resource with opinionated Kustomize manifests and automation scripts to accelerate deployment.
 
 **Full documentation:** https://rh-aiservices-bu.github.io/rhoai-maas-guide/
