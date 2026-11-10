@@ -27,9 +27,6 @@
 * xref:12-platform-upgrade.adoc[Platform Upgrade Guide (3.4 → 3.5)]
 * xref:10-post-upgrade-troubleshooting.adoc[Post-Upgrade Troubleshooting]
 
-.Upgrade (3.5 → 3.6 EA2)
-* xref:14-platform-upgrade-36.adoc[Platform Upgrade Guide (3.5 → 3.6 EA2)]
-
 .OpenShift 5
 * xref:13-openshift5.adoc[Running MaaS on OpenShift 5]
 
