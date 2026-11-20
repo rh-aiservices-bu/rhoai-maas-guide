@@ -507,7 +507,7 @@ oc get gatewayclass openshift-default
 # Gateway programmed
 oc get gateway maas-default-gateway -n openshift-ingress
 
-# Check passthrough route exists (bare metal, Open Stack or None platform type)
+# Check passthrough route exists (bare metal, OpenStack or None platform type)
 oc get route maas-default-gateway-https -n openshift-ingress -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].status}'
 
 # Verify TLS connection to the Gateway

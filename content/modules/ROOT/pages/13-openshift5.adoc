@@ -395,7 +395,7 @@ Ten gateway pods, each with a 2Gi memory limit, on a three node cluster.
 
 === Diagnosis
 
-The gateway HPA scales on CPU utilisation measured against the container's CPU *request*. `manifests/02-platform-config/gateway-resources.yaml` sets that request to `100m`, so the 80% target is 80 millicores. A gateway running the Kuadrant Wasm filters idles well above that:
+The gateway HPA scales on CPU utilization measured against the container's CPU *request*. `manifests/02-platform-config/gateway-resources.yaml` sets that request to `100m`, so the 80% target is 80 millicores. A gateway running the Kuadrant Wasm filters idles well above that:
 
 [source,bash]
 ----

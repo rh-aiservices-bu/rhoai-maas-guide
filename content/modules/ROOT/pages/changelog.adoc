@@ -30,7 +30,7 @@ Each entry links to its pull request for full details.
 
 === New Pages
 
-* *MaaS:PAL Automated Verification* - A new section to explain the MaaS:PAL community plugin to help with MaaS configuration verification (link:{repo-url}/pull/170[#192])
+* *MaaS:PAL Automated Verification* - A new section to explain the MaaS:PAL community plugin to help with MaaS configuration verification (link:{repo-url}/pull/192[#192])
 
 === Features
 
