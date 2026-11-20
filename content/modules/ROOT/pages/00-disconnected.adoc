@@ -356,7 +356,7 @@ envsubst < manifests/00-disconnected/cpu-machineset.yaml | oc apply -f -
 
 NOTE: On IPI-installed AWS clusters the worker MachineSet references its subnet by tag filter, not by ID, which is why `SUBNET_NAME` reads the filter value. If `oc get machineset ... subnet.filters[0].values[0]` returns nothing, your cluster pins an explicit subnet ID instead - edit the template's `subnet` block to use `id: <subnet-id>`.
 
-The node comes up labelled `node-role.kubernetes.io/cpu-inference`. `m6i.2xlarge` (8 vCPU / 32 GiB) is the minimum for `qwen3-06b`; `m6i.4xlarge` (16 vCPU / 64 GiB) leaves room for platform pods as well.
+The node comes up labeled `node-role.kubernetes.io/cpu-inference`. `m6i.2xlarge` (8 vCPU / 32 GiB) is the minimum for `qwen3-06b`; `m6i.4xlarge` (16 vCPU / 64 GiB) leaves room for platform pods as well.
 
 == GPU setup (optional)
 
