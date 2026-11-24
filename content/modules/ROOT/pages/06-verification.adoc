@@ -209,6 +209,45 @@ oc patch gateway maas-default-gateway -n openshift-ingress --type=merge -p '{
 
 Wait for the pod to stabilize, then re-run the script.
 
+=== Gateway hostname does not resolve to the LoadBalancer IP
+
+If the verification script fails at Phase 1 (health endpoint unreachable) with `Could not resolve host`, or `curl` to the gateway LoadBalancer IP directly fails TLS validation, check DNS before touching the cluster. The Gateway listener presents the certificate for `maas.<cluster-domain>` (`router-certs-default` by default), so both DNS resolution and TLS SNI must use the hostname - the LoadBalancer IP alone is not enough.
+
+This shows up on clusters whose DNS is private or managed outside the cluster (for example a GCP cluster created by CI): the gateway Service gets an external IP, but no record resolves `maas.<cluster-domain>` to it, so requests from your laptop never reach the gateway. Check what the Service exposes and whether the cluster DNS operator created a record:
+
+[source,bash]
+----
+# What the gateway Service exposes (an IP on GCP/Azure, a hostname on AWS)
+oc get svc maas-default-gateway-openshift-default -n openshift-ingress \
+  -o jsonpath='{.status.loadBalancer.ingress}'
+
+# Whether the cluster DNS operator created a record for the hostname
+oc get dnsrecord -n openshift-ingress
+----
+
+Until a real DNS record points to the LoadBalancer IP, pin the hostname per command. The verification script does this automatically for cloud LB hostnames; manually it looks like this:
+
+[source,bash]
+----
+export CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+GATEWAY_IP=$(oc get svc maas-default-gateway-openshift-default -n openshift-ingress \
+  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+curl -vsk --resolve "maas.${CLUSTER_DOMAIN}:443:${GATEWAY_IP}" \
+  https://maas.${CLUSTER_DOMAIN}/maas-api/health
+----
+
+Or pin it for your whole machine with a temporary `/etc/hosts` entry:
+
+[source,bash]
+----
+echo "${GATEWAY_IP} maas.${CLUSTER_DOMAIN}" | sudo tee -a /etc/hosts
+----
+
+NOTE: If the hostname resolved before and stopped after switching the gateway Service from LoadBalancer to ClusterIP, the cause is a stale `dnsrecord` pointing at a defunct cloud LB (link:https://redhat.atlassian.net/browse/RHOAIENG-93962[RHOAIENG-93962^]). See xref:10-post-upgrade-troubleshooting.adoc#issue-13[Issue 13] for diagnosis and cleanup.
+
+NOTE: On clusters without a cloud load balancer, this guide exposes the gateway with MetalLB plus a passthrough Route, not with the upstream `ocproute` mode. If you came from the upstream MaaS repository's `setup-gateway.sh` `ocproute` mode (ClusterIP + reencrypt Route) and the API Keys tab fails with HTTP 503 after setting the listener hostname required for discovery, that is a known issue in that mode, tracked in link:https://redhat.atlassian.net/browse/RHOAIENG-97516[RHOAIENG-97516^].
+
 === Wrong subscription name in API key creation
 
 If the API key creation returns `{"code":"invalid_subscription","error":"Unable to resolve a subscription for this API key"}`, ensure the subscription name matches an existing `MaaSSubscription` resource:

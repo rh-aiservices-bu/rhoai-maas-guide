@@ -1,4 +1,4 @@
-# To remove all gateway resources: oc delete -f manifests/04-maas-platform/openshift-gateway-setup/cleanup.yaml
+# To remove all gateway resources: oc delete -f manifests/03-maas-platform/openshift-gateway-setup/cleanup.yaml
 
 # Remove Route
 apiVersion: route.openshift.io/v1
