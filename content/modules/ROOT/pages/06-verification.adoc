@@ -233,9 +233,11 @@ export CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath
 export MAAS_HOSTNAME="${MAAS_HOSTNAME:-maas.${CLUSTER_DOMAIN}}"
 GATEWAY_IP=$(oc get svc maas-default-gateway-openshift-default -n openshift-ingress \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-# On AWS the Service exposes a hostname instead of an IP, resolve it
+# On AWS the Service exposes a hostname instead of an IP. dig prints any
+# CNAME alias first, so keep only address records
 GATEWAY_IP=${GATEWAY_IP:-$(dig +short "$(oc get svc maas-default-gateway-openshift-default \
-  -n openshift-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')" | head -1)}
+  -n openshift-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')" \
+  | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)}
 
 curl -vsk --resolve "${MAAS_HOSTNAME}:443:${GATEWAY_IP}" \
   https://${MAAS_HOSTNAME}/maas-api/health
