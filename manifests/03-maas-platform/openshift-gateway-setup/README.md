@@ -21,8 +21,8 @@ the gateway reachable externally.
 | File | Purpose |
 |------|---------|
 | `metallb-config.yaml` | IPAddressPool with `${METALLB_IP_RANGE}` placeholder + L2Advertisement |
-| `gateway.yaml.tmpl` | Gateway with `${CLUSTER_DOMAIN}` and `${CERT_NAME}` placeholders |
-| `route.yaml.tmpl` | OpenShift Route with `${CLUSTER_DOMAIN}` placeholder |
+| `gateway.yaml.tmpl` | Gateway with `${MAAS_HOSTNAME}` and `${CERT_NAME}` placeholders |
+| `route.yaml.tmpl` | OpenShift Route with `${MAAS_HOSTNAME}` placeholder |
 | `cleanup.yaml` | Deletes all gateway resources (Route, Gateway, MetalLB pool + advertisement) |
 | `kustomization.yaml` | Only includes metallb-config.yaml (templates need envsubst) |
 
@@ -35,24 +35,25 @@ available IP range, or use envsubst:
 
 ```bash
 export METALLB_IP_RANGE="192.168.1.240-192.168.1.250"
-envsubst < manifests/04-maas-platform/openshift-gateway-setup/metallb-config.yaml | oc apply -f -
+envsubst < manifests/03-maas-platform/openshift-gateway-setup/metallb-config.yaml | oc apply -f -
 ```
 
 ### Step 2: Create the Gateway
 
 ```bash
 export CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+export MAAS_HOSTNAME="maas.${CLUSTER_DOMAIN}"
 export CERT_NAME=$(oc get ingresscontroller default -n openshift-ingress-operator \
   -o jsonpath='{.spec.defaultCertificate.name}' 2>/dev/null)
 export CERT_NAME=${CERT_NAME:-router-certs-default}
 
-envsubst < manifests/04-maas-platform/openshift-gateway-setup/gateway.yaml.tmpl | oc apply -f -
+envsubst < manifests/03-maas-platform/openshift-gateway-setup/gateway.yaml.tmpl | oc apply -f -
 ```
 
 ### Step 3: Create the Route
 
 ```bash
-envsubst < manifests/04-maas-platform/openshift-gateway-setup/route.yaml.tmpl | oc apply -f -
+envsubst < manifests/03-maas-platform/openshift-gateway-setup/route.yaml.tmpl | oc apply -f -
 ```
 
 ### Verify
@@ -72,5 +73,5 @@ oc get route -n openshift-ingress | grep maas
 ## Cleanup
 
 ```bash
-oc delete -f manifests/04-maas-platform/openshift-gateway-setup/cleanup.yaml
+oc delete -f manifests/03-maas-platform/openshift-gateway-setup/cleanup.yaml
 ```
