@@ -230,18 +230,22 @@ Until a real DNS record points to the LoadBalancer IP, pin the hostname per comm
 [source,bash]
 ----
 export CLUSTER_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+export MAAS_HOSTNAME="${MAAS_HOSTNAME:-maas.${CLUSTER_DOMAIN}}"
 GATEWAY_IP=$(oc get svc maas-default-gateway-openshift-default -n openshift-ingress \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+# On AWS the Service exposes a hostname instead of an IP, resolve it
+GATEWAY_IP=${GATEWAY_IP:-$(dig +short "$(oc get svc maas-default-gateway-openshift-default \
+  -n openshift-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')" | head -1)}
 
-curl -vsk --resolve "maas.${CLUSTER_DOMAIN}:443:${GATEWAY_IP}" \
-  https://maas.${CLUSTER_DOMAIN}/maas-api/health
+curl -vsk --resolve "${MAAS_HOSTNAME}:443:${GATEWAY_IP}" \
+  https://${MAAS_HOSTNAME}/maas-api/health
 ----
 
 Or pin it for your whole machine with a temporary `/etc/hosts` entry:
 
 [source,bash]
 ----
-echo "${GATEWAY_IP} maas.${CLUSTER_DOMAIN}" | sudo tee -a /etc/hosts
+echo "${GATEWAY_IP} ${MAAS_HOSTNAME}" | sudo tee -a /etc/hosts
 ----
 
 NOTE: If the hostname resolved before and stopped after switching the gateway Service from LoadBalancer to ClusterIP, the cause is a stale `dnsrecord` pointing at a defunct cloud LB (link:https://redhat.atlassian.net/browse/RHOAIENG-93962[RHOAIENG-93962^]). See xref:10-post-upgrade-troubleshooting.adoc#issue-13[Issue 13] for diagnosis and cleanup.
