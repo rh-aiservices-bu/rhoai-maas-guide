@@ -115,7 +115,7 @@ mirror:
   #     | grep RELATED_IMAGE_WASMSHIM
   additionalImages:
     # MaaS PostgreSQL database (pinned by digest)
-    - name: registry.redhat.io/rhel9/postgresql-16@sha256:3943bfa5de044d8f033df148c0409ed826171b779f3cf3ddf537a1914960ab57
+    - name: registry.redhat.io/rhel9/postgresql-16@sha256:18c881e262861c94e59de14b4723c635acc5c5d82ce59297341a2feebc3ab05e
     # vLLM CUDA runtime - included explicitly because separate oc-mirror runs
     # for RHOAI vs MaaS place it in different mirror namespaces. The digest
     # matches the RHOAI 3.4.2 operator's relatedImages entry.
