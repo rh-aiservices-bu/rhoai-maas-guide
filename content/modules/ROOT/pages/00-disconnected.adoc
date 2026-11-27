@@ -76,7 +76,7 @@ Images not discoverable through operator bundles:
 |===
 | Image | Purpose
 
-| `registry.redhat.io/rhel9/postgresql-16@sha256:3943...` (pinned digest)
+| `registry.redhat.io/rhel9/postgresql-16@sha256:18c8...` (pinned digest, multi-arch)
 | MaaS PostgreSQL database
 
 | `registry.redhat.io/rhaii/vllm-cuda-rhel9@sha256:5800...` (pinned digest)

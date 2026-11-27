@@ -6,7 +6,7 @@
 # the list separately.
 
 # MaaS PostgreSQL database (pinned by digest)
-registry.redhat.io/rhel9/postgresql-16@sha256:3943bfa5de044d8f033df148c0409ed826171b779f3cf3ddf537a1914960ab57
+registry.redhat.io/rhel9/postgresql-16@sha256:18c881e262861c94e59de14b4723c635acc5c5d82ce59297341a2feebc3ab05e
 
 # vLLM CUDA runtime (pinned by digest, matches RHOAI 3.4.2 relatedImages)
 registry.redhat.io/rhaii/vllm-cuda-rhel9@sha256:5800e12b2a465f15961fcf34b645d79ed4f91ec9161eab22b1205d12682183c8

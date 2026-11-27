@@ -14,6 +14,8 @@ Each entry links to its pull request for full details.
 
 === Fixes
 
+* *Multi-arch PostgreSQL Image* - The PostgreSQL image was pinned to an amd64-only digest, so the guide could not run on ARM64 clusters. Now pinned to the multi-arch manifest list digest of the same image (amd64, arm64, s390x, ppc64le), and the disconnected mirror lists are updated too. (link:{repo-url}/pull/212[#212])
+
 * *OpenShift Gateway Setup README* - The optional bare-metal gateway setup README pointed at `manifests/04-maas-platform`, a directory that does not exist since the renumbering, listed the wrong envsubst placeholders, and never exported `MAAS_HOSTNAME` before rendering `route.yaml.tmpl`, so following it produced a Route with an empty host. The `03-maas-platform` README also linked to a dead docs page. (link:{repo-url}/pull/211[#211])
 
 * *Gateway Hostname DNS Troubleshooting* - New entry in the verification page for `maas.<cluster-domain>` not resolving to the gateway LoadBalancer IP, common on clusters with private or CI managed DNS. Explains why TLS SNI needs the hostname, documents the `curl --resolve` and `/etc/hosts` workarounds, the stale `dnsrecord` variant (link:https://redhat.atlassian.net/browse/RHOAIENG-93962[RHOAIENG-93962^]) and the upstream `ocproute` mode API Keys 503 (link:https://redhat.atlassian.net/browse/RHOAIENG-97516[RHOAIENG-97516^]). (link:{repo-url}/pull/211[#211])
